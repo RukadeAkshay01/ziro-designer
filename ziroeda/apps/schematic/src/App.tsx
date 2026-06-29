@@ -157,8 +157,6 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
       <Toolbar entries={TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       <div className="ze-body">
-        <Toolbar entries={LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
-
         {activeTool === 'placeSymbol' ? (
           <div className="ze-panel left">
             <div className="ze-panel-header">Choose a Symbol</div>
@@ -216,6 +214,8 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             </div>
           </div>
         )}
+
+        <Toolbar entries={LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
 
         <div className="ze-canvas-wrap">
           <SchematicCanvas
