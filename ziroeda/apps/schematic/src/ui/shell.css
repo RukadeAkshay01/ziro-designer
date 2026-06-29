@@ -194,3 +194,5 @@ html, body { background: var(--chrome-bg2); }
 .ze-selfilter { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 12px; }
 .ze-selfilter label { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 12px; cursor: pointer; }
 .ze-muted { color: #9a9ca0; padding: 4px 2px; }
+/* KiCad's Selection Filter uses orange checkboxes. */
+.ze-panel-body label input[type="checkbox"] { accent-color: #e07b1a; width: 14px; height: 14px; }

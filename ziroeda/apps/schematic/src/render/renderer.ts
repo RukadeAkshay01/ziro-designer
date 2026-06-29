@@ -75,6 +75,7 @@ export function renderSchematic(
   ctx.lineJoin = 'round';
 
   drawGrid(ctx, viewport, theme, canvasWidth, canvasHeight);
+  drawPageFrame(ctx, sch);
 
   // Wires and buses.
   for (const line of sch.lines) {
@@ -313,22 +314,60 @@ function drawGrid(
   }
 }
 
-/** Compute a viewport that fits the schematic content into the given canvas size. */
+/** Paper sizes in millimetres (landscape), matching KiCad's page tokens. */
+const PAPER_MM: Record<string, [number, number]> = {
+  A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841],
+  A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
+  USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
+};
+function paperSizeIU(paper: string | undefined): { w: number; h: number } {
+  const [w, h] = PAPER_MM[paper ?? 'A4'] ?? PAPER_MM.A4!;
+  return { w: w * MM, h: h * MM };
+}
+
+/** Draw the page border and a KiCad-style title block in the bottom-right corner. */
+function drawPageFrame(ctx: CanvasRenderingContext2D, sch: Schematic): void {
+  const { w, h } = paperSizeIU(sch.paper);
+  const m = 10 * MM; // border margin
+  ctx.strokeStyle = '#000000';
+  ctx.fillStyle = '#000000';
+  ctx.lineWidth = 0.15 * MM;
+  ctx.strokeRect(0, 0, w, h); // page edge
+  ctx.strokeRect(m, m, w - 2 * m, h - 2 * m); // inner border
+
+  // Title block (bottom-right, inside the border).
+  const tbW = 105 * MM, tbH = 22 * MM;
+  const x0 = w - m - tbW, y0 = h - m - tbH;
+  ctx.lineWidth = 0.12 * MM;
+  ctx.strokeRect(x0, y0, tbW, tbH);
+  const rows = [0.42, 0.62, 0.8].map((f) => y0 + tbH * f);
+  for (const ry of rows) { ctx.beginPath(); ctx.moveTo(x0, ry); ctx.lineTo(x0 + tbW, ry); ctx.stroke(); }
+
+  const tb = sch.titleBlock;
+  const fs = 1.6 * MM;
+  const tx = x0 + 2 * MM;
+  const line = (txt: string, cy: number) => drawText(ctx, txt, { x: tx, y: cy }, fs, '#000000', ['left']);
+  line(`Title: ${tb?.title ?? ''}`, y0 + tbH * 0.21);
+  line(`Size: ${sch.paper ?? 'A4'}    Date: ${tb?.date ?? ''}    Rev: ${tb?.rev ?? ''}`, y0 + tbH * 0.52);
+  line(`KiCad-compatible — ${tb?.company ?? 'ZiroEDA'}`, y0 + tbH * 0.71);
+  line('Sheet: 1/1', y0 + tbH * 0.9);
+}
+
+/** Compute a viewport that fits the whole page (or content) into the canvas. */
 export function fitToContent(sch: Schematic, canvasWidth: number, canvasHeight: number): Viewport {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  // Fit the page so the border and title block are visible, like KiCad's default view.
+  const { w: pw, h: ph } = paperSizeIU(sch.paper);
+  let minX = 0, minY = 0, maxX = pw, maxY = ph;
+
+  // If content somehow extends outside the page, include it too.
   const include = (p: Vec2) => {
     minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
     maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
   };
   for (const l of sch.lines) { include(l.start); include(l.end); }
-  for (const j of sch.junctions) include(j.at);
-  for (const s of sch.symbols) { include(s.at); for (const f of s.fields) if (f.at) include(f.at); }
-  for (const l of sch.labels) include(l.at);
+  for (const s of sch.symbols) include(s.at);
 
-  if (!Number.isFinite(minX)) return { scale: 0.02, offsetX: canvasWidth / 2, offsetY: canvasHeight / 2 };
-
-  // Pad the bounds a little.
-  const pad = 8 * MM;
+  const pad = 6 * MM;
   minX -= pad; minY -= pad; maxX += pad; maxY += pad;
   const w = maxX - minX || 1, h = maxY - minY || 1;
   const scale = Math.min(canvasWidth / w, canvasHeight / h);
