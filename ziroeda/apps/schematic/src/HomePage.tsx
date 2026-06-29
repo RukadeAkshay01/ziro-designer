@@ -1,16 +1,11 @@
 import type { JSX } from 'react';
 import './ui/shell.css';
 
-// KiCad's own dark-theme launcher icons (GPL), vendored under assets/launcher.
-const ICONS = import.meta.glob('./assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const iconUrl = (id: string): string | undefined => ICONS[`./assets/launcher/${id}.svg`];
-
-/**
- * KiCad project-manager-style home page (the launcher window KiCad opens with).
- * Tile titles and descriptions are taken verbatim from KiCad's
- * KICAD_MANAGER_ACTIONS / panel_kicad_launcher. Only the Schematic Editor is wired
- * up so far; the rest are shown as forthcoming.
- */
+// KiCad's own dark-theme icons (GPL), vendored under assets/.
+const TILE_ICONS = import.meta.glob('./assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const MGR_ICONS = import.meta.glob('./assets/manager/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const tileUrl = (id: string): string | undefined => TILE_ICONS[`./assets/launcher/${id}.svg`];
+const mgrUrl = (name: string): string | undefined => MGR_ICONS[`./assets/manager/${name}.svg`];
 
 interface Tile {
   id: string;
@@ -31,34 +26,74 @@ const TILES: Tile[] = [
   { id: 'pcm', name: 'Plugin and Content Manager', desc: 'Manage downloadable packages from KiCad and 3rd party repositories' },
 ];
 
+// KiCad project-manager left toolbar (toolbars_kicad_manager.cpp).
+const MGR_TOOLS: ({ icon: string; title: string } | 'sep')[] = [
+  { icon: 'new_project_from_template', title: 'New Project…' },
+  { icon: 'open_project', title: 'Open Project…' },
+  'sep',
+  { icon: 'zip', title: 'Archive Project…' },
+  { icon: 'unzip', title: 'Unarchive Project…' },
+  'sep',
+  { icon: 'refresh', title: 'Refresh' },
+  'sep',
+  { icon: 'directory_browser', title: 'Browse Project Files' },
+];
+
 const tileIcon = (id: string): JSX.Element => {
-  const url = iconUrl(id);
+  const url = tileUrl(id);
   return url ? <img src={url} alt="" /> : <span style={{ width: 44, height: 44 }} />;
+};
+
+const TreeIcon = ({ name }: { name: string }): JSX.Element => {
+  const url = mgrUrl(name);
+  return url ? <img src={url} alt="" /> : <span style={{ width: 18, height: 18 }} />;
 };
 
 export function HomePage({ projectName, onOpenSchematic }: { projectName: string; onOpenSchematic: () => void }): JSX.Element {
   return (
     <div className="ze-app">
       <div className="ze-menubar">
-        {['File', 'View', 'Tools', 'Preferences', 'Help'].map((m) => (
+        {['File', 'Edit', 'View', 'Tools', 'Preferences', 'Help'].map((m) => (
           <div key={m} className="ze-menu">{m}</div>
         ))}
       </div>
 
       <div className="ze-home-body">
-        <div className="ze-panel left" style={{ width: 280 }}>
-          <div className="ze-panel-header">Project</div>
+        {/* far-left vertical toolbar */}
+        <div className="ze-mgrbar">
+          {MGR_TOOLS.map((t, i) =>
+            t === 'sep' ? (
+              <span key={`s${i}`} className="sep" />
+            ) : (
+              <button key={t.icon} title={t.title} aria-label={t.title}>
+                <img src={mgrUrl(t.icon)} alt="" />
+              </button>
+            ),
+          )}
+        </div>
+
+        {/* project file tree */}
+        <div className="ze-panel left" style={{ width: 290 }}>
+          <div className="ze-panel-header">Project Files</div>
           <div className="ze-panel-body">
-            <div className="ze-tree-item active">📁 {projectName}</div>
-            <div className="ze-tree-item" style={{ paddingLeft: 22 }}>📄 {projectName}.kicad_pro</div>
-            <div className="ze-tree-item" style={{ paddingLeft: 22 }} onClick={onOpenSchematic}>
-              📐 {projectName}.kicad_sch
+            <div className="ze-tree-item root active">
+              <span className="twisty">▾</span>
+              <TreeIcon name="project_kicad" />
+              <span>{projectName}.kicad_pro</span>
+            </div>
+            <div className="ze-tree-item" style={{ paddingLeft: 24 }} onClick={onOpenSchematic}>
+              <TreeIcon name="icon_eeschema_24" />
+              <span>{projectName}.kicad_sch</span>
+            </div>
+            <div className="ze-tree-item" style={{ paddingLeft: 24 }}>
+              <TreeIcon name="library" />
+              <span>{projectName}.kicad_sym</span>
             </div>
           </div>
         </div>
 
+        {/* launcher tiles */}
         <div className="ze-launchers">
-          <h2 className="ze-project-title">{projectName}</h2>
           {TILES.map((t) => (
             <button
               key={t.id}
@@ -79,7 +114,7 @@ export function HomePage({ projectName, onOpenSchematic }: { projectName: string
       </div>
 
       <div className="ze-statusbar">
-        <span className="cell grow">ZiroEDA — open-source EDA in your browser · click Schematic Editor to begin</span>
+        <span className="cell grow">Project: ~/projects/{projectName}/{projectName}.kicad_pro</span>
       </div>
     </div>
   );

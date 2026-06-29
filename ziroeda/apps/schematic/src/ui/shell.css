@@ -121,8 +121,8 @@ html, body { background: var(--chrome-bg2); }
 .ze-tree-item:hover { background: var(--chrome-hover); }
 .ze-tree-item.active { background: var(--chrome-active); }
 
-.ze-prop-row { display: flex; justify-content: space-between; padding: 3px 2px; border-bottom: 1px solid #eee; }
-.ze-prop-row .k { color: #666; }
+.ze-prop-row { display: flex; justify-content: space-between; padding: 3px 2px; border-bottom: 1px solid var(--chrome-border); }
+.ze-prop-row .k { color: #9a9ca0; }
 .ze-prop-row .v { font-weight: 500; }
 
 /* Status bar */
@@ -133,7 +133,7 @@ html, body { background: var(--chrome-bg2); }
   background: var(--chrome-bg);
   border-top: 1px solid var(--chrome-border);
   font-size: 12px;
-  color: #444;
+  color: #b6b8bb;
 }
 .ze-statusbar .cell {
   padding: 0 10px;
@@ -163,3 +163,24 @@ html, body { background: var(--chrome-bg2); }
 .ze-launcher .soon { margin-left: auto; font-size: 11px; color: #7a7c80; align-self: center; }
 .ze-home-link { padding: 0 12px; display: flex; align-items: center; cursor: pointer; font-weight: 700; color: #4a86c5; }
 .ze-home-link:hover { background: var(--chrome-hover); }
+
+/* Project-manager left toolbar (narrow vertical strip) */
+.ze-mgrbar {
+  display: flex; flex-direction: column; align-items: center;
+  width: 40px; padding: 5px 0; gap: 2px;
+  background: var(--chrome-bg); border-right: 1px solid var(--chrome-border);
+}
+.ze-mgrbar button {
+  width: 32px; height: 32px; padding: 0;
+  border: 1px solid transparent; border-radius: 4px;
+  background: transparent; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.ze-mgrbar button:hover { background: var(--chrome-hover); border-color: var(--chrome-border); }
+.ze-mgrbar img { width: 22px; height: 22px; }
+.ze-mgrbar .sep { width: 22px; height: 1px; background: var(--chrome-border); margin: 3px 0; }
+
+/* Project file tree */
+.ze-tree-item img { width: 18px; height: 18px; flex: 0 0 auto; }
+.ze-tree-item.root { font-weight: 700; }
+.ze-tree-item .twisty { width: 12px; display: inline-block; color: #9a9ca0; flex: 0 0 auto; }
