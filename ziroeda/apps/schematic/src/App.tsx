@@ -3,7 +3,7 @@ import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, History,
 import { SchematicCanvas, type CanvasController, type LineMode } from './components/SchematicCanvas.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR, MENUS } from './ui/toolbars.js';
-import { SYMBOL_LIBRARY } from './symbols/index.js';
+import { SymbolChooser } from './components/SymbolChooser.js';
 import { HomePage } from './HomePage.js';
 import './ui/shell.css';
 import sampleText from './sample.kicad_sch?raw';
@@ -158,23 +158,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
 
       <div className="ze-body">
         {activeTool === 'placeSymbol' ? (
-          <div className="ze-panel left">
-            <div className="ze-panel-header">Choose a Symbol</div>
-            <div className="ze-panel-body">
-              <div className="ze-muted" style={{ paddingBottom: 8 }}>
-                {placeLib ? `Placing ${placeLib.libId} — click on the canvas.` : '① Pick a symbol below, then click the canvas to place it.'}
-              </div>
-              {SYMBOL_LIBRARY.map((lib) => (
-                <div
-                  key={lib.libId}
-                  className={`ze-tree-item${placeLib?.libId === lib.libId ? ' active' : ''}`}
-                  onClick={() => setPlaceLib(lib)}
-                >
-                  {lib.libId}
-                </div>
-              ))}
-            </div>
-          </div>
+          <SymbolChooser onPick={setPlaceLib} currentId={placeLib?.libId ?? null} />
         ) : (
           <div className="ze-leftdock">
             <div className="ze-panel grow">

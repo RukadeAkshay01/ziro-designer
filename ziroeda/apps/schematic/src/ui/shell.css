@@ -196,3 +196,12 @@ html, body { background: var(--chrome-bg2); }
 .ze-muted { color: #9a9ca0; padding: 4px 2px; }
 /* KiCad's Selection Filter uses orange checkboxes. */
 .ze-panel-body label input[type="checkbox"] { accent-color: #e07b1a; width: 14px; height: 14px; }
+
+/* Symbol chooser search box */
+.ze-search {
+  width: 100%; box-sizing: border-box; padding: 5px 8px;
+  background: var(--chrome-bg2); color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border); border-radius: 4px;
+  font: inherit; outline: none;
+}
+.ze-search:focus { border-color: var(--chrome-active-border); }

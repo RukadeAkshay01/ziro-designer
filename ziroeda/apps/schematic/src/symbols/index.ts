@@ -1,19 +1,49 @@
 /**
- * Bundled symbol library: a curated subset of KiCad's official symbol libraries
- * (Device, power), read natively with the same parser used for schematics. The
- * raw `.kicad_sym` files are vendored under this directory and glob-imported.
+ * Symbol library access.
+ *
+ * The full set of (combined) KiCad symbol libraries lives under `public/symbols`
+ * as static assets — a names index (`index.json`, loaded up front for search) and
+ * one `<Library>.kicad_sym` per library (fetched and parsed on demand when a symbol
+ * is placed). This keeps the JS bundle small while making thousands of real KiCad
+ * symbols available. They are read natively with the same parser as schematics.
  */
 import { parse, readSymbolLib, type LibSymbol } from '@ziroeda/core';
 
-const raws = import.meta.glob('./*.kicad_sym', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+export interface LibIndexEntry {
+  name: string;
+  count: number;
+  symbols: string[];
+}
 
-const POWER = new Set(['GND', '+5V', '+3V3', 'VCC']);
-const libraryFor = (name: string): string => (POWER.has(name) ? 'power' : 'Device');
+const BASE = import.meta.env.BASE_URL; // '/' locally, '/pcb/' on GitHub Pages
 
-/** All available library symbols, with KiCad-style `Library:Name` ids. */
-export const SYMBOL_LIBRARY: LibSymbol[] = Object.entries(raws)
-  .flatMap(([path, text]) => {
-    const lib = libraryFor(path.split('/').pop()!.replace('.kicad_sym', ''));
-    return readSymbolLib(parse(text)).map((s) => ({ ...s, libId: `${lib}:${s.libId}` }));
-  })
-  .sort((a, b) => a.libId.localeCompare(b.libId));
+let indexPromise: Promise<LibIndexEntry[]> | null = null;
+/** Load the library index (library names + their symbol names) for search. */
+export function loadIndex(): Promise<LibIndexEntry[]> {
+  if (!indexPromise) indexPromise = fetch(`${BASE}symbols/index.json`).then((r) => r.json());
+  return indexPromise;
+}
+
+const libCache = new Map<string, Promise<Map<string, LibSymbol>>>();
+function loadLibrary(name: string): Promise<Map<string, LibSymbol>> {
+  let p = libCache.get(name);
+  if (!p) {
+    p = fetch(`${BASE}symbols/${name}.kicad_sym`)
+      .then((r) => r.text())
+      .then((text) => {
+        const map = new Map<string, LibSymbol>();
+        for (const sym of readSymbolLib(parse(text))) {
+          // Give it a KiCad-style Library:Name id.
+          map.set(sym.libId, { ...sym, libId: `${name}:${sym.libId}` });
+        }
+        return map;
+      });
+    libCache.set(name, p);
+  }
+  return p;
+}
+
+/** Load one symbol by library and name (fetches+caches the library on demand). */
+export async function loadSymbol(library: string, symbolName: string): Promise<LibSymbol | undefined> {
+  return (await loadLibrary(library)).get(symbolName);
+}
