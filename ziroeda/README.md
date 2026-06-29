@@ -58,7 +58,12 @@ ziroeda/
 
 A React + Canvas2D app that renders a real `.kicad_sch` faithfully: symbols (via
 their library graphics + the placement transform), pins, wires, junctions, labels
-and fields, on a pannable/zoomable canvas with a KiCad-style theme. Run it with:
+and fields, on a pannable/zoomable canvas with a KiCad-style theme.
+
+It is wrapped in eeschema's window chrome — menu bar, top toolbar, a left
+display-options toolbar, a right drawing-tools toolbar, hierarchy and properties
+panels, and a live status bar (cursor position, grid, units, zoom) — with toolbar
+contents transcribed from KiCad's `toolbars_sch_editor.cpp`. Run it with:
 
 ```bash
 pnpm -C apps/schematic dev      # http://localhost:5173

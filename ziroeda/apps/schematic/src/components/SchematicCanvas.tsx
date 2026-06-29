@@ -1,14 +1,26 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
 import type { Schematic } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
 import { KICAD_CLASSIC } from '../theme.js';
 
+export interface CanvasController {
+  zoomToFit: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+}
+
 interface Props {
   schematic: Schematic;
+  /** Cursor position in world internal units, or null when off-canvas. */
+  onCursorMove?: (world: { x: number; y: number } | null) => void;
+  onScaleChange?: (scale: number) => void;
 }
 
 /** A pannable/zoomable canvas that renders a schematic. */
-export function SchematicCanvas({ schematic }: Props): JSX.Element {
+export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
+  { schematic, onCursorMove, onScaleChange },
+  ref,
+): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<Viewport | null>(null);
@@ -22,20 +34,44 @@ export function SchematicCanvas({ schematic }: Props): JSX.Element {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     renderSchematic(ctx, schematic, vp, KICAD_CLASSIC, canvas.width, canvas.height);
-  }, [schematic]);
+    onScaleChange?.(vp.scale);
+  }, [schematic, onScaleChange]);
 
-  // Track container size (account for device pixel ratio).
+  const zoomAbout = useCallback((px: number, py: number, factor: number) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const worldX = (px - vp.offsetX) / vp.scale;
+    const worldY = (py - vp.offsetY) / vp.scale;
+    const scale = vp.scale * factor;
+    viewportRef.current = { scale, offsetX: px - worldX * scale, offsetY: py - worldY * scale };
+    draw();
+  }, [draw]);
+
+  useImperativeHandle(ref, (): CanvasController => ({
+    zoomToFit: () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      viewportRef.current = fitToContent(schematic, canvas.width, canvas.height);
+      draw();
+    },
+    zoomIn: () => {
+      const c = canvasRef.current;
+      if (c) zoomAbout(c.width / 2, c.height / 2, 1.25);
+    },
+    zoomOut: () => {
+      const c = canvasRef.current;
+      if (c) zoomAbout(c.width / 2, c.height / 2, 0.8);
+    },
+  }), [schematic, draw, zoomAbout]);
+
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {
-      setSize({ w: el.clientWidth, h: el.clientHeight });
-    });
+    const ro = new ResizeObserver(() => setSize({ w: el.clientWidth, h: el.clientHeight }));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Resize the backing canvas and (re)fit content the first time we have a size.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || size.w === 0 || size.h === 0) return;
@@ -44,28 +80,17 @@ export function SchematicCanvas({ schematic }: Props): JSX.Element {
     canvas.height = Math.floor(size.h * dpr);
     canvas.style.width = `${size.w}px`;
     canvas.style.height = `${size.h}px`;
-    if (!viewportRef.current) {
-      viewportRef.current = fitToContent(schematic, canvas.width, canvas.height);
-    }
+    if (!viewportRef.current) viewportRef.current = fitToContent(schematic, canvas.width, canvas.height);
     draw();
   }, [size, schematic, draw]);
 
   const onWheel = useCallback((e: React.WheelEvent) => {
     const canvas = canvasRef.current;
-    const vp = viewportRef.current;
-    if (!canvas || !vp) return;
+    if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    const px = (e.clientX - rect.left) * dpr;
-    const py = (e.clientY - rect.top) * dpr;
-    const factor = Math.exp(-e.deltaY * 0.001);
-    // Zoom about the cursor: keep the world point under the cursor fixed.
-    const worldX = (px - vp.offsetX) / vp.scale;
-    const worldY = (py - vp.offsetY) / vp.scale;
-    const scale = vp.scale * factor;
-    viewportRef.current = { scale, offsetX: px - worldX * scale, offsetY: py - worldY * scale };
-    draw();
-  }, [draw]);
+    zoomAbout((e.clientX - rect.left) * dpr, (e.clientY - rect.top) * dpr, Math.exp(-e.deltaY * 0.001));
+  }, [zoomAbout]);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -74,17 +99,24 @@ export function SchematicCanvas({ schematic }: Props): JSX.Element {
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
-    const drag = dragRef.current;
-    if (!vp || !drag) return;
+    const canvas = canvasRef.current;
+    if (!vp || !canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    viewportRef.current = {
-      ...vp,
-      offsetX: vp.offsetX + (e.clientX - drag.x) * dpr,
-      offsetY: vp.offsetY + (e.clientY - drag.y) * dpr,
-    };
-    dragRef.current = { x: e.clientX, y: e.clientY };
-    draw();
-  }, [draw]);
+    const drag = dragRef.current;
+    if (drag) {
+      viewportRef.current = {
+        ...vp,
+        offsetX: vp.offsetX + (e.clientX - drag.x) * dpr,
+        offsetY: vp.offsetY + (e.clientY - drag.y) * dpr,
+      };
+      dragRef.current = { x: e.clientX, y: e.clientY };
+      draw();
+    }
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) * dpr;
+    const py = (e.clientY - rect.top) * dpr;
+    onCursorMove?.({ x: (px - viewportRef.current!.offsetX) / viewportRef.current!.scale, y: (py - viewportRef.current!.offsetY) / viewportRef.current!.scale });
+  }, [draw, onCursorMove]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     dragRef.current = null;
@@ -100,7 +132,8 @@ export function SchematicCanvas({ schematic }: Props): JSX.Element {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerLeave={() => onCursorMove?.(null)}
       />
     </div>
   );
-}
+});

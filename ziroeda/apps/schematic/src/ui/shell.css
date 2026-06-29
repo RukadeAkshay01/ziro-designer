@@ -1,0 +1,140 @@
+/* KiCad-eeschema-like application chrome. */
+:root {
+  --chrome-bg: #f0f0f0;
+  --chrome-bg2: #e6e6e6;
+  --chrome-border: #b8b8b8;
+  --chrome-fg: #2b2b2b;
+  --chrome-hover: #d8e6f4;
+  --chrome-active: #bcd6f0;
+  --chrome-active-border: #5a9fd4;
+  --panel-bg: #fafafa;
+  --panel-header: #e4e4e4;
+}
+
+* { box-sizing: border-box; }
+
+.ze-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font: 13px/1.3 system-ui, "Segoe UI", sans-serif;
+  color: var(--chrome-fg);
+  user-select: none;
+}
+
+/* Menu bar */
+.ze-menubar {
+  display: flex;
+  align-items: stretch;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  height: 26px;
+}
+.ze-menubar .ze-menu {
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  cursor: default;
+}
+.ze-menubar .ze-menu:hover { background: var(--chrome-hover); }
+
+/* Toolbars */
+.ze-toolbar {
+  display: flex;
+  align-items: center;
+  background: var(--chrome-bg);
+  gap: 1px;
+}
+.ze-toolbar.horizontal {
+  flex-direction: row;
+  height: 32px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--chrome-border);
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.ze-toolbar.vertical {
+  flex-direction: column;
+  width: 32px;
+  padding: 4px 0;
+}
+.ze-toolbar.vertical.left { border-right: 1px solid var(--chrome-border); }
+.ze-toolbar.vertical.right { border-left: 1px solid var(--chrome-border); }
+
+.ze-tbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--chrome-fg);
+  background: transparent;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 0;
+}
+.ze-tbtn:hover { background: var(--chrome-hover); border-color: var(--chrome-border); }
+.ze-tbtn.active {
+  background: var(--chrome-active);
+  border-color: var(--chrome-active-border);
+}
+
+.ze-sep { flex: 0 0 auto; background: var(--chrome-border); }
+.ze-toolbar.horizontal .ze-sep { width: 1px; height: 20px; margin: 0 3px; }
+.ze-toolbar.vertical .ze-sep { height: 1px; width: 20px; margin: 3px 0; }
+
+/* Body: left tb | left panel | canvas | right panel | right tb */
+.ze-body { flex: 1; display: flex; min-height: 0; }
+.ze-canvas-wrap { flex: 1; min-width: 0; position: relative; }
+
+/* Panels */
+.ze-panel {
+  width: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+}
+.ze-panel.left { border-right: 1px solid var(--chrome-border); }
+.ze-panel.right { border-left: 1px solid var(--chrome-border); }
+.ze-panel-header {
+  padding: 5px 9px;
+  font-weight: 600;
+  font-size: 12px;
+  background: var(--panel-header);
+  border-bottom: 1px solid var(--chrome-border);
+}
+.ze-panel-body { padding: 6px 8px; overflow: auto; flex: 1; }
+
+.ze-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: default;
+}
+.ze-tree-item:hover { background: var(--chrome-hover); }
+.ze-tree-item.active { background: var(--chrome-active); }
+
+.ze-prop-row { display: flex; justify-content: space-between; padding: 3px 2px; border-bottom: 1px solid #eee; }
+.ze-prop-row .k { color: #666; }
+.ze-prop-row .v { font-weight: 500; }
+
+/* Status bar */
+.ze-statusbar {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  font-size: 12px;
+  color: #444;
+}
+.ze-statusbar .cell {
+  padding: 0 10px;
+  border-right: 1px solid var(--chrome-border);
+  white-space: nowrap;
+}
+.ze-statusbar .cell.grow { flex: 1; border-right: none; }
