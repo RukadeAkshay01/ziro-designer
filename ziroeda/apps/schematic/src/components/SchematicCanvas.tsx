@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
 import {
-  hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, makeWire, makeJunction, needsJunction,
+  hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
+  makeWire, makeJunction, needsJunction,
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2,
 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
@@ -38,6 +39,7 @@ interface Props {
   selection: ReadonlySet<string>;
   activeTool: string;
   lineMode: LineMode;
+  placeLib: LibSymbol | null;
   onSelect: (id: string | null, additive: boolean) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
@@ -47,7 +49,7 @@ interface Props {
 type Mode = 'idle' | 'pan' | 'move';
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, onSelect, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, onSelect, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -84,7 +86,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (!ctx) return;
     const md = moveDeltaRef.current;
     const spec = moveSpecRef.current;
-    const doc = modeRef.current === 'move' && md && spec ? buildMove(spec, md).apply(schematic) : schematic;
+    let doc = schematic;
+    if (modeRef.current === 'move' && md && spec) {
+      doc = buildMove(spec, md).apply(schematic);
+    } else if (activeTool === 'placeSymbol' && placeLib && cursorRef.current) {
+      // Ghost: show the symbol attached to the cursor before it is placed.
+      doc = placeSymbol(placeLib, snap(cursorRef.current)).apply(schematic);
+    }
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection);
 
     // Wire preview segment.
@@ -101,7 +109,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, buildMove, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, buildMove, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -195,6 +203,11 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       return;
     }
 
+    if (activeTool === 'placeSymbol') {
+      if (placeLib) onCommand(placeSymbol(placeLib, snap(world))); // stays active to place more
+      return;
+    }
+
     if (activeTool !== 'select') return; // other tools not yet implemented
 
     // select / move
@@ -215,7 +228,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
     }
-  }, [activeTool, lineMode, schematic, libById, selection, onSelect, onCommand, commitWireSegment, draw]);
+  }, [activeTool, lineMode, placeLib, schematic, libById, selection, onSelect, onCommand, commitWireSegment, draw]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -226,6 +239,10 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
     if (activeTool === 'drawWire') {
       if (wireAnchorRef.current) draw();
+      return;
+    }
+    if (activeTool === 'placeSymbol') {
+      if (placeLib) draw(); // update the attached ghost
       return;
     }
     if (modeRef.current === 'move' && moveStartRef.current) {
@@ -242,7 +259,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       draw();
     }
-  }, [activeTool, draw, onCursorMove]);
+  }, [activeTool, placeLib, draw, onCursorMove]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (activeTool !== 'select') return;

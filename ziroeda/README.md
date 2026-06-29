@@ -101,8 +101,8 @@ pnpm -C packages/core typecheck
 3. **Read-only viewer** — render a real `.kicad_sch` faithfully on a canvas. ✅
 4. **Selection + move + command bus** — click/box hit-testing, undo/redo. ✅
 5. **Draw wire + delete** — wire tool with junction auto-creation; add/delete commands. ✅
-6. **Place symbol** — symbol placement from a library. ← _next_
-7. **Save** — byte-faithful write-back, verified against KiCad's own output.
+6. **Place symbol** — placement from a bundled subset of KiCad's symbol libraries. ✅
+7. **Save** — byte-faithful write-back, verified against KiCad's own output. ← _next_
 
 Connectivity (the net-building "connection graph"), ERC, netlist export, and the
 other tools (pcbnew, gerbview, …) follow once the schematic editor is solid.

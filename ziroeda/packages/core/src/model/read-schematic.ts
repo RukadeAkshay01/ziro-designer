@@ -296,6 +296,15 @@ const LINE_KINDS: Record<string, LineKind> = {
 };
 
 /** Build a typed Schematic from a parsed `(kicad_sch ...)` root list. */
+/**
+ * Read a symbol library: the `(symbol ...)` definitions inside a standalone
+ * `(kicad_symbol_lib ...)` file (or a schematic's `(lib_symbols ...)` block).
+ * These use the same definition format as embedded library symbols.
+ */
+export function readSymbolLib(root: SList): LibSymbol[] {
+  return childrenNamed(root, 'symbol').map(readLibSymbol);
+}
+
 export function readSchematic(root: SList): Schematic {
   if (head(root) !== 'kicad_sch') {
     throw new Error(`Expected a (kicad_sch ...) root, got (${head(root) ?? '?'} ...)`);

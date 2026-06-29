@@ -7,8 +7,9 @@
  * tee or a 3+-way meeting, not where two wires merely cross or simply continue.
  */
 
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, Vec2 } from '../model/types.js';
+import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, LibSymbol, Vec2 } from '../model/types.js';
 import { refId } from './hittest.js';
+import { makeSymbol } from './build.js';
 import type { EditCommand } from './command.js';
 
 /** A batch of items to add or restore, grouped by kind. */
@@ -72,6 +73,50 @@ export function deleteByIds(ids: ReadonlySet<string>): EditCommand {
     },
     invert(before: Schematic): EditCommand {
       return addItems(collectByIds(before, ids));
+    },
+  };
+}
+
+/**
+ * Place a symbol from a library definition at `at`. Adds the placed instance and,
+ * if not already present, embeds the library definition in the schematic's
+ * `lib_symbols` cache (as KiCad does). Undo removes the instance and the def if it
+ * was newly added.
+ */
+export function placeSymbol(lib: LibSymbol, at: Vec2): EditCommand {
+  return placeCmd(lib, makeSymbol(lib, at));
+}
+
+function placeCmd(lib: LibSymbol, sym: SchSymbol): EditCommand {
+  return {
+    label: 'Place symbol',
+    apply(doc: Schematic): Schematic {
+      const hasLib = doc.libSymbols.some((l) => l.libId === lib.libId);
+      return {
+        ...doc,
+        libSymbols: hasLib ? doc.libSymbols : [...doc.libSymbols, lib],
+        symbols: [...doc.symbols, sym],
+      };
+    },
+    invert(before: Schematic): EditCommand {
+      const hadLib = before.libSymbols.some((l) => l.libId === lib.libId);
+      return removeSymbolCmd(lib, sym, hadLib);
+    },
+  };
+}
+
+function removeSymbolCmd(lib: LibSymbol, sym: SchSymbol, keepLib: boolean): EditCommand {
+  return {
+    label: 'Delete symbol',
+    apply(doc: Schematic): Schematic {
+      return {
+        ...doc,
+        symbols: doc.symbols.filter((s) => s.uuid !== sym.uuid),
+        libSymbols: keepLib ? doc.libSymbols : doc.libSymbols.filter((l) => l.libId !== lib.libId),
+      };
+    },
+    invert(): EditCommand {
+      return placeCmd(lib, sym);
     },
   };
 }

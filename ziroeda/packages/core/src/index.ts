@@ -41,8 +41,10 @@ export {
   addItems,
   deleteByIds,
   needsJunction,
+  placeSymbol,
   makeWire,
   makeJunction,
+  makeSymbol,
 } from './edit/index.js';
 
 export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';

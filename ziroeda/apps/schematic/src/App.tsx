@@ -3,6 +3,7 @@ import { parse, readSchematic, iuToMM, deleteByIds, History, type Schematic, typ
 import { SchematicCanvas, type CanvasController, type LineMode } from './components/SchematicCanvas.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR, MENUS } from './ui/toolbars.js';
+import { SYMBOL_LIBRARY } from './symbols/index.js';
 import './ui/shell.css';
 import sampleText from './sample.kicad_sch?raw';
 
@@ -30,6 +31,7 @@ export function App(): JSX.Element {
   const history = useRef(new History());
   const controller = useRef<CanvasController>(null);
   const [activeTool, setActiveTool] = useState('select');
+  const [placeLib, setPlaceLib] = useState<LibSymbol | null>(null);
   const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [cursor, setCursor] = useState<Vec2 | null>(null);
   const [scale, setScale] = useState(1);
@@ -89,7 +91,8 @@ export function App(): JSX.Element {
         e.preventDefault();
         redo();
       } else if (e.key === 'Escape') {
-        setSelection(new Set());
+        if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
+        else setSelection(new Set());
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size > 0) {
         e.preventDefault();
         runCommand(deleteByIds(selection));
@@ -98,7 +101,7 @@ export function App(): JSX.Element {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, selection, runCommand]);
+  }, [undo, redo, selection, runCommand, activeTool]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
   const fmt = (iu: number): string => {
@@ -125,7 +128,22 @@ export function App(): JSX.Element {
       <div className="ze-body">
         <Toolbar entries={LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
 
-        {toggles.has('showHierarchy') && (
+        {activeTool === 'placeSymbol' ? (
+          <div className="ze-panel left">
+            <div className="ze-panel-header">Choose a Symbol</div>
+            <div className="ze-panel-body">
+              {SYMBOL_LIBRARY.map((lib) => (
+                <div
+                  key={lib.libId}
+                  className={`ze-tree-item${placeLib?.libId === lib.libId ? ' active' : ''}`}
+                  onClick={() => setPlaceLib(lib)}
+                >
+                  {lib.libId}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : toggles.has('showHierarchy') && (
           <div className="ze-panel left">
             <div className="ze-panel-header">Schematic Hierarchy</div>
             <div className="ze-panel-body"><div className="ze-tree-item active">📄 {title}</div></div>
@@ -140,6 +158,7 @@ export function App(): JSX.Element {
             selection={selection}
             activeTool={activeTool}
             lineMode={lineMode}
+            placeLib={placeLib}
             onSelect={onSelect}
             onCommand={runCommand}
             onCursorMove={setCursor}
@@ -171,7 +190,9 @@ export function App(): JSX.Element {
         <span className="cell">{units}</span>
         <span className="cell">Z {Number.isFinite(zoomPct) ? zoomPct : 100}%</span>
         <span className="cell grow">
-          {activeTool === 'drawWire'
+          {activeTool === 'placeSymbol'
+            ? (placeLib ? `Place ${placeLib.libId} — click to place, Esc to stop` : 'Pick a symbol from the panel on the left')
+            : activeTool === 'drawWire'
             ? 'Draw wire — click to add segments, double-click or Esc to finish'
             : activeTool === 'delete'
               ? 'Delete tool — click an item to delete it'
