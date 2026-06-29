@@ -138,3 +138,25 @@
   white-space: nowrap;
 }
 .ze-statusbar .cell.grow { flex: 1; border-right: none; }
+
+/* ---- Project manager (home) ---- */
+.ze-home-body { flex: 1; display: flex; min-height: 0; }
+.ze-launchers { flex: 1; overflow: auto; padding: 18px 22px; background: #fff; }
+.ze-project-title { font-size: 15px; font-weight: 600; margin: 0 0 14px; color: #333; }
+.ze-launcher {
+  display: flex; align-items: center; gap: 16px;
+  width: 100%; max-width: 720px;
+  padding: 12px 16px; margin-bottom: 10px;
+  border: 1px solid var(--chrome-border); border-radius: 6px;
+  background: #fafafa; cursor: pointer; text-align: left;
+  color: var(--chrome-fg); font: inherit;
+}
+.ze-launcher:hover:not(:disabled) { background: var(--chrome-hover); border-color: var(--chrome-active-border); }
+.ze-launcher:disabled { opacity: 0.5; cursor: default; }
+.ze-launcher .ico { flex: 0 0 auto; color: #b14b22; display: flex; }
+.ze-launcher .txt { display: flex; flex-direction: column; }
+.ze-launcher .name { font-weight: 600; font-size: 14px; }
+.ze-launcher .desc { color: #666; font-size: 12px; margin-top: 2px; }
+.ze-launcher .soon { margin-left: auto; font-size: 11px; color: #999; align-self: center; }
+.ze-home-link { padding: 0 10px; display: flex; align-items: center; cursor: pointer; font-weight: 600; }
+.ze-home-link:hover { background: var(--chrome-hover); }

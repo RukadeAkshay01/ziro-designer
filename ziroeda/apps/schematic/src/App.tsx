@@ -4,8 +4,11 @@ import { SchematicCanvas, type CanvasController, type LineMode } from './compone
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR, MENUS } from './ui/toolbars.js';
 import { SYMBOL_LIBRARY } from './symbols/index.js';
+import { HomePage } from './HomePage.js';
 import './ui/shell.css';
 import sampleText from './sample.kicad_sch?raw';
+
+const PROJECT_NAME = 'RoyalBlue54L-NFC-Antenna';
 
 const RADIO_GROUPS: string[][] = [
   ['unitsInches', 'unitsMils', 'unitsMm'],
@@ -15,7 +18,7 @@ const RADIO_GROUPS: string[][] = [
 const DEFAULT_TOGGLES = new Set(['toggleGrid', 'unitsMm', 'crosshairFull', 'lineMode90', 'showHierarchy', 'showProperties']);
 const PX_PER_MM_100 = 3.7795;
 
-export function App(): JSX.Element {
+function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const initial = useMemo<Schematic | null>(() => {
     try {
@@ -138,6 +141,7 @@ export function App(): JSX.Element {
   return (
     <div className="ze-app">
       <div className="ze-menubar">
+        <div className="ze-home-link" onClick={onExitToHome} title="Back to project manager">⌂ ZiroEDA</div>
         {MENUS.map((m) => <div key={m} className="ze-menu">{m}</div>)}
       </div>
 
@@ -223,5 +227,15 @@ export function App(): JSX.Element {
         </span>
       </div>
     </div>
+  );
+}
+
+/** Top-level app: the KiCad-style project manager, then the schematic editor. */
+export function App(): JSX.Element {
+  const [view, setView] = useState<'home' | 'schematic'>('home');
+  return view === 'home' ? (
+    <HomePage projectName={PROJECT_NAME} onOpenSchematic={() => setView('schematic')} />
+  ) : (
+    <SchematicEditor onExitToHome={() => setView('home')} />
   );
 }
