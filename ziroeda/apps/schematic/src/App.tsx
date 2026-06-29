@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, iuToMM, moveWithConnections, deleteByIds, History, type Schematic, type LibSymbol, type MoveSpec, type EditCommand, type Vec2 } from '@ziroeda/core';
+import { parse, readSchematic, iuToMM, deleteByIds, History, type Schematic, type LibSymbol, type EditCommand, type Vec2 } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController, type LineMode } from './components/SchematicCanvas.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR, MENUS } from './ui/toolbars.js';
@@ -54,10 +54,6 @@ export function App(): JSX.Element {
 
   const runCommand = useCallback((cmd: EditCommand) => {
     setDoc((d) => (d ? history.current.execute(d, cmd) : d));
-  }, []);
-
-  const onMove = useCallback((spec: MoveSpec, delta: Vec2) => {
-    setDoc((d) => (d ? history.current.execute(d, moveWithConnections(spec, delta)) : d));
   }, []);
 
   const undo = useCallback(() => setDoc((d) => (d ? history.current.undo(d) ?? d : d)), []);
@@ -145,7 +141,6 @@ export function App(): JSX.Element {
             activeTool={activeTool}
             lineMode={lineMode}
             onSelect={onSelect}
-            onMove={onMove}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}

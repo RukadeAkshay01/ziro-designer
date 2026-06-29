@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
 import {
-  hitTest, planMove, moveWithConnections, addItems, deleteByIds, makeWire, makeJunction, needsJunction,
+  hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, makeWire, makeJunction, needsJunction,
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2,
 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
@@ -39,7 +39,6 @@ interface Props {
   activeTool: string;
   lineMode: LineMode;
   onSelect: (id: string | null, additive: boolean) => void;
-  onMove: (spec: MoveSpec, delta: Vec2) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
@@ -48,7 +47,7 @@ interface Props {
 type Mode = 'idle' | 'pan' | 'move';
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, onSelect, onMove, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, onSelect, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -69,6 +68,14 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
   const dpr = () => window.devicePixelRatio || 1;
 
+  // In H/V line mode, moves keep connected wires orthogonal (adding 90° bends);
+  // in free/45 mode the connected wire simply stretches.
+  const buildMove = useCallback(
+    (spec: MoveSpec, delta: Vec2): EditCommand =>
+      lineMode === '90' ? orthoMove(schematic, spec, delta) : moveWithConnections(spec, delta),
+    [schematic, lineMode],
+  );
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const vp = viewportRef.current;
@@ -77,7 +84,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (!ctx) return;
     const md = moveDeltaRef.current;
     const spec = moveSpecRef.current;
-    const doc = modeRef.current === 'move' && md && spec ? moveWithConnections(spec, md).apply(schematic) : schematic;
+    const doc = modeRef.current === 'move' && md && spec ? buildMove(spec, md).apply(schematic) : schematic;
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection);
 
     // Wire preview segment.
@@ -94,7 +101,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, buildMove, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -244,7 +251,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (modeRef.current === 'move') {
       const d = moveDeltaRef.current;
       const spec = moveSpecRef.current;
-      if (d && spec && (d.x !== 0 || d.y !== 0)) { onMove(spec, d); committedMove = true; }
+      if (d && spec && (d.x !== 0 || d.y !== 0)) { onCommand(buildMove(spec, d)); committedMove = true; }
     } else if (modeRef.current === 'pan' && !panMovedRef.current) {
       onSelect(null, e.shiftKey);
     }
@@ -254,7 +261,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     moveSpecRef.current = null;
     panLastRef.current = null;
     if (!committedMove) draw();
-  }, [activeTool, onMove, onSelect, draw]);
+  }, [activeTool, onCommand, buildMove, onSelect, draw]);
 
   const onDoubleClick = useCallback(() => {
     if (activeTool === 'drawWire') { wireAnchorRef.current = null; draw(); }

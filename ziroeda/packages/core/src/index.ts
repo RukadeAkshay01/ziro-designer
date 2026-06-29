@@ -37,6 +37,7 @@ export {
   planMove,
   moveItems,
   moveWithConnections,
+  orthoMove,
   addItems,
   deleteByIds,
   needsJunction,

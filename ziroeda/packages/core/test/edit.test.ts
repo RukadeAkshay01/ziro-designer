@@ -120,3 +120,40 @@ describe('connection-aware move (rubber-banding)', () => {
     expect(moved.symbols[0]!.at).toEqual({ x: sch.symbols[0]!.at.x + delta.x, y: sch.symbols[0]!.at.y + delta.y });
   });
 });
+
+describe('orthogonal move (keeps wires orthogonal with a bend)', () => {
+  it('slides a vertical wire along its axis and adds a horizontal bend', async () => {
+    const { orthoMove } = await import('../src/edit/ortho.js');
+    const { sch, libById } = load();
+    // The fixture wire is vertical (x=161.29 from y=109.22 to 111.76); its end
+    // (161.29,111.76) connects to J1 pin 1. Move J1 by (Δx, Δy).
+    const ids = new Set(['d5224ac6-3b29-4f27-99e0-c4e878a39680']); // J1
+    const spec = planMove(sch, libById, ids);
+    const delta = { x: mmToIU(2.54), y: mmToIU(-1.27) };
+    const moved = orthoMove(sch, spec, delta).apply(sch);
+
+    const wire = moved.lines[0]!;
+    // Vertical wire: its dragged end slid only in Y (stays vertical), keeping x.
+    expect(wire.start).toEqual(sch.lines[0]!.start); // fixed end unchanged
+    expect(wire.end).toEqual({ x: sch.lines[0]!.end.x, y: sch.lines[0]!.end.y + delta.y });
+    // A bend wire was added connecting the corner to the moved pin.
+    expect(moved.lines.length).toBe(sch.lines.length + 1);
+    const bend = moved.lines.at(-1)!;
+    expect(bend.start).toEqual({ x: sch.lines[0]!.end.x, y: sch.lines[0]!.end.y + delta.y });
+    expect(bend.end).toEqual({ x: sch.lines[0]!.end.x + delta.x, y: sch.lines[0]!.end.y + delta.y });
+  });
+
+  it('undoes an orthogonal move exactly (removes the bend, reverses)', async () => {
+    const { orthoMove } = await import('../src/edit/ortho.js');
+    const { sch, libById } = load();
+    const ids = new Set(['d5224ac6-3b29-4f27-99e0-c4e878a39680']);
+    const spec = planMove(sch, libById, ids);
+    const history = new History();
+    const cmd = orthoMove(sch, spec, { x: mmToIU(2.54), y: mmToIU(-1.27) });
+    const moved = history.execute(sch, cmd);
+    const undone = history.undo(moved)!;
+    expect(undone.lines.length).toBe(sch.lines.length);
+    expect(undone.lines[0]!.end).toEqual(sch.lines[0]!.end);
+    expect(undone.symbols[0]!.at).toEqual(sch.symbols[0]!.at);
+  });
+});
