@@ -55,12 +55,21 @@ ziroeda/
 
 ### `@ziroeda/core`
 
-Today this contains the **lossless S-expression layer** — the parser/serializer
-for KiCad-format files. "Lossless" is a hard requirement: it preserves every
-node (including fields ZiroEDA does not yet model) and the exact source text of
-numeric atoms, so saving a file never silently corrupts data the user cares
-about. Correctness is enforced by a round-trip test against a real KiCad
-schematic (`parse ∘ serialize ∘ parse` is identity over the AST).
+Two layers, both grounded in KiCad's own implementation:
+
+- **Lossless S-expression layer** — the parser/serializer for KiCad-format files.
+  "Lossless" is a hard requirement: it preserves every node (including fields
+  ZiroEDA does not yet model) and the exact source text of numeric atoms, so
+  saving a file never silently corrupts data the user cares about. Correctness is
+  enforced by a round-trip test against a real KiCad schematic
+  (`parse ∘ serialize ∘ parse` is identity over the AST).
+
+- **Typed schematic model** — a typed view over that AST (symbols, pins, wires,
+  labels, junctions, library symbols), mirroring KiCad's `SCH_*` / `LIB_SYMBOL`
+  classes and the fields its `kicad_sexpr` parser reads. Coordinates are integer
+  internal units (100 nm), exactly as KiCad stores them — not float millimetres —
+  so geometry and equality stay exact. Every modelled item keeps its source AST
+  node, so unmodified items still round-trip byte-for-byte.
 
 ```bash
 pnpm install
@@ -70,8 +79,8 @@ pnpm -C packages/core typecheck
 
 ## Roadmap (schematic capture first)
 
-1. **Lossless file I/O** — S-expression parser/serializer. ← _in progress_
-2. **Typed document model** — symbols, pins, wires, labels, junctions, sheets.
+1. **Lossless file I/O** — S-expression parser/serializer. ✅
+2. **Typed document model** — symbols, pins, wires, labels, junctions. ← _in progress_
 3. **Read-only viewer** — render a real `.kicad_sch` faithfully on a canvas.
 4. **Selection + move** — introduces the command bus and undo/redo.
 5. **Place + wire** — symbol placement from a library; wiring with junctions.
