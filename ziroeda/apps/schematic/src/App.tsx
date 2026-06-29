@@ -185,7 +185,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
                 <div className="ze-muted">{selection.size === 0 ? 'No objects selected' : `${selection.size} item(s) selected`}</div>
               </div>
             </div>
-            <div className="ze-panel">
+            <div className="ze-panel grow">
               <div className="ze-panel-header">Schematic Hierarchy</div>
               <div className="ze-panel-body"><div className="ze-tree-item active">📄 {title} (page 1)</div></div>
             </div>
