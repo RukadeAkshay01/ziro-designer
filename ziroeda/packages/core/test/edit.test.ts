@@ -6,7 +6,8 @@ import { readSchematic } from '../src/model/index.js';
 import { mmToIU } from '../src/units.js';
 import { hitTest } from '../src/edit/hittest.js';
 import { History } from '../src/edit/command.js';
-import { moveItems } from '../src/edit/move.js';
+import { moveItems, moveWithConnections } from '../src/edit/move.js';
+import { planMove, symbolPinPositions } from '../src/edit/connect.js';
 import { symbolBodyBBox } from '../src/edit/bbox.js';
 import type { LibSymbol, Schematic } from '../src/model/types.js';
 
@@ -87,5 +88,35 @@ describe('move command + history (undo/redo)', () => {
     const moved = history.execute(sch, moveItems(new Set(['nonexistent']), { x: 1000, y: 1000 }));
     expect(moved.symbols[0]!.at).toEqual(sch.symbols[0]!.at);
     expect(moved.lines[0]!.start).toEqual(sch.lines[0]!.start);
+  });
+});
+
+describe('connection-aware move (rubber-banding)', () => {
+  it('computes a symbol pin position that coincides with the wire end', () => {
+    const { sch, libById } = load();
+    const pins = symbolPinPositions(sch.symbols[0]!, libById.get(sch.symbols[0]!.libId));
+    const wireEnd = sch.lines[0]!.end; // (161.29, 111.76) = pin 1
+    expect(pins.some((p) => p.x === wireEnd.x && p.y === wireEnd.y)).toBe(true);
+  });
+
+  it('drags the connected wire endpoint with the symbol, keeping the far end fixed', () => {
+    const { sch, libById } = load();
+    const ids = new Set(['d5224ac6-3b29-4f27-99e0-c4e878a39680']); // J1
+    const spec = planMove(sch, libById, ids);
+
+    // The wire's end (touching pin 1) should be flagged to drag; its start should not.
+    const wireId = sch.lines[0]!.uuid!;
+    expect(spec.wireEnd.has(wireId)).toBe(true);
+    expect(spec.wireStart.has(wireId)).toBe(false);
+
+    const delta = { x: mmToIU(2.54), y: mmToIU(-1.27) };
+    const moved = moveWithConnections(spec, delta).apply(sch);
+
+    const before = sch.lines[0]!;
+    // End moved with the symbol; start stayed put — the wire stayed connected.
+    expect(moved.lines[0]!.end).toEqual({ x: before.end.x + delta.x, y: before.end.y + delta.y });
+    expect(moved.lines[0]!.start).toEqual(before.start);
+    // And the symbol moved too.
+    expect(moved.symbols[0]!.at).toEqual({ x: sch.symbols[0]!.at.x + delta.x, y: sch.symbols[0]!.at.y + delta.y });
   });
 });

@@ -27,11 +27,15 @@ export {
   type ItemRef,
   type BBox,
   type EditCommand,
+  type MoveSpec,
   History,
   hitTest,
   refId,
   symbolBodyBBox,
+  symbolPinPositions,
+  planMove,
   moveItems,
+  moveWithConnections,
 } from './edit/index.js';
 
 export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';

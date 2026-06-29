@@ -9,6 +9,7 @@
 
 import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, Vec2 } from '../model/types.js';
 import { refId } from './hittest.js';
+import type { MoveSpec } from './connect.js';
 import type { EditCommand } from './command.js';
 
 const add = (p: Vec2, d: Vec2): Vec2 => ({ x: p.x + d.x, y: p.y + d.y });
@@ -40,6 +41,37 @@ export function moveItems(ids: ReadonlySet<string>, delta: Vec2): EditCommand {
     },
     invert(): EditCommand {
       return moveItems(ids, { x: -delta.x, y: -delta.y });
+    },
+  };
+}
+
+/**
+ * Connection-aware move: moves `spec.fullIds` entirely and drags the coincident
+ * endpoints of connected wires (`spec.wireStart` / `spec.wireEnd`) so wires stay
+ * attached. The inverse negates the delta with the same plan, so undo is exact.
+ */
+export function moveWithConnections(spec: MoveSpec, delta: Vec2): EditCommand {
+  return {
+    label: 'Move',
+    apply(doc: Schematic): Schematic {
+      if (delta.x === 0 && delta.y === 0) return doc;
+      return {
+        ...doc,
+        symbols: doc.symbols.map((s, i) => (spec.fullIds.has(refId('symbol', s.uuid, i)) ? moveSymbol(s, delta) : s)),
+        junctions: doc.junctions.map((j, i) => (spec.fullIds.has(refId('junction', j.uuid, i)) ? moveJunction(j, delta) : j)),
+        labels: doc.labels.map((l, i) => (spec.fullIds.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l)),
+        lines: doc.lines.map((l, i) => {
+          const id = refId('line', l.uuid, i);
+          if (spec.fullIds.has(id)) return moveLine(l, delta);
+          const ms = spec.wireStart.has(id);
+          const me = spec.wireEnd.has(id);
+          if (!ms && !me) return l;
+          return { ...l, start: ms ? add(l.start, delta) : l.start, end: me ? add(l.end, delta) : l.end };
+        }),
+      };
+    },
+    invert(): EditCommand {
+      return moveWithConnections(spec, { x: -delta.x, y: -delta.y });
     },
   };
 }

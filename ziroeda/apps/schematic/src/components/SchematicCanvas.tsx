@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react';
-import { hitTest, moveItems, type Schematic, type LibSymbol, type Vec2 } from '@ziroeda/core';
+import { hitTest, planMove, moveWithConnections, type MoveSpec, type Schematic, type LibSymbol, type Vec2 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
 import { KICAD_CLASSIC } from '../theme.js';
 
@@ -16,7 +16,7 @@ interface Props {
   libById: Map<string, LibSymbol>;
   selection: ReadonlySet<string>;
   onSelect: (id: string | null, additive: boolean) => void;
-  onMove: (delta: Vec2) => void;
+  onMove: (spec: MoveSpec, delta: Vec2) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
 }
@@ -37,7 +37,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const panMovedRef = useRef(false);
   const moveStartRef = useRef<Vec2 | null>(null);
   const moveDeltaRef = useRef<Vec2 | null>(null);
-  const moveSelRef = useRef<ReadonlySet<string>>(new Set());
+  const moveSpecRef = useRef<MoveSpec | null>(null);
 
   const dpr = () => window.devicePixelRatio || 1;
 
@@ -48,7 +48,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const md = moveDeltaRef.current;
-    const doc = modeRef.current === 'move' && md ? moveItems(moveSelRef.current, md).apply(schematic) : schematic;
+    const spec = moveSpecRef.current;
+    const doc = modeRef.current === 'move' && md && spec ? moveWithConnections(spec, md).apply(schematic) : schematic;
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection);
     onScaleChange?.(vp.scale);
   }, [schematic, selection, onScaleChange]);
@@ -130,7 +131,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       modeRef.current = 'move';
       moveStartRef.current = world;
       moveDeltaRef.current = { x: 0, y: 0 };
-      moveSelRef.current = effSel;
+      moveSpecRef.current = planMove(schematic, libById, effSel);
     } else {
       modeRef.current = 'pan';
       panLastRef.current = { x: e.clientX, y: e.clientY };
@@ -165,8 +166,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     let committedMove = false;
     if (modeRef.current === 'move') {
       const d = moveDeltaRef.current;
-      if (d && (d.x !== 0 || d.y !== 0)) {
-        onMove(d);
+      const spec = moveSpecRef.current;
+      if (d && spec && (d.x !== 0 || d.y !== 0)) {
+        onMove(spec, d);
         committedMove = true; // keep the last preview frame; the new doc redraws in place
       }
     } else if (modeRef.current === 'pan' && !panMovedRef.current) {
@@ -175,6 +177,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     modeRef.current = 'idle';
     moveStartRef.current = null;
     moveDeltaRef.current = null;
+    moveSpecRef.current = null;
     panLastRef.current = null;
     if (!committedMove) draw();
   }, [onMove, onSelect, draw]);

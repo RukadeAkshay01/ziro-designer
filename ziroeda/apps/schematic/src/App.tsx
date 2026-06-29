@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, iuToMM, moveItems, History, type Schematic, type LibSymbol, type Vec2 } from '@ziroeda/core';
+import { parse, readSchematic, iuToMM, moveWithConnections, History, type Schematic, type LibSymbol, type MoveSpec, type Vec2 } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController } from './components/SchematicCanvas.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR, MENUS } from './ui/toolbars.js';
@@ -52,9 +52,9 @@ export function App(): JSX.Element {
     });
   }, []);
 
-  const onMove = useCallback((delta: Vec2) => {
-    setDoc((d) => (d ? history.current.execute(d, moveItems(selection, delta)) : d));
-  }, [selection]);
+  const onMove = useCallback((spec: MoveSpec, delta: Vec2) => {
+    setDoc((d) => (d ? history.current.execute(d, moveWithConnections(spec, delta)) : d));
+  }, []);
 
   const undo = useCallback(() => setDoc((d) => (d ? history.current.undo(d) ?? d : d)), []);
   const redo = useCallback(() => setDoc((d) => (d ? history.current.redo(d) ?? d : d)), []);
