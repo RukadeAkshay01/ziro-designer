@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp } from '@ziroeda/core';
-import { SchematicCanvas, type CanvasController, type LineMode } from './components/SchematicCanvas.js';
+import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape } from '@ziroeda/core';
+import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
+import { LabelDialog } from './components/LabelDialog.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from './ui/toolbars.js';
 import { MenuBar } from './ui/MenuBar.js';
@@ -19,6 +20,14 @@ const RADIO_GROUPS: string[][] = [
 ];
 const DEFAULT_TOGGLES = new Set(['toggleGrid', 'unitsMm', 'crosshairFull', 'lineMode90', 'showHierarchy', 'showProperties']);
 const PX_PER_MM_100 = 3.7795;
+
+// Right-toolbar tool ids that place a text label, mapped to the label kind.
+const LABEL_TOOL_KINDS: Record<string, LabelKind> = {
+  placeLabel: 'label',
+  placeGlobalLabel: 'global_label',
+  placeHierLabel: 'hierarchical_label',
+  placeText: 'text',
+};
 
 // KiCad's Selection Filter categories, laid out in two columns (row-major).
 const FILTER_CATS: [string, string][] = [
@@ -45,6 +54,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
   const controller = useRef<CanvasController>(null);
   const [activeTool, setActiveTool] = useState('select');
   const [placeLib, setPlaceLib] = useState<LibSymbol | null>(null);
+  const [pendingLabel, setPendingLabel] = useState<PendingLabel | null>(null);
   const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [selFilter, setSelFilter] = useState<Set<string>>(new Set(FILTER_CATS.map((c) => c[0])));
   const [cursor, setCursor] = useState<Vec2 | null>(null);
@@ -91,10 +101,11 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
 
   const lineMode: LineMode = toggles.has('lineModeFree') ? 'free' : toggles.has('lineMode45') ? '45' : '90';
 
-  // Selecting a symbol/power placement tool reopens the chooser (clears the attached symbol).
+  // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
   const onToolSelect = useCallback((id: string) => {
     setActiveTool(id);
     if (id === 'placeSymbol' || id === 'placePower') setPlaceLib(null);
+    if (LABEL_TOOL_KINDS[id]) setPendingLabel(null);
   }, []);
 
   const onTopAction = useCallback((id: string) => {
@@ -134,7 +145,8 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
         e.preventDefault();
         redo();
       } else if (e.key === 'Escape') {
-        if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
+        if (pendingLabel) { setPendingLabel(null); setActiveTool('select'); }
+        else if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
         else setSelection(new Set());
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size > 0) {
         e.preventDefault();
@@ -150,7 +162,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, save, selection, runCommand, activeTool, onToolSelect]);
+  }, [undo, redo, save, selection, runCommand, activeTool, onToolSelect, pendingLabel]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
   const fmt = (iu: number): string => {
@@ -225,6 +237,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             activeTool={activeTool}
             lineMode={lineMode}
             placeLib={placeLib}
+            pendingLabel={pendingLabel}
             onSelect={onSelect}
             onCommand={runCommand}
             onCursorMove={setCursor}
@@ -247,6 +260,15 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
 
       {(activeTool === 'placeSymbol' || activeTool === 'placePower') && !placeLib && (
         <SymbolChooser onPick={setPlaceLib} onCancel={() => setActiveTool('select')} powerOnly={activeTool === 'placePower'} />
+      )}
+
+      {/* Label tools: a properties dialog names the label, then it follows the cursor. */}
+      {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && (
+        <LabelDialog
+          kind={LABEL_TOOL_KINDS[activeTool]!}
+          onOk={(text: string, shape: LabelShape) => setPendingLabel({ kind: LABEL_TOOL_KINDS[activeTool]!, text, shape })}
+          onCancel={() => setActiveTool('select')}
+        />
       )}
     </div>
   );

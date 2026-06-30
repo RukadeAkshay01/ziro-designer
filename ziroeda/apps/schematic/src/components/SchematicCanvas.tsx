@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallba
 import {
   hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
   makeWire, makeBus, makeJunction, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
-  type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind,
+  type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
 import { KICAD_CLASSIC } from '../theme.js';
@@ -20,13 +20,12 @@ const LABEL_TOOLS: Record<string, LabelKind> = {
   placeText: 'text',
 };
 
-/** Placeholder shown in the name box, so the label type being placed is clear. */
-const LABEL_PROMPTS: Record<LabelKind, string> = {
-  label: 'Net label…',
-  global_label: 'Global label…',
-  hierarchical_label: 'Hierarchical label…',
-  text: 'Text…',
-};
+/** A label whose name/shape are chosen and which now follows the cursor for placement. */
+export interface PendingLabel {
+  kind: LabelKind;
+  text: string;
+  shape: LabelShape;
+}
 
 /** Constrain `pt` relative to `anchor` per the active line-posture mode. */
 function constrain(anchor: Vec2, pt: Vec2, mode: LineMode): Vec2 {
@@ -56,6 +55,8 @@ interface Props {
   activeTool: string;
   lineMode: LineMode;
   placeLib: LibSymbol | null;
+  /** A named label that follows the cursor until clicked to place (null = none yet). */
+  pendingLabel: PendingLabel | null;
   onSelect: (id: string | null, additive: boolean) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
@@ -65,7 +66,7 @@ interface Props {
 type Mode = 'idle' | 'pan' | 'move';
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, onSelect, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, onSelect, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -85,9 +86,6 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const cursorRef = useRef<Vec2 | null>(null);
   // Orientation applied to the symbol currently being placed (R/X/Y before dropping).
   const placeOrientRef = useRef<Orientation>({ angle: 0 });
-  // In-progress label placement: where it will go and the on-screen input position.
-  const [labelDraft, setLabelDraft] = useState<{ at: Vec2; kind: LabelKind; text: string; screen: { x: number; y: number } } | null>(null);
-  const labelInputRef = useRef<HTMLInputElement>(null);
 
   const dpr = () => window.devicePixelRatio || 1;
 
@@ -114,9 +112,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       // Ghost: show the symbol attached to the cursor (with its current orientation).
       doc = placeSymbol(placeLib, snap(cursorRef.current), placeOrientRef.current).apply(schematic);
     }
-    // Ghost: show the label being placed (with its flag) live as the name is typed.
-    if (labelDraft) {
-      doc = addItems({ labels: [makeLabel(labelDraft.kind, labelDraft.text || '…', labelDraft.at)] }).apply(doc);
+    // Ghost: the named label follows the cursor (with its flag) until clicked to place.
+    if (pendingLabel && cursorRef.current) {
+      doc = addItems({ labels: [makeLabel(pendingLabel.kind, pendingLabel.text, snap(cursorRef.current), { shape: pendingLabel.shape })] }).apply(doc);
     }
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection);
 
@@ -134,7 +132,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, placeLib, labelDraft, buildMove, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, buildMove, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -230,10 +228,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       return;
     }
 
-    const labelKind = LABEL_TOOLS[activeTool];
-    if (labelKind) {
-      const rect = canvasRef.current!.getBoundingClientRect();
-      setLabelDraft({ at: snap(world), kind: labelKind, text: '', screen: { x: e.clientX - rect.left, y: e.clientY - rect.top } });
+    // Label tools: once the name/shape are chosen (pendingLabel), a click drops the
+    // label at the snapped point. It stays attached so the same label can be placed on
+    // several wires; Escape (handled in App) ends the run.
+    if (LABEL_TOOLS[activeTool]) {
+      if (pendingLabel) {
+        onCommand(addItems({ labels: [makeLabel(pendingLabel.kind, pendingLabel.text, snap(world), { shape: pendingLabel.shape })] }));
+      }
       return;
     }
 
@@ -268,7 +269,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
     }
-  }, [activeTool, lineMode, placeLib, schematic, libById, selection, onSelect, onCommand, commitWireSegment, draw]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onCommand, commitWireSegment, draw]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -276,6 +277,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     const world = toWorld(e.clientX, e.clientY);
     cursorRef.current = world;
     onCursorMove?.(world);
+
+    if (pendingLabel) { draw(); return; } // update the attached label ghost
 
     if (activeTool === 'drawWire' || activeTool === 'drawBus') {
       if (wireAnchorRef.current) draw();
@@ -299,7 +302,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       draw();
     }
-  }, [activeTool, placeLib, draw, onCursorMove]);
+  }, [activeTool, placeLib, pendingLabel, draw, onCursorMove]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (activeTool !== 'select') return;
@@ -323,12 +326,6 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const onDoubleClick = useCallback(() => {
     if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); }
   }, [activeTool, draw]);
-
-  const commitLabel = useCallback((text: string) => {
-    const draft = labelDraft;
-    if (draft && text.trim() !== '') onCommand(addItems({ labels: [makeLabel(draft.kind, text.trim(), draft.at)] }));
-    setLabelDraft(null);
-  }, [labelDraft, onCommand]);
 
   // Escape ends an in-progress wire; R/X/Y rotate/mirror (KiCad hotkeys): the
   // attached symbol while placing, otherwise the current selection.
@@ -360,9 +357,6 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     return () => window.removeEventListener('keydown', onKey);
   }, [draw, activeTool, placeLib, selection, onCommand]);
 
-  // Focus the label text box as soon as a label placement starts.
-  useEffect(() => { if (labelDraft) labelInputRef.current?.focus(); }, [labelDraft]);
-
   const cursor = activeTool === 'select' ? 'default' : 'crosshair';
 
   return (
@@ -378,23 +372,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         onContextMenu={(e) => { e.preventDefault(); if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); } }}
         onPointerLeave={() => { cursorRef.current = null; onCursorMove?.(null); }}
       />
-      {labelDraft && (
-        <input
-          ref={labelInputRef}
-          className="ze-label-input"
-          // Sit just below the anchor so the live label ghost (with its flag) stays visible.
-          style={{ position: 'absolute', left: labelDraft.screen.x, top: labelDraft.screen.y + 18 }}
-          placeholder={LABEL_PROMPTS[labelDraft.kind]}
-          autoFocus
-          value={labelDraft.text}
-          onChange={(e) => setLabelDraft((d) => (d ? { ...d, text: e.target.value } : d))}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter') { e.preventDefault(); commitLabel((e.target as HTMLInputElement).value); }
-            else if (e.key === 'Escape') { e.preventDefault(); setLabelDraft(null); }
-          }}
-        />
-      )}
+      {/* Label placement uses a properties dialog (in App) and a cursor-attached ghost. */}
     </div>
   );
 });

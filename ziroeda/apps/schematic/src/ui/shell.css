@@ -265,3 +265,16 @@ html, body { background: var(--chrome-bg2); }
   outline: none;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
+
+/* Label properties dialog */
+.ze-modal.ze-label-dialog { width: 440px; height: auto; }
+.ze-label-dialog-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.ze-label-dialog-body .row { display: flex; align-items: center; gap: 10px; }
+.ze-label-dialog-body .row > span { width: 56px; flex: 0 0 auto; color: #c7c9cc; font-size: 13px; }
+.ze-label-dialog-body .row .ze-search { flex: 1; }
+.ze-select {
+  flex: 1; padding: 5px 8px; font: inherit;
+  background: var(--chrome-bg2); color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border); border-radius: 4px; outline: none;
+}
+.ze-select:focus { border-color: var(--chrome-active-border); }

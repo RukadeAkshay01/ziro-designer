@@ -9,7 +9,7 @@
 
 import { list, atom, str, type SList } from '../sexpr/types.js';
 import { iuToMM } from '../units.js';
-import type { SchLine, SchJunction, SchSymbol, SchField, SchLabel, LabelKind, LibSymbol, Vec2 } from '../model/types.js';
+import type { SchLine, SchJunction, SchSymbol, SchField, SchLabel, LabelKind, LabelShape, LibSymbol, Vec2 } from '../model/types.js';
 import type { Orientation } from '../geom/transform.js';
 
 /** A UUID for a new item. Falls back to a random hex string off-platform. */
@@ -77,19 +77,27 @@ export function makeBus(start: Vec2, end: Vec2): SchLine {
   return { kind: 'bus', start, end, stroke: { width: 0, type: 'default' }, uuid, source: node };
 }
 
+/** Options for a new label: flag shape (global/hier) and text angle (spin). */
+export interface LabelOptions {
+  shape?: LabelShape;
+  angle?: number;
+}
+
 /**
  * Create a net label / free text. Mirrors KiCad's `(label …)`, `(global_label …)`,
  * `(hierarchical_label …)` and `(text …)`. Global/hierarchical labels carry a
  * `(shape …)`; the default is bidirectional, as in KiCad's place-label tool.
  */
-export function makeLabel(kind: LabelKind, text: string, at: Vec2, angle = 0): SchLabel {
+export function makeLabel(kind: LabelKind, text: string, at: Vec2, opts: LabelOptions = {}): SchLabel {
   const uuid = newUuid();
+  const angle = opts.angle ?? 0;
+  const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
+  const shape: LabelShape = opts.shape ?? 'bidirectional';
   const justify = kind === 'label' ? list(atom('justify'), atom('left'), atom('bottom'))
     : list(atom('justify'), atom('left'));
   const effects = list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))), justify);
-  const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
   const items: SList['items'] = [atom(kind), str(text)];
-  if (hasShape) items.push(list(atom('shape'), atom('bidirectional')));
+  if (hasShape) items.push(list(atom('shape'), atom(shape)));
   items.push(
     list(atom('at'), atom(mm(at.x)), atom(mm(at.y)), atom(String(angle))),
     effects,
@@ -100,7 +108,7 @@ export function makeLabel(kind: LabelKind, text: string, at: Vec2, angle = 0): S
     effects: { hidden: false, fontSize: [12700, 12700], justify: kind === 'label' ? ['left', 'bottom'] : ['left'] },
     source: { kind: 'list', items },
   };
-  if (hasShape) label.shape = 'bidirectional';
+  if (hasShape) label.shape = shape;
   return label;
 }
 
