@@ -214,29 +214,56 @@ function readLibSymbol(node: SList): LibSymbol {
   return sym;
 }
 
+/** The geometry + display settings a derived symbol inherits from its parent chain. */
+interface InheritedBase {
+  units: readonly LibSymbolUnit[];
+  isPower: boolean;
+  pinNumbersHidden: boolean;
+  pinNamesHidden: boolean;
+  pinNameOffset: number;
+}
+
 /**
- * Resolve derived symbols, faithful to KiCad: a symbol with `(extends "Parent")`
- * inherits the parent's units (graphics + pins) and power flag, keeping its own
- * properties. Parent and child live in the same library. Resolution follows the
- * chain (a parent may itself be derived).
+ * Resolve derived symbols, faithful to KiCad's `LIB_SYMBOL::Flatten()`: the
+ * flattened symbol is a copy of its *parent*, so a symbol with `(extends "Parent")`
+ * takes the parent's body (units/pins), power flag, and pin name/number visibility
+ * and name offset from the parent chain — keeping only its own text properties
+ * (Reference/Value/Footprint/…). Parent and child live in the same library, and a
+ * parent may itself be derived, so resolution walks the chain to the root.
  */
 function resolveExtends(symbols: LibSymbol[]): LibSymbol[] {
   const byName = new Map<string, LibSymbol>();
   for (const s of symbols) byName.set(s.libId, s);
 
-  const resolveUnits = (s: LibSymbol, seen: Set<string>): { units: readonly LibSymbolUnit[]; isPower: boolean } => {
-    if (!s.extends || seen.has(s.libId)) return { units: s.units, isPower: s.isPower };
+  const ownBase = (s: LibSymbol): InheritedBase => ({
+    units: s.units,
+    isPower: s.isPower,
+    pinNumbersHidden: s.pinNumbersHidden,
+    pinNamesHidden: s.pinNamesHidden,
+    pinNameOffset: s.pinNameOffset,
+  });
+
+  const resolveBase = (s: LibSymbol, seen: Set<string>): InheritedBase => {
+    if (!s.extends || seen.has(s.libId)) return ownBase(s);
     const parent = byName.get(s.extends);
-    if (!parent) return { units: s.units, isPower: s.isPower };
+    if (!parent) return ownBase(s);
     seen.add(s.libId);
-    const r = resolveUnits(parent, seen);
-    return { units: s.units.length ? s.units : r.units, isPower: s.isPower || r.isPower };
+    const r = resolveBase(parent, seen);
+    // Geometry + pin display come from the parent; only power can be additive.
+    return { ...r, isPower: s.isPower || r.isPower };
   };
 
   return symbols.map((s) => {
     if (!s.extends) return s;
-    const r = resolveUnits(s, new Set());
-    return { ...s, units: r.units, isPower: r.isPower };
+    const r = resolveBase(s, new Set());
+    return {
+      ...s,
+      units: r.units,
+      isPower: r.isPower,
+      pinNumbersHidden: r.pinNumbersHidden,
+      pinNamesHidden: r.pinNamesHidden,
+      pinNameOffset: r.pinNameOffset,
+    };
   });
 }
 

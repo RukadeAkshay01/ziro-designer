@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parse } from '../src/sexpr/index.js';
 import { readSymbolLib } from '../src/model/read-schematic.js';
-import { mmToIU } from '../src/units.js';
+import { mmToIU, iuToMM } from '../src/units.js';
 import { History } from '../src/edit/command.js';
 import { placeSymbol } from '../src/edit/mutate.js';
 import { makeSymbol } from '../src/edit/build.js';
@@ -61,5 +61,20 @@ describe('derived symbols (extends)', () => {
     expect(child.units.flatMap((u) => u.pins).length).toBe(1);
     // Own Value property preserved.
     expect(child.properties.find((p) => p.key === 'Value')!.value).toBe('CHILD');
+  });
+
+  it('inherits the parent pin name/number visibility and name offset', () => {
+    // BASE hides pin numbers and names (offset 1.016); CHILD declares neither and must inherit.
+    const text = `(kicad_symbol_lib (version 1) (generator "x")
+      (symbol "BASE" (pin_numbers (hide yes)) (pin_names (offset 1.016) (hide yes))
+        (property "Reference" "D" (at 0 0 0))
+        (symbol "BASE_0_1" (rectangle (start -1 1) (end 1 -1) (stroke (width 0.2)) (fill (type none))))
+        (symbol "BASE_1_1" (pin passive line (at -3 0 0) (length 2) (name "A") (number "1"))))
+      (symbol "CHILD" (extends "BASE") (property "Value" "CHILD" (at 0 -2 0))))`;
+    const libs = readSymbolLib(parse(text));
+    const child = libs.find((l) => l.libId === 'CHILD')!;
+    expect(child.pinNumbersHidden).toBe(true);
+    expect(child.pinNamesHidden).toBe(true);
+    expect(iuToMM(child.pinNameOffset)).toBeCloseTo(1.016, 5);
   });
 });

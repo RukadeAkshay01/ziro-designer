@@ -216,7 +216,7 @@ function drawLibUnit(
         break;
       }
       case 'arc': {
-        drawArc(ctx, localToWorld(origin, t, g.start), localToWorld(origin, t, g.mid), localToWorld(origin, t, g.end));
+        drawArc(ctx, localToWorld(origin, t, g.start), localToWorld(origin, t, g.mid), localToWorld(origin, t, g.end), !!filled);
         break;
       }
       case 'text': {
@@ -229,14 +229,28 @@ function drawLibUnit(
 
   // Pins.
   const NUM = 1.27 * MM, NAME = 1.27 * MM, MARGIN = 0.25 * MM;
+  // External pin decoration radius = number text size / 2 (KiCad externalPinDecoSize).
+  const DECO_R = NUM / 2;
   for (const pin of unit.pins) {
     if (pin.hidden) continue;
     const endLocal = pinBodyEnd(pin.at, pin.angle, pin.length);
-    const a = localToWorld(origin, t, pin.at);
-    const b = localToWorld(origin, t, endLocal);
+    const a = localToWorld(origin, t, pin.at); // connection point (tip)
+    const b = localToWorld(origin, t, endLocal); // body end (root)
     ctx.strokeStyle = theme.pin;
     ctx.lineWidth = DEFAULT_LINE_WIDTH;
-    strokeLine(ctx, a, b);
+
+    // Inverted pins draw a negation bubble at the body end (KiCad GRAPHIC_PINSHAPE).
+    const inverted = pin.shape === 'inverted' || pin.shape === 'inverted_clock';
+    if (inverted && pin.length > 0) {
+      // Unit vector pointing from the body end outward to the tip.
+      const ox = (a.x - b.x) / pin.length, oy = (a.y - b.y) / pin.length;
+      ctx.beginPath();
+      ctx.arc(b.x + ox * DECO_R, b.y + oy * DECO_R, DECO_R, 0, Math.PI * 2);
+      ctx.stroke();
+      strokeLine(ctx, { x: b.x + ox * DECO_R * 2, y: b.y + oy * DECO_R * 2 }, a);
+    } else {
+      strokeLine(ctx, a, b);
+    }
 
     const dir = pinDir(pin.angle);
     const horiz = dir.y === 0;
@@ -282,8 +296,14 @@ function polygon(ctx: CanvasRenderingContext2D, pts: Vec2[], fill: boolean, clos
   ctx.stroke();
 }
 
-/** Draw a circular arc through three points (KiCad stores arcs as start/mid/end). */
-function drawArc(ctx: CanvasRenderingContext2D, start: Vec2, mid: Vec2, end: Vec2): void {
+/**
+ * Draw a circular arc through three points (KiCad stores arcs as start/mid/end).
+ * When `fill` is set, the arc's circular segment is filled (the path is implicitly
+ * closed by the chord for filling but only the arc itself is stroked) — matching
+ * KiCad, where a filled arc combines with its sibling polyline to form e.g. a gate
+ * body, and the shared chord edge is never stroked.
+ */
+function drawArc(ctx: CanvasRenderingContext2D, start: Vec2, mid: Vec2, end: Vec2, fill = false): void {
   const ax = start.x, ay = start.y, bx = mid.x, by = mid.y, cx = end.x, cy = end.y;
   const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
   if (Math.abs(d) < 1e-6) {
@@ -300,6 +320,7 @@ function drawArc(ctx: CanvasRenderingContext2D, start: Vec2, mid: Vec2, end: Vec
   const ccw = !isBetween(a0, aMid, a1);
   ctx.beginPath();
   ctx.arc(ux, uy, r, a0, a1, ccw);
+  if (fill) ctx.fill(); // fills the segment (arc + chord); does not affect the stroked path
   ctx.stroke();
 }
 
@@ -379,7 +400,13 @@ export function renderSymbolPreview(
       else if (g.kind === 'arc') { inc(g.start); inc(g.mid); inc(g.end); }
       else inc(g.at);
     }
-    for (const pin of u.pins) { inc(pin.at); inc(pinBodyEnd(pin.at, pin.angle, pin.length)); }
+    // Hidden pins (e.g. power) sit far from the body; excluding them keeps the
+    // visible symbol from being shrunk to a dot, matching KiCad's preview fit.
+    for (const pin of u.pins) {
+      if (pin.hidden) continue;
+      inc(pin.at);
+      inc(pinBodyEnd(pin.at, pin.angle, pin.length));
+    }
   }
   if (!Number.isFinite(minX)) {
     ctx.fillStyle = '#888';

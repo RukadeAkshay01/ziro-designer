@@ -237,7 +237,11 @@ html, body { background: var(--chrome-bg2); }
 .ze-chooser-tree .top { padding: 8px; border-bottom: 1px solid var(--chrome-border); }
 .ze-chooser-list { flex: 1; overflow: auto; padding: 4px 6px; }
 .ze-chooser-right { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.ze-preview-canvas { flex: 1; min-height: 0; background: #fff; }
+.ze-preview-canvas { flex: 11; min-height: 0; background: #fff; }
+.ze-fp-bar { padding: 5px 12px; font-size: 12px; color: #c7c9cc; background: var(--chrome-active); border-top: 1px solid var(--chrome-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ze-fp-preview { flex: 10; min-height: 0; background: #fff; display: flex; align-items: center; justify-content: center; text-align: center; padding: 8px; border-top: 1px solid var(--chrome-border); }
+.ze-fp-note .fp-name { color: #1f2329; font-weight: 600; font-size: 13px; margin-bottom: 4px; word-break: break-all; }
+.ze-fp-preview .ze-muted { color: #6b7280; font-size: 12px; }
 .ze-preview-info { padding: 8px 12px; border-top: 1px solid var(--chrome-border); font-size: 12px; min-height: 78px; }
 .ze-preview-info .nm { font-weight: 700; font-size: 13px; }
 .ze-preview-info .desc { color: #b6b8bb; margin-top: 3px; }

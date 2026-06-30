@@ -52,16 +52,25 @@ export function SymbolChooser({ onPick, onCancel }: Props): JSX.Element {
   const q = query.trim().toLowerCase();
   const results = useMemo(() => {
     if (!q) return null;
-    const out: [string, string][] = [];
+    // Score matches so exact/prefix hits rank above incidental substrings — e.g. "R"
+    // surfaces Device:R, not 74xGxx:74LVC1GU04DRL. Lower score = better.
+    const scored: { row: [string, string]; score: number }[] = [];
     for (const lib of index) {
       for (const name of lib.symbols) {
-        if (name.toLowerCase().includes(q) || `${lib.name}:${name}`.toLowerCase().includes(q)) {
-          out.push([lib.name, name]);
-          if (out.length >= MAX_RESULTS) return out;
-        }
+        const n = name.toLowerCase();
+        const full = `${lib.name}:${name}`.toLowerCase();
+        let score: number;
+        if (n === q) score = 0;
+        else if (n.startsWith(q)) score = 1;
+        else if (new RegExp(`(^|[_\\s])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(n)) score = 2;
+        else if (n.includes(q)) score = 3;
+        else if (full.includes(q)) score = 4;
+        else continue;
+        scored.push({ row: [lib.name, name], score });
       }
     }
-    return out;
+    scored.sort((a, b) => a.score - b.score || a.row[1].length - b.row[1].length || a.row[1].localeCompare(b.row[1]));
+    return scored.slice(0, MAX_RESULTS).map((s) => s.row);
   }, [q, index]);
 
   const total = index.reduce((n, l) => n + l.count, 0);
@@ -82,8 +91,10 @@ export function SymbolChooser({ onPick, onCancel }: Props): JSX.Element {
     );
   };
 
-  const desc = previewSym?.properties.find((p) => p.key === 'Description')?.value;
-  const keywords = previewSym?.properties.find((p) => p.key === 'ki_keywords')?.value;
+  const prop = (key: string) => previewSym?.properties.find((p) => p.key === key)?.value;
+  const desc = prop('Description');
+  const keywords = prop('ki_keywords');
+  const footprint = prop('Footprint');
 
   return (
     <div className="ze-modal-backdrop" onMouseDown={onCancel}>
@@ -134,7 +145,26 @@ export function SymbolChooser({ onPick, onCancel }: Props): JSX.Element {
             </div>
           </div>
           <div className="ze-chooser-right">
+            {/* Symbol preview (top) — mirrors KiCad's SYMBOL_PREVIEW_WIDGET. */}
             <canvas ref={canvasRef} className="ze-preview-canvas" />
+
+            {/* Footprint selector strip + preview (bottom) — mirrors the FOOTPRINT_SELECT/
+                PREVIEW widgets. Footprint geometry needs the footprint libraries (not bundled),
+                so the pane shows the symbol's assigned footprint by name. */}
+            <div className="ze-fp-bar">{previewSym ? (footprint || '— no default footprint —') : ''}</div>
+            <div className="ze-fp-preview">
+              {previewSym ? (
+                footprint ? (
+                  <div className="ze-fp-note">
+                    <div className="fp-name">{footprint}</div>
+                    <div className="ze-muted">Footprint preview needs the footprint libraries (not loaded).</div>
+                  </div>
+                ) : (
+                  <div className="ze-muted">No footprint assigned to this symbol.</div>
+                )
+              ) : null}
+            </div>
+
             <div className="ze-preview-info">
               {previewSym ? (
                 <>
