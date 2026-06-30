@@ -159,12 +159,17 @@ export interface SchJunction {
 /** Kinds of text label, matching KiCad tokens. */
 export type LabelKind = 'label' | 'global_label' | 'hierarchical_label' | 'text';
 
+/** Flag shape of a global/hierarchical label: its electrical-direction outline. */
+export type LabelShape = 'input' | 'output' | 'bidirectional' | 'tri_state' | 'passive';
+
 /** A net label or free text. Mirrors KiCad `SCH_LABEL` / `SCH_TEXT`. */
 export interface SchLabel {
   readonly kind: LabelKind;
   readonly text: string;
   readonly at: Vec2;
   readonly angle: number;
+  /** `(shape …)` on global/hierarchical labels; selects the flag outline. */
+  readonly shape?: LabelShape;
   readonly effects?: TextEffects;
   readonly uuid?: string;
   readonly source: SList;

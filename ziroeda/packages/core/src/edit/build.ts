@@ -87,14 +87,21 @@ export function makeLabel(kind: LabelKind, text: string, at: Vec2, angle = 0): S
   const justify = kind === 'label' ? list(atom('justify'), atom('left'), atom('bottom'))
     : list(atom('justify'), atom('left'));
   const effects = list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))), justify);
+  const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
   const items: SList['items'] = [atom(kind), str(text)];
-  if (kind === 'global_label' || kind === 'hierarchical_label') items.push(list(atom('shape'), atom('bidirectional')));
+  if (hasShape) items.push(list(atom('shape'), atom('bidirectional')));
   items.push(
     list(atom('at'), atom(mm(at.x)), atom(mm(at.y)), atom(String(angle))),
     effects,
     list(atom('uuid'), str(uuid)),
   );
-  return { kind, text, at, angle, effects: { hidden: false, fontSize: [12700, 12700], justify: kind === 'label' ? ['left', 'bottom'] : ['left'] }, uuid, source: { kind: 'list', items } };
+  const label: { -readonly [K in keyof SchLabel]: SchLabel[K] } = {
+    kind, text, at, angle, uuid,
+    effects: { hidden: false, fontSize: [12700, 12700], justify: kind === 'label' ? ['left', 'bottom'] : ['left'] },
+    source: { kind: 'list', items },
+  };
+  if (hasShape) label.shape = 'bidirectional';
+  return label;
 }
 
 /** Create a new junction model item (with its backing AST node). */

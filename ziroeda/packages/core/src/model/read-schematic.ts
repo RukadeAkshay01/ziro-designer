@@ -334,6 +334,10 @@ function readLabel(node: SList, kind: LabelKind): SchLabel {
     angle,
     source: node,
   };
+  const shape = stringField(node, 'shape');
+  if (shape === 'input' || shape === 'output' || shape === 'bidirectional' || shape === 'tri_state' || shape === 'passive') {
+    label.shape = shape;
+  }
   const effects = readEffects(node);
   if (effects) label.effects = effects;
   const uuid = stringField(node, 'uuid');

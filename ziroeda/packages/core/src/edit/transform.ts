@@ -35,27 +35,25 @@ function rotatePoint(p: Vec2, c: Vec2, cw: boolean): Vec2 {
   return cw ? { x: c.x - dy, y: c.y + dx } : { x: c.x + dy, y: c.y - dx };
 }
 
+/** Apply the same rigid rotation/mirror that moves the body to an arbitrary point. */
+function movePoint(p: Vec2, op: TransformOp, center: Vec2): Vec2 {
+  if (op === 'rotateCW' || op === 'rotateCCW') return rotatePoint(p, center, op === 'rotateCW');
+  if (op === 'mirrorX') return { x: p.x, y: 2 * center.y - p.y }; // flip Y
+  return { x: 2 * center.x - p.x, y: p.y }; // mirrorY: flip X
+}
+
 function transformSymbol(s: SchSymbol, op: TransformOp, center: Vec2): SchSymbol {
-  const prev = s.at;
-  let at: Vec2;
-  let orient: { angle: number; mirror?: 'x' | 'y' };
+  const at = movePoint(s.at, op, center);
+  const orient =
+    op === 'rotateCW' ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, true)
+    : op === 'rotateCCW' ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, false)
+    : op === 'mirrorX' ? mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'x')
+    : mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'y');
 
-  if (op === 'rotateCW' || op === 'rotateCCW') {
-    const cw = op === 'rotateCW';
-    at = rotatePoint(prev, center, cw);
-    orient = rotateOrientation({ angle: s.angle, mirror: s.mirror }, cw);
-  } else if (op === 'mirrorX') {
-    // MirrorVertically: flip Y about the center, advance orientation by MIRROR_X.
-    at = { x: prev.x, y: 2 * center.y - prev.y };
-    orient = mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'x');
-  } else {
-    // mirrorY = MirrorHorizontally: flip X about the center, MIRROR_Y.
-    at = { x: 2 * center.x - prev.x, y: prev.y };
-    orient = mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'y');
-  }
-
-  const d: Vec2 = { x: at.x - prev.x, y: at.y - prev.y };
-  const fields = s.fields.map((f: SchField) => (f.at ? { ...f, at: { x: f.at.x + d.x, y: f.at.y + d.y } } : f));
+  // Move the fields rigidly with the body so the text rotates/mirrors with the
+  // symbol. (KiCad re-runs AutoplaceFields here; that fuller placement is a tracked
+  // follow-up — a rigid move keeps fields attached and readable in the meantime.)
+  const fields = s.fields.map((f: SchField) => (f.at ? { ...f, at: movePoint(f.at, op, center) } : f));
   const next: { -readonly [K in keyof SchSymbol]: SchSymbol[K] } = { ...s, at, angle: orient.angle, fields };
   if (orient.mirror) next.mirror = orient.mirror;
   else delete next.mirror;

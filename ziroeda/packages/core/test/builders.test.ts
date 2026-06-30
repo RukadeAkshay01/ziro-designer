@@ -46,4 +46,12 @@ describe('makeLabel', () => {
     expect(back.labels[0]!.text).toBe('D0');
     expect(back.labels[0]!.at).toEqual(at(12, 8));
   });
+
+  it('carries the flag shape on global/hierarchical labels through read', () => {
+    const g = makeLabel('global_label', 'VCC', at(0, 0));
+    expect(g.shape).toBe('bidirectional');
+    const back = readSchematic(parse(`(kicad_sch (version 1) (lib_symbols) ${serialize(g.source)})`));
+    expect(back.labels[0]!.kind).toBe('global_label');
+    expect(back.labels[0]!.shape).toBe('bidirectional');
+  });
 });

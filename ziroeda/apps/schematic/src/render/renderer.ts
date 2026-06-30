@@ -17,6 +17,7 @@ import {
   type BBox,
   type Transform,
   type Schematic,
+  type SchLabel,
   type LibSymbol,
   type LibSymbolUnit,
   type Vec2,
@@ -113,10 +114,131 @@ export function renderSchematic(
   // Labels and free text.
   for (const l of sch.labels) {
     if (l.effects?.hidden) continue;
-    drawText(ctx, l.text, l.at, l.effects?.fontSize?.[0] ?? 1.27 * MM, theme.label, l.effects?.justify);
+    drawLabel(ctx, l, theme);
   }
 
   if (selection && selection.size > 0) drawSelection(ctx, sch, libById, viewport, selection);
+}
+
+// ----- labels (SCH_LABEL / GLOBALLABEL / HIERLABEL / TEXT) -------------------
+
+// SPIN_STYLE: LEFT=0, UP=1, RIGHT=2, BOTTOM=3 (KiCad spin_style.h).
+const SPIN = { LEFT: 0, UP: 1, RIGHT: 2, BOTTOM: 3 } as const;
+
+/** KiCad SCH_LABEL_BASE::GetSpinStyle(): from text angle + horizontal justify. */
+function labelSpin(angle: number, justify?: readonly string[]): number {
+  const vertical = (((angle % 360) + 360) % 360) % 180 === 90;
+  const right = justify?.includes('right') ?? false;
+  if (vertical) return right ? SPIN.BOTTOM : SPIN.UP;
+  return right ? SPIN.LEFT : SPIN.RIGHT;
+}
+
+// Hierarchical-label flag polygons, transcribed from KiCad's TemplateShape table.
+// Indexed [shape][spin]; each entry is (x,y) multipliers of halfSize (textHeight/2).
+// Shapes: 0 input, 1 output, 2 bidirectional, 3 tri_state, 4 passive(unspecified).
+// Spins:  0 LEFT(HN), 1 UP, 2 RIGHT(HI), 3 BOTTOM.
+const HIER_TEMPLATES: number[][][] = [
+  [ // input
+    [0, 0, -1, -1, -2, -1, -2, 1, -1, 1, 0, 0],
+    [0, 0, 1, -1, 1, -2, -1, -2, -1, -1, 0, 0],
+    [0, 0, 1, 1, 2, 1, 2, -1, 1, -1, 0, 0],
+    [0, 0, 1, 1, 1, 2, -1, 2, -1, 1, 0, 0],
+  ],
+  [ // output
+    [-2, 0, -1, 1, 0, 1, 0, -1, -1, -1, -2, 0],
+    [0, -2, 1, -1, 1, 0, -1, 0, -1, -1, 0, -2],
+    [2, 0, 1, -1, 0, -1, 0, 1, 1, 1, 2, 0],
+    [0, 2, 1, 1, 1, 0, -1, 0, -1, 1, 0, 2],
+  ],
+  [ // bidirectional
+    [0, 0, -1, -1, -2, 0, -1, 1, 0, 0],
+    [0, 0, -1, -1, 0, -2, 1, -1, 0, 0],
+    [0, 0, 1, -1, 2, 0, 1, 1, 0, 0],
+    [0, 0, -1, 1, 0, 2, 1, 1, 0, 0],
+  ],
+  [ // tri_state (same outline as bidirectional)
+    [0, 0, -1, -1, -2, 0, -1, 1, 0, 0],
+    [0, 0, -1, -1, 0, -2, 1, -1, 0, 0],
+    [0, 0, 1, -1, 2, 0, 1, 1, 0, 0],
+    [0, 0, -1, 1, 0, 2, 1, 1, 0, 0],
+  ],
+  [ // passive / unspecified
+    [0, -1, -2, -1, -2, 1, 0, 1, 0, -1],
+    [1, 0, 1, -2, -1, -2, -1, 0, 1, 0],
+    [0, -1, 2, -1, 2, 1, 0, 1, 0, -1],
+    [1, 0, 1, 2, -1, 2, -1, 0, 1, 0],
+  ],
+];
+
+const SHAPE_INDEX: Record<string, number> = { input: 0, output: 1, bidirectional: 2, tri_state: 3, passive: 4 };
+const LABEL_RATIO = 0.375; // KiCad DEFAULT_LABEL_SIZE_RATIO (box expansion)
+
+/** Rotate a point by the spin style, as KiCad's global-label CreateGraphicShape does. */
+function spinRotate(p: Vec2, spin: number): Vec2 {
+  switch (spin) {
+    case SPIN.UP: return { x: p.y, y: -p.x }; // -90°
+    case SPIN.RIGHT: return { x: -p.x, y: -p.y }; // 180°
+    case SPIN.BOTTOM: return { x: -p.y, y: p.x }; // +90°
+    default: return p; // LEFT
+  }
+}
+
+function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme): void {
+  const h = l.effects?.fontSize?.[0] ?? 1.27 * MM;
+  const spin = labelSpin(l.angle, l.effects?.justify);
+  const color = l.kind === 'global_label' ? theme.globalLabel : l.kind === 'hierarchical_label' ? theme.hierLabel : theme.label;
+  const dist = h * 0.26; // ~ text offset + pen, to lift text off the wire
+  // Reading direction unit vector for the spin style (where the text flows).
+  const flow = spin === SPIN.LEFT ? { x: -1, y: 0 } : spin === SPIN.RIGHT ? { x: 1, y: 0 }
+    : spin === SPIN.UP ? { x: 0, y: -1 } : { x: 0, y: 1 };
+
+  ctx.lineWidth = DEFAULT_LINE_WIDTH;
+  ctx.strokeStyle = color;
+
+  if (l.kind === 'hierarchical_label' || l.kind === 'global_label') {
+    const halfSize = h / 2;
+    if (l.kind === 'hierarchical_label') {
+      const tpl = HIER_TEMPLATES[SHAPE_INDEX[l.shape ?? 'input'] ?? 0]![spin]!;
+      const pts: Vec2[] = [];
+      for (let i = 0; i < tpl.length; i += 2) pts.push({ x: l.at.x + halfSize * tpl[i]!, y: l.at.y + halfSize * tpl[i + 1]! });
+      polygon(ctx, pts, false, true);
+      // Text sits just beyond the flag (which spans ~2*halfSize from the anchor).
+      const off = 2 * halfSize + dist;
+      drawText(ctx, l.text, { x: l.at.x + flow.x * off, y: l.at.y + flow.y * off }, h, color, justifyFor(spin));
+    } else {
+      // Global label: 6-point box (margined) with a notch/point per shape, then spin-rotated.
+      const margin = LABEL_RATIO * h;
+      const hs = halfSize + margin;
+      const symbLen = Math.max(1, l.text.length) * h * 0.62 + 2 * margin;
+      const x = symbLen + 3, y = hs + 3;
+      const box: { x: number; y: number }[] = [{ x: 0, y: 0 }, { x: 0, y: -y }, { x: -x, y: -y }, { x: -x, y: 0 }, { x: -x, y }, { x: 0, y }];
+      let xoff = 0;
+      const s = l.shape ?? 'bidirectional';
+      if (s === 'input') { xoff = -hs; box[0]!.x += hs; }
+      else if (s === 'output') { box[3]!.x -= hs; }
+      else if (s === 'bidirectional' || s === 'tri_state') { xoff = -hs; box[0]!.x += hs; box[3]!.x -= hs; }
+      const pts = box.map((p) => { const r = spinRotate({ x: p.x + xoff, y: p.y }, spin); return { x: l.at.x + r.x, y: l.at.y + r.y }; });
+      polygon(ctx, pts, false, true);
+      // Centre the text in the box (box centre is at -symbLen/2 along the reading axis).
+      const c = spinRotate({ x: -x / 2 + xoff, y: 0 }, spin);
+      drawText(ctx, l.text, { x: l.at.x + c.x, y: l.at.y + c.y }, h, color);
+    }
+    return;
+  }
+
+  // Local label / free text: text lifted off the wire, flowing in the reading direction.
+  const perp = spin === SPIN.UP || spin === SPIN.BOTTOM ? { x: -dist, y: 0 } : { x: 0, y: -dist };
+  drawText(ctx, l.text, { x: l.at.x + perp.x, y: l.at.y + perp.y }, h, color, justifyFor(spin));
+}
+
+/** Text justification for a spin style: anchored at the connection point, reading outward. */
+function justifyFor(spin: number): string[] {
+  switch (spin) {
+    case SPIN.LEFT: return ['right'];
+    case SPIN.UP: return ['left'];
+    case SPIN.BOTTOM: return ['right'];
+    default: return ['left']; // RIGHT
+  }
 }
 
 /** Draw a highlight box around each selected item. */
