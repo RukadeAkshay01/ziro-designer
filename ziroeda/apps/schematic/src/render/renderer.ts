@@ -13,6 +13,7 @@ import {
   localToWorld,
   iuToMM,
   refId,
+  danglingPinPositions,
   type Transform,
   type Schematic,
   type SchLabel,
@@ -171,6 +172,32 @@ export function renderSchematic(
     if (l.effects?.hidden) continue;
     drawLabel(ctx, l, theme);
   }
+
+  // Dangling-pin targets: KiCad draws an open circle (TARGET_PIN_RADIUS = 15 mil,
+  // thickness = penWidth/3, in the pin colour Brightened(0.3)) on every pin with no
+  // connection (drawPinDanglingIndicator), so unconnected pins are obvious and can
+  // be clicked to start a wire.
+  const dangling = danglingPinPositions(sch, libById);
+  if (dangling.length > 0) {
+    ctx.strokeStyle = brighten(theme.pin, 0.3);
+    ctx.lineWidth = DEFAULT_LINE_WIDTH / 3;
+    for (const p of dangling) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, TARGET_PIN_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+const TARGET_PIN_RADIUS = 15 * 0.0254 * MM; // 15 mil, KiCad TARGET_PIN_RADIUS
+
+/** KiCad COLOR4D::Brightened(f): move the colour a fraction f toward white. */
+function brighten(hex: string, f: number): string {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return hex;
+  const mix = (c: number) => Math.round(c + (255 - c) * f);
+  const r = mix(parseInt(m[1]!, 16)), g = mix(parseInt(m[2]!, 16)), b = mix(parseInt(m[3]!, 16));
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 // ----- labels (SCH_LABEL / GLOBALLABEL / HIERLABEL / TEXT) -------------------

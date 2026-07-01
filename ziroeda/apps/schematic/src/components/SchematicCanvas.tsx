@@ -2,7 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallba
 import {
   hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
   makeWire, makeBus, makeJunction, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
-  collectAnchors, selectionAnchors, nearestAnchor,
+  collectAnchors, selectionAnchors, nearestAnchor, danglingPinPositions,
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
@@ -63,6 +63,8 @@ interface Props {
   onSelect: (id: string | null, additive: boolean) => void;
   /** Highlight-Net tool: the clicked item whose net to brighten, or null to clear. */
   onHighlight?: (id: string | null) => void;
+  /** Switch the active tool (used to auto-start a wire from a dangling pin). */
+  onRequestTool?: (id: string) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
@@ -71,7 +73,7 @@ interface Props {
 type Mode = 'idle' | 'pan' | 'move';
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,10 +95,21 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   // Wire-drawing state.
   const wireAnchorRef = useRef<Vec2 | null>(null);
   const cursorRef = useRef<Vec2 | null>(null);
+  // A dangling pin the next drawWire activation should start from (auto-start wire).
+  const pendingWireStartRef = useRef<Vec2 | null>(null);
   // Orientation applied to the symbol currently being placed (R/X/Y before dropping).
   const placeOrientRef = useRef<Orientation>({ angle: 0 });
 
   const dpr = () => window.devicePixelRatio || 1;
+
+  // Dangling (unconnected) pins — KiCad's clickable wire-start anchors.
+  const danglingPins = useMemo(() => danglingPinPositions(schematic, libById), [schematic, libById]);
+  /** The dangling pin at/near a world point (within ~8px), or null. */
+  const danglingPinAt = useCallback((world: Vec2): Vec2 | null => {
+    const vp = viewportRef.current;
+    const maxDist = vp && vp.scale > 0 ? 8 / vp.scale : GRID / 2;
+    return nearestAnchor(world, danglingPins, maxDist);
+  }, [danglingPins]);
 
   // Connectable anchors (pins/wire-ends/junctions/labels) for cursor snapping, à la
   // KiCad's BestSnapAnchor with GRID_CONNECTABLE.
@@ -200,8 +213,17 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   useEffect(() => { draw(); }, [selection, draw]);
   // Cancel an in-progress wire and reset the placement orientation only when the
   // tool actually changes (not on every schematic update, which would break the
-  // multi-segment wire chain).
-  useEffect(() => { wireAnchorRef.current = null; placeOrientRef.current = { angle: 0 }; }, [activeTool]);
+  // multi-segment wire chain). When drawWire was just auto-started from a dangling
+  // pin, seed the wire's first anchor with that pin instead of clearing it.
+  useEffect(() => {
+    if (activeTool === 'drawWire' && pendingWireStartRef.current) {
+      wireAnchorRef.current = pendingWireStartRef.current;
+      pendingWireStartRef.current = null;
+    } else {
+      wireAnchorRef.current = null;
+    }
+    placeOrientRef.current = { angle: 0 };
+  }, [activeTool]);
 
   const toWorld = (clientX: number, clientY: number): Vec2 => {
     const canvas = canvasRef.current!;
@@ -285,6 +307,15 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
     if (activeTool !== 'select') return; // other tools not yet implemented
 
+    // Auto-start a wire when clicking a dangling pin (KiCad's autostartEvent /
+    // auto_start_wires): switch to the wire tool with this pin as the first anchor.
+    const pin = danglingPinAt(world);
+    if (pin && !e.shiftKey) {
+      pendingWireStartRef.current = pin;
+      onRequestTool?.('drawWire');
+      return;
+    }
+
     // select / move
     (e.target as Element).setPointerCapture(e.pointerId);
     const hit = hitTest(schematic, libById, world, (6 * dpr()) / vp.scale);
@@ -305,7 +336,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
     }
-  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onHighlight, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onHighlight, onRequestTool, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -313,6 +344,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     const world = toWorld(e.clientX, e.clientY);
     cursorRef.current = world;
     onCursorMove?.(world);
+
+    // Over a dangling pin with the select tool: show the wire cursor (KiCad switches
+    // the cursor to LINE_WIRE to signal that clicking will start a wire).
+    const canvas = canvasRef.current;
+    if (canvas && activeTool === 'select' && modeRef.current === 'idle')
+      canvas.style.cursor = danglingPinAt(world) ? 'crosshair' : 'default';
 
     if (pendingLabel) { draw(); return; } // update the attached label ghost
 
@@ -352,7 +389,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       draw();
     }
-  }, [activeTool, placeLib, pendingLabel, draw, onCursorMove]);
+  }, [activeTool, placeLib, pendingLabel, danglingPinAt, draw, onCursorMove]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     if (activeTool !== 'select') return;

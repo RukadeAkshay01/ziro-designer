@@ -71,6 +71,6 @@ export {
 } from './edit/index.js';
 
 export * as connectivity from './connectivity/index.js';
-export { computeNetlist, type Net, type Netlist } from './connectivity/index.js';
+export { computeNetlist, danglingPinPositions, allPinPositions, type Net, type Netlist } from './connectivity/index.js';
 
 export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';

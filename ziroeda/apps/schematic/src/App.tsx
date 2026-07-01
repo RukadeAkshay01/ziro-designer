@@ -275,6 +275,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             highlight={highlightWires}
             onSelect={onSelect}
             onHighlight={onHighlight}
+            onRequestTool={onToolSelect}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}
