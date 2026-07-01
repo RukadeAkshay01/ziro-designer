@@ -14,7 +14,7 @@
 
 import type { Schematic, SchLine, SchSymbol, SchJunction, SchLabel, Vec2 } from '../model/types.js';
 import { refId } from './hittest.js';
-import { makeWire } from './build.js';
+import { makeWire, makeWireWithUuid } from './build.js';
 import type { MoveSpec } from './connect.js';
 import type { EditCommand } from './command.js';
 
@@ -30,6 +30,11 @@ interface EndAdjust {
 function computeOrtho(sch: Schematic, spec: MoveSpec, delta: Vec2): { adjust: EndAdjust[]; bends: SchLine[] } {
   const adjust: EndAdjust[] = [];
   const bends: SchLine[] = [];
+
+  // Rubber-band stubs anchored at a fixed pin/junction (see connect.ts): brand-new
+  // wires have no prior orientation to preserve, so they're just a straight run
+  // from the fixed point to the dragged point, in both line modes.
+  for (const w of spec.newWires) bends.push(makeWireWithUuid(w.fixed, add(w.fixed, delta), w.uuid));
 
   sch.lines.forEach((l, i) => {
     const id = refId('line', l.uuid, i);

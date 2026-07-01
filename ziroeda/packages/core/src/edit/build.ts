@@ -52,9 +52,8 @@ export function buildJunctionNode(at: Vec2, uuid: string): SList {
   );
 }
 
-/** Create a new wire model item (with its backing AST node). */
-export function makeWire(start: Vec2, end: Vec2): SchLine {
-  const uuid = newUuid();
+/** Create a new wire model item with a caller-supplied uuid (with its backing AST node). */
+export function makeWireWithUuid(start: Vec2, end: Vec2, uuid: string): SchLine {
   return {
     kind: 'wire',
     start,
@@ -63,6 +62,11 @@ export function makeWire(start: Vec2, end: Vec2): SchLine {
     uuid,
     source: buildWireNode(start, end, uuid),
   };
+}
+
+/** Create a new wire model item (with its backing AST node). */
+export function makeWire(start: Vec2, end: Vec2): SchLine {
+  return makeWireWithUuid(start, end, newUuid());
 }
 
 /** Create a new bus model item — KiCad's `(bus ...)`, same shape as a wire. */

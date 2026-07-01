@@ -129,6 +129,57 @@ describe('connection-aware move (rubber-banding)', () => {
     // And the symbol moved too.
     expect(moved.symbols[0]!.at).toEqual({ x: sch.symbols[0]!.at.x + delta.x, y: sch.symbols[0]!.at.y + delta.y });
   });
+
+  it('rubber-bands a stub wire when dragging a wire whose ends are both on fixed pins', () => {
+    // The fixture's wire runs directly between J1's two pins. Dragging the wire's
+    // body (both its own endpoints "move in full") must not pull it off the pins:
+    // KiCad's getConnectedDragItems inserts a new stub wire anchored at each fixed
+    // pin instead (see connect.ts).
+    const { sch, libById } = load();
+    const wireId = sch.lines[0]!.uuid!;
+    const ids = new Set([wireId]);
+    const spec = planMove(sch, libById, ids);
+
+    expect(spec.newWires.length).toBe(2); // one stub per pin the wire was touching
+
+    const delta = { x: mmToIU(5), y: mmToIU(3) };
+    const moved = moveWithConnections(spec, delta).apply(sch);
+
+    // The original wire moved in full (both ends by delta).
+    const before = sch.lines[0]!;
+    expect(moved.lines.find((l) => l.uuid === wireId)!.start)
+      .toEqual({ x: before.start.x + delta.x, y: before.start.y + delta.y });
+
+    // Two new stub wires now connect each original (fixed) pin position to the
+    // dragged wire's new endpoint.
+    expect(moved.lines.length).toBe(sch.lines.length + 2);
+    const pins = symbolPinPositions(sch.symbols[0]!, libById.get(sch.symbols[0]!.libId));
+    for (const w of spec.newWires) {
+      const stub = moved.lines.find((l) => l.uuid === w.uuid)!;
+      expect(stub).toBeDefined();
+      expect(pins.some((p) => p.x === w.fixed.x && p.y === w.fixed.y)).toBe(true);
+      // One end anchored at the fixed pin (never moves)...
+      const anchored = stub.start.x === w.fixed.x && stub.start.y === w.fixed.y
+        ? stub.start : stub.end;
+      const tracking = anchored === stub.start ? stub.end : stub.start;
+      expect(anchored).toEqual(w.fixed);
+      // ...the other end tracking the dragged wire's new position.
+      expect(tracking).toEqual({ x: w.fixed.x + delta.x, y: w.fixed.y + delta.y });
+    }
+  });
+
+  it('undoes the rubber-band move exactly (removes the stubs, reverses)', () => {
+    const { sch, libById } = load();
+    const ids = new Set([sch.lines[0]!.uuid!]);
+    const spec = planMove(sch, libById, ids);
+    const history = new History();
+    const cmd = moveWithConnections(spec, { x: mmToIU(5), y: mmToIU(3) });
+    const moved = history.execute(sch, cmd);
+    const undone = history.undo(moved)!;
+    expect(undone.lines.length).toBe(sch.lines.length);
+    expect(undone.lines[0]!.start).toEqual(sch.lines[0]!.start);
+    expect(undone.lines[0]!.end).toEqual(sch.lines[0]!.end);
+  });
 });
 
 describe('orthogonal move (keeps wires orthogonal with a bend)', () => {
