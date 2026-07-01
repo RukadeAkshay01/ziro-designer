@@ -13,7 +13,9 @@ import {
   localToWorld,
   iuToMM,
   refId,
+  symbolBodyBBox,
   danglingPinPositions,
+  type BBox,
   type Transform,
   type Schematic,
   type SchLabel,
@@ -22,7 +24,24 @@ import {
   type Vec2,
 } from '@ziroeda/core';
 import type { Theme } from '../theme.js';
-import { layoutText } from './strokeFont.js';
+import { layoutText, measureText } from './strokeFont.js';
+
+// Per-render state (single-threaded): the visible world rect for culling and the
+// current zoom, so text below a few screen pixels is drawn cheaply.
+let g_scale = 1;
+let g_minX = -Infinity, g_minY = -Infinity, g_maxX = Infinity, g_maxY = Infinity;
+function inView(minX: number, minY: number, maxX: number, maxY: number): boolean {
+  return maxX >= g_minX && minX <= g_maxX && maxY >= g_minY && minY <= g_maxY;
+}
+
+// Cache the dangling-pin set by document identity so it isn't recomputed on every
+// pan/zoom (the schematic object is stable between edits).
+let g_dangleSch: Schematic | null = null;
+let g_dangle: readonly Vec2[] = [];
+function danglingFor(sch: Schematic, libById: Map<string, LibSymbol>): readonly Vec2[] {
+  if (sch !== g_dangleSch) { g_dangleSch = sch; g_dangle = danglingPinPositions(sch, libById); }
+  return g_dangle;
+}
 
 /** World(IU) -> screen(px): screenX = worldX * scale + offsetX. */
 export interface Viewport {
@@ -37,6 +56,26 @@ const GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
   return (u.unit === 0 || u.unit === unit) && (u.bodyStyle === 0 || u.bodyStyle === bodyStyle);
+}
+
+/** KiCad `(color r g b a)` (rgb 0-255, a 0-1) -> a CSS colour. */
+function cssColor(c: readonly [number, number, number, number]): string {
+  return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${c[3]})`;
+}
+
+/**
+ * Apply a KiCad line style to the context (STROKE_PARAMS::Stroke): dash = 12×width,
+ * gap = 3×width, dot ≈ 1×width (ISO 128-2 ratios). Resets to solid otherwise.
+ */
+function setDash(ctx: CanvasRenderingContext2D, type: string | undefined, width: number): void {
+  const w = width > 0 ? width : DEFAULT_LINE_WIDTH;
+  switch (type) {
+    case 'dash': ctx.setLineDash([12 * w, 3 * w]); break;
+    case 'dot': ctx.setLineDash([w, 3 * w]); break;
+    case 'dash_dot': ctx.setLineDash([12 * w, 3 * w, w, 3 * w]); break;
+    case 'dash_dot_dot': ctx.setLineDash([12 * w, 3 * w, w, 3 * w, w, 3 * w]); break;
+    default: ctx.setLineDash([]); break;
+  }
 }
 
 /** Local body-end of a pin given its connection point, orientation and length (KiCad mapping). */
@@ -73,6 +112,14 @@ export function renderSchematic(
   ctx.setTransform(scale, 0, 0, scale, offsetX, offsetY);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+
+  // Visible world rect (+ margin) and zoom, for culling and small-text handling.
+  g_scale = scale;
+  const cullMargin = 4 * MM;
+  g_minX = -offsetX / scale - cullMargin;
+  g_minY = -offsetY / scale - cullMargin;
+  g_maxX = (canvasWidth - offsetX) / scale + cullMargin;
+  g_maxY = (canvasHeight - offsetY) / scale + cullMargin;
 
   drawGrid(ctx, viewport, theme, canvasWidth, canvasHeight);
 
@@ -123,17 +170,34 @@ export function renderSchematic(
     });
   }
 
-  // Wires and buses (highlighted ones recoloured to the brightened colour, full pen width).
+  // Wires, buses and graphic polylines. Wires/buses use the theme net colours; a
+  // graphic polyline uses its own stroke colour (KiCad graphics carry their colour)
+  // and dash style, and draws all of its vertices — not just the first segment.
   sch.lines.forEach((line, i) => {
+    const pts = line.points ?? [line.start, line.end];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+    if (!inView(minX, minY, maxX, maxY)) return;
+
     const on = hl(refId('line', line.uuid, i));
+    const width = line.stroke && line.stroke.width > 0 ? line.stroke.width : DEFAULT_LINE_WIDTH;
     ctx.strokeStyle = on ? theme.netHighlight
-      : line.kind === 'bus' ? theme.bus : line.kind === 'wire' ? theme.wire : theme.symbolOutline;
-    ctx.lineWidth = line.stroke && line.stroke.width > 0 ? line.stroke.width : DEFAULT_LINE_WIDTH;
-    strokeLine(ctx, line.start, line.end);
+      : line.kind === 'bus' ? theme.bus
+      : line.kind === 'wire' ? theme.wire
+      : line.stroke?.color ? cssColor(line.stroke.color) // graphic polyline: its own colour
+      : theme.noteLine;
+    ctx.lineWidth = width;
+    setDash(ctx, line.stroke?.type, width);
+    ctx.beginPath();
+    ctx.moveTo(pts[0]!.x, pts[0]!.y);
+    for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k]!.x, pts[k]!.y);
+    ctx.stroke();
+    if (line.stroke?.type && line.stroke.type !== 'default' && line.stroke.type !== 'solid') ctx.setLineDash([]);
   });
 
   // Junctions (recoloured when on the highlighted net).
   sch.junctions.forEach((j, i) => {
+    if (!inView(j.at.x, j.at.y, j.at.x, j.at.y)) return;
     ctx.fillStyle = hl(refId('junction', j.uuid, i)) ? theme.netHighlight : theme.junction;
     const d = j.diameter > 0 ? j.diameter : 0.9 * MM;
     ctx.beginPath();
@@ -141,10 +205,12 @@ export function renderSchematic(
     ctx.fill();
   });
 
-  // Placed symbols.
+  // Placed symbols (culled to the visible rect, including their fields).
   sch.symbols.forEach((sym, si) => {
     const lib = libById.get(sym.libId);
-    if (lib) {
+    const bb: BBox = symbolBodyBBox(sym, lib);
+    const bodyVisible = inView(bb.minX, bb.minY, bb.maxX, bb.maxY);
+    if (lib && bodyVisible) {
       const t = symbolTransform(sym.angle, sym.mirror);
       const pins = { numbersHidden: lib.pinNumbersHidden, namesHidden: lib.pinNamesHidden, nameOffset: lib.pinNameOffset };
       const symId = refId('symbol', sym.uuid, si);
@@ -161,28 +227,34 @@ export function renderSchematic(
     const ty1 = symbolTransform(sym.angle, sym.mirror).y1;
     for (const f of sym.fields) {
       if (!f.at || f.effects?.hidden || f.value === '') continue;
+      const h = f.effects?.fontSize?.[0] ?? 1.27 * MM;
+      if (!inView(f.at.x - h * f.value.length, f.at.y - h, f.at.x + h * f.value.length, f.at.y + h)) continue;
       const color = f.key === 'Reference' ? theme.reference : f.key === 'Value' ? theme.value : theme.label;
       const storedHoriz = (f.angle % 180) === 0;
       const drawHoriz = ty1 !== 0 ? !storedHoriz : storedHoriz;
-      drawText(ctx, f.value, f.at, f.effects?.fontSize?.[0] ?? 1.27 * MM, color, f.effects?.justify, drawHoriz ? 0 : 90);
+      drawText(ctx, f.value, f.at, h, color, f.effects?.justify, drawHoriz ? 0 : 90);
     }
   });
 
-  // Labels and free text.
+  // Labels and free text (culled).
   for (const l of sch.labels) {
     if (l.effects?.hidden) continue;
+    const h = l.effects?.fontSize?.[0] ?? 1.27 * MM;
+    const span = h * (Math.max(1, l.text.length) + 4);
+    if (!inView(l.at.x - span, l.at.y - span, l.at.x + span, l.at.y + span)) continue;
     drawLabel(ctx, l, theme);
   }
 
   // Dangling-pin targets: KiCad draws an open circle (TARGET_PIN_RADIUS = 15 mil,
   // thickness = penWidth/3, in the pin colour Brightened(0.3)) on every pin with no
-  // connection (drawPinDanglingIndicator), so unconnected pins are obvious and can
-  // be clicked to start a wire.
-  const dangling = danglingPinPositions(sch, libById);
+  // connection (drawPinDanglingIndicator). Cached by document identity so it isn't
+  // recomputed on every pan/zoom, and culled to the visible rect.
+  const dangling = danglingFor(sch, libById);
   if (dangling.length > 0) {
     ctx.strokeStyle = brighten(theme.pin, 0.3);
     ctx.lineWidth = DEFAULT_LINE_WIDTH / 3;
     for (const p of dangling) {
+      if (!inView(p.x, p.y, p.x, p.y)) continue;
       ctx.beginPath();
       ctx.arc(p.x, p.y, TARGET_PIN_RADIUS, 0, Math.PI * 2);
       ctx.stroke();
@@ -632,23 +704,40 @@ function drawText(
 ): void {
   if (text === '' || text === '~') return;
 
-  // KiCad strokes schematic text with the Newstroke font. Lay the run out with a
-  // baseline-left origin, then place it per the justify flags: cap-height ~= the
-  // text size, letters extend up from the baseline (negative local y).
-  const { strokes, width } = layoutText(text, heightIU);
   const cap = heightIU;
   const right = justify?.includes('right'), left = justify?.includes('left');
   const top = justify?.includes('top'), bottom = justify?.includes('bottom');
-  const offX = right ? -width : left ? 0 : -width / 2; // default: centre
-  const offY = top ? cap : bottom ? 0 : cap / 2;       // baseline placement; default: middle
 
   // KiCad reads 90°/rotated text turned counter-clockwise (screen y is down).
   const a = (((angleDeg % 360) + 360) % 360) * (Math.PI / 180);
   const cos = Math.cos(-a), sin = Math.sin(-a);
-  const place = (p: Vec2): Vec2 => {
-    const x = p.x + offX, y = p.y + offY;
-    return { x: at.x + x * cos - y * sin, y: at.y + x * sin + y * cos };
-  };
+  const placeAt = (x: number, y: number): Vec2 => ({ x: at.x + x * cos - y * sin, y: at.y + x * sin + y * cos });
+
+  // Below a few screen pixels, stroke glyphs blur into an unreadable blob (and are
+  // slow); KiCad switches to a bitmap/outline. We draw a light bar of the text's
+  // footprint instead — cheap, declutters the overview. Real glyphs above threshold.
+  if (heightIU * g_scale < 6) {
+    const w = measureText(text, heightIU);
+    const offX = right ? -w : left ? 0 : -w / 2;
+    const offY = top ? cap : bottom ? 0 : cap / 2;
+    const barTop = offY - cap * 0.72, barH = cap * 0.62; // roughly the x-to-cap band
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    const c0 = placeAt(offX, barTop), c1 = placeAt(offX + w, barTop), c2 = placeAt(offX + w, barTop + barH), c3 = placeAt(offX, barTop + barH);
+    ctx.moveTo(c0.x, c0.y); ctx.lineTo(c1.x, c1.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c3.x, c3.y); ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  // KiCad strokes schematic text with the Newstroke font. Lay the run out with a
+  // baseline-left origin, then place it per the justify flags: cap-height ~= the
+  // text size, letters extend up from the baseline (negative local y).
+  const { strokes, width } = layoutText(text, heightIU);
+  const offX = right ? -width : left ? 0 : -width / 2; // default: centre
+  const offY = top ? cap : bottom ? 0 : cap / 2;       // baseline placement; default: middle
+  const place = (p: Vec2): Vec2 => placeAt(p.x + offX, p.y + offY);
 
   ctx.strokeStyle = color;
   ctx.lineWidth = Math.max(heightIU * 0.11, DEFAULT_LINE_WIDTH * 0.6); // ~KiCad default text pen

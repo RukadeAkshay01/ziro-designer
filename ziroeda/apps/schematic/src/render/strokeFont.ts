@@ -60,6 +60,19 @@ function spaceAdvance(): number {
   return glyphs()[0]!.advance;
 }
 
+/** Total advance width of `text` at glyph height `size` (IU) — no stroke building. */
+export function measureText(text: string, size: number): number {
+  const gl = glyphs();
+  let w = 0;
+  for (const ch of text) {
+    if (ch === ' ') { w += spaceAdvance() * size; continue; }
+    let dd = ch.codePointAt(0)! - 0x20;
+    if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20;
+    w += gl[dd]!.advance * size;
+  }
+  return w;
+}
+
 /**
  * Lay out `text` at glyph height `size` (em, IU) with the baseline-left origin at
  * (0,0). Returns the stroke polylines (in IU, y down from baseline) plus the total

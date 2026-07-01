@@ -54,3 +54,20 @@ describe('writeSchematic', () => {
     expect(reSch.symbols.at(-1)!.fields.find((f) => f.key === 'Reference')!.value).toBe('R?');
   });
 });
+
+describe('multi-point polyline round-trip', () => {
+  it('preserves every vertex of a graphic polyline through parse->write->parse', () => {
+    const src = `(kicad_sch (version 20230121) (generator eeschema) (lib_symbols)
+      (polyline (pts (xy 20 20) (xy 120 20) (xy 120 80) (xy 20 80) (xy 20 20))
+        (stroke (width 0.3) (type dash) (color 194 0 0 1)) (fill (type none))))`;
+    const sch = readSchematic(parse(src));
+    const poly = sch.lines[0]!;
+    expect(poly.points?.length).toBe(5);
+    expect(poly.stroke?.type).toBe('dash');
+    expect(poly.stroke?.color).toEqual([194, 0, 0, 1]);
+    // Written back and re-read, all five vertices survive (not collapsed to 2).
+    const re = readSchematic(writeSchematic(sch));
+    expect(re.lines[0]!.points?.length).toBe(5);
+    expect(re.lines[0]!.points).toEqual(poly.points);
+  });
+});

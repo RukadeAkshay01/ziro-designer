@@ -22,12 +22,14 @@ export interface Vec2 {
   readonly y: number;
 }
 
-/** Line style, matching KiCad's `(stroke (width ..) (type ..))`. */
+/** Line style, matching KiCad's `(stroke (width ..) (type ..) (color ..))`. */
 export interface Stroke {
   /** Width in IU. 0 means "default". */
   readonly width: number;
   /** default | solid | dash | dot | dash_dot | dash_dot_dot */
   readonly type: string;
+  /** Optional explicit colour [r,g,b,a] (rgb 0-255, a 0-1); used by graphic lines. */
+  readonly color?: readonly [number, number, number, number];
 }
 
 /** Fill, matching KiCad's `(fill (type ..))`: none | outline | background | color. */
@@ -142,6 +144,8 @@ export interface SchLine {
   readonly kind: LineKind;
   readonly start: Vec2;
   readonly end: Vec2;
+  /** All vertices for a multi-point graphic polyline (>2 pts); undefined for wires/buses. */
+  readonly points?: readonly Vec2[];
   readonly stroke?: Stroke;
   readonly uuid?: string;
   readonly source: SList;

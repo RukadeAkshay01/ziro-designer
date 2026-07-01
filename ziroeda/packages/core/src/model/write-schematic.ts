@@ -105,11 +105,15 @@ function writeSymbol(sym: SchSymbol): SList {
 }
 
 function writeLine(l: SchLine): SList {
+  // A multi-point polyline patches each vertex from `points`; a wire/bus has just
+  // its two endpoints. Extra source xy's beyond what we model are left untouched.
+  const verts = l.points ?? [l.start, l.end];
   return mapChild(l.source, 'pts', (pts) => {
     let i = 0;
     const items = pts.items.map((it) => {
       if (isList(it) && head(it) === 'xy') {
-        const p = i++ === 0 ? l.start : l.end;
+        const p = verts[i] ?? verts[verts.length - 1]!;
+        i++;
         return list(atom('xy'), atom(mm(p.x)), atom(mm(p.y)));
       }
       return it;

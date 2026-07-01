@@ -55,17 +55,20 @@ export function danglingPinPositions(sch: Schematic, libById: Map<string, LibSym
   const pinCount = new Map<string, number>();
   for (const p of pins) pinCount.set(key(p), (pinCount.get(key(p)) ?? 0) + 1);
 
-  // Points occupied by a junction or a (non-free-text) label anchor.
+  // Points occupied by a junction, label anchor, or a wire endpoint (O(1) lookup for
+  // the common case — a pin connects at a wire end far more often than mid-span).
   const nodePoints = new Set<string>();
   for (const j of sch.junctions) nodePoints.add(key(j.at));
   for (const l of sch.labels) if (l.kind !== 'text') nodePoints.add(key(l.at));
 
   const wires = sch.lines.filter((l) => l.kind === 'wire' || l.kind === 'bus');
+  for (const w of wires) { nodePoints.add(key(w.start)); nodePoints.add(key(w.end)); }
 
   const connected = (p: Vec2): boolean => {
     if ((pinCount.get(key(p)) ?? 0) > 1) return true;      // stacked on another pin
-    if (nodePoints.has(key(p))) return true;               // junction or label here
-    for (const w of wires) if (onSegment(p, w.start, w.end)) return true; // wire end or pass-through
+    if (nodePoints.has(key(p))) return true;               // junction, label, or wire end here
+    // Only the rare pin that is on no endpoint needs the mid-span (pass-through) scan.
+    for (const w of wires) if (onSegment(p, w.start, w.end)) return true;
     return false;
   };
 

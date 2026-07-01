@@ -64,10 +64,16 @@ function readStroke(node: SList): Stroke | undefined {
   const s = childNamed(node, 'stroke');
   if (!s) return undefined;
   const width = childNamed(s, 'width');
-  return {
+  const stroke: { -readonly [K in keyof Stroke]: Stroke[K] } = {
     width: width ? mmToIU(numArg(width, 0) ?? 0) : 0,
     type: stringField(s, 'type') ?? 'default',
   };
+  const col = childNamed(s, 'color');
+  if (col) {
+    const r = numArg(col, 0) ?? 0, g = numArg(col, 1) ?? 0, b = numArg(col, 2) ?? 0, a = numArg(col, 3) ?? 1;
+    if (r || g || b || a < 1) stroke.color = [r, g, b, a]; // ignore KiCad's (0 0 0 0) "unspecified"
+  }
+  return stroke;
 }
 
 function readFill(node: SList): Fill | undefined {
@@ -303,9 +309,12 @@ function readSymbol(node: SList): SchSymbol {
 function readLine(node: SList, kind: LineKind): SchLine {
   const pts = childNamed(node, 'pts');
   const xy = pts ? childrenNamed(pts, 'xy') : [];
-  const start = xy[0] ? readPoint(xy[0], 0) : { x: 0, y: 0 };
-  const end = xy[1] ? readPoint(xy[1], 0) : start;
+  const all = xy.map((p) => readPoint(p, 0));
+  const start = all[0] ?? { x: 0, y: 0 };
+  const end = all[all.length - 1] ?? start;
   const line: { -readonly [K in keyof SchLine]: SchLine[K] } = { kind, start, end, source: node };
+  // Graphic polylines can have more than two vertices; keep them all for drawing.
+  if (all.length > 2) line.points = all;
   const stroke = readStroke(node);
   if (stroke) line.stroke = stroke;
   const uuid = stringField(node, 'uuid');
