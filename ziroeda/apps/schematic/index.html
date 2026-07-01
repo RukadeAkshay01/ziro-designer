@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Always revalidate the entry document so a new GitHub Pages deploy is picked
+         up without a manual hard-refresh (the hashed JS/CSS bundles it references
+         are themselves immutable, so only this file needs to be re-fetched). -->
+    <meta http-equiv="Cache-Control" content="no-cache, must-revalidate" />
     <title>ZiroEDA — Schematic</title>
     <style>
       html, body, #root { height: 100%; margin: 0; }

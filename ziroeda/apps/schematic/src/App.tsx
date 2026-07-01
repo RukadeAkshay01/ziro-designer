@@ -293,6 +293,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
         <span className="cell">grid {units === 'mm' ? '1.2700' : units === 'mils' ? '50' : '0.0500'}</span>
         <span className="cell">{highlightName ? `Net: ${highlightName}` : ''}</span>
         <span className="cell grow">{units}</span>
+        <span className="cell" title="build">{__BUILD_STAMP__}</span>
       </div>
 
       {(activeTool === 'placeSymbol' || activeTool === 'placePower') && !placeLib && (
