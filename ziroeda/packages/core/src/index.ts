@@ -65,6 +65,8 @@ export {
   collectAnchors,
   selectionAnchors,
   nearestAnchor,
+  mergeColinearWires,
+  withCleanup,
   type TransformOp,
 } from './edit/index.js';
 

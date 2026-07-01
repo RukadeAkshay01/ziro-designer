@@ -31,10 +31,21 @@ function computeOrtho(sch: Schematic, spec: MoveSpec, delta: Vec2): { adjust: En
   const adjust: EndAdjust[] = [];
   const bends: SchLine[] = [];
 
-  // Rubber-band stubs anchored at a fixed pin/junction (see connect.ts): brand-new
-  // wires have no prior orientation to preserve, so they're just a straight run
-  // from the fixed point to the dragged point, in both line modes.
-  for (const w of spec.newWires) bends.push(makeWireWithUuid(w.fixed, add(w.fixed, delta), w.uuid));
+  // Rubber-band stubs anchored at a fixed pin/junction (see connect.ts). In H/V
+  // line mode KiCad's orthoLineDrag never leaves a diagonal, so a stub whose drag
+  // is diagonal becomes an orthogonal L-bend: one segment out from the fixed point
+  // and a second turning to reach the dragged point. A pure H or V drag stays a
+  // single segment. (In free mode moveWithConnections draws the straight stub.)
+  for (const w of spec.newWires) {
+    const moved = add(w.fixed, delta);
+    if (delta.x !== 0 && delta.y !== 0) {
+      const corner = { x: moved.x, y: w.fixed.y }; // horizontal-first, like the split X-then-Y move
+      bends.push(makeWireWithUuid(w.fixed, corner, w.uuid));
+      bends.push(makeWire(corner, moved));
+    } else {
+      bends.push(makeWireWithUuid(w.fixed, moved, w.uuid));
+    }
+  }
 
   sch.lines.forEach((l, i) => {
     const id = refId('line', l.uuid, i);

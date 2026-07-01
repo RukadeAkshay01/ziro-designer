@@ -61,6 +61,8 @@ interface Props {
   /** Wire ids whose net is highlighted (KiCad's net-highlight overlay). */
   highlight?: ReadonlySet<string>;
   onSelect: (id: string | null, additive: boolean) => void;
+  /** Highlight-Net tool: the clicked item whose net to brighten, or null to clear. */
+  onHighlight?: (id: string | null) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
@@ -69,7 +71,7 @@ interface Props {
 type Mode = 'idle' | 'pan' | 'move';
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -268,6 +270,14 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       return;
     }
 
+    // Highlight-Net tool (KiCad SCH_EDITOR_CONTROL::HighlightNet): click an item to
+    // brighten its net; click empty space to clear the highlight.
+    if (activeTool === 'highlightNet') {
+      const hit = hitTest(schematic, libById, world, (6 * dpr()) / vp.scale);
+      onHighlight?.(hit ? hit.id : null);
+      return;
+    }
+
     if (activeTool === 'placeSymbol' || activeTool === 'placePower') {
       if (placeLib) onCommand(placeSymbol(placeLib, snap(world), placeOrientRef.current)); // stays active to place more
       return;
@@ -295,7 +305,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
     }
-  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onHighlight, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;

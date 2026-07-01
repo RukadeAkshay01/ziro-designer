@@ -217,4 +217,27 @@ describe('orthogonal move (keeps wires orthogonal with a bend)', () => {
     expect(undone.lines[0]!.end).toEqual(sch.lines[0]!.end);
     expect(undone.symbols[0]!.at).toEqual(sch.symbols[0]!.at);
   });
+
+  it('never leaves a diagonal segment: dragging a wire body diagonally makes orthogonal stubs', async () => {
+    const { orthoMove } = await import('../src/edit/ortho.js');
+    const { sch, libById } = load();
+    // Drag the wire itself (both ends sit on J1's fixed pins) diagonally. In H/V
+    // mode every resulting segment must stay horizontal or vertical.
+    const ids = new Set([sch.lines[0]!.uuid!]);
+    const spec = planMove(sch, libById, ids);
+    expect(spec.newWires.length).toBe(2);
+    const moved = orthoMove(sch, spec, { x: mmToIU(2.54), y: mmToIU(2.54) }).apply(sch);
+
+    for (const l of moved.lines) {
+      const isOrtho = l.start.x === l.end.x || l.start.y === l.end.y;
+      expect(isOrtho).toBe(true);
+    }
+    // Each fixed pin still has a wire endpoint touching it (connection preserved).
+    const pins = symbolPinPositions(sch.symbols[0]!, libById.get(sch.symbols[0]!.libId));
+    for (const pin of pins) {
+      const touches = moved.lines.some((l) =>
+        (l.start.x === pin.x && l.start.y === pin.y) || (l.end.x === pin.x && l.end.y === pin.y));
+      expect(touches).toBe(true);
+    }
+  });
 });

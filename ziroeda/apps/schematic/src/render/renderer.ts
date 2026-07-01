@@ -13,8 +13,6 @@ import {
   localToWorld,
   iuToMM,
   refId,
-  symbolBodyBBox,
-  type BBox,
   type Transform,
   type Schematic,
   type SchLabel,
@@ -23,8 +21,6 @@ import {
   type Vec2,
 } from '@ziroeda/core';
 import type { Theme } from '../theme.js';
-
-const SELECT_COLOR = '#1d7fdd';
 
 /** World(IU) -> screen(px): screenX = worldX * scale + offsetX. */
 export interface Viewport {
@@ -79,6 +75,16 @@ export function renderSchematic(
   drawGrid(ctx, viewport, theme, canvasWidth, canvasHeight);
 
   const hl = (id: string): boolean => highlight !== undefined && highlight.has(id);
+
+  // KiCad draws selection as a blue LAYER_SELECTION_SHADOWS glow *under* the item,
+  // never a bounding box: a wider stroke of the item's own geometry in the shadow
+  // colour, drawn before the normal render so it reads as an underglow. Width is
+  // getShadowWidth(false) = selection_thickness (3 mils) as a zoom-scaled screen
+  // term plus a fixed world minimum. Net highlight (magenta) is a *separate* thing.
+  const SELECTION_THICKNESS_MILS = 3;
+  const selShadowWidth = Math.abs(SELECTION_THICKNESS_MILS / scale) + SELECTION_THICKNESS_MILS * (0.0254 * MM);
+  if (selection && selection.size > 0)
+    drawSelectionShadows(ctx, sch, libById, selection, theme, theme.selectionShadow, selShadowWidth);
 
   // Net highlighting, ported from SCH_PAINTER: brightened items are drawn twice —
   // once on LAYER_SELECTION_SHADOWS (a wider stroke of the brightened colour at 15%
@@ -165,8 +171,6 @@ export function renderSchematic(
     if (l.effects?.hidden) continue;
     drawLabel(ctx, l, theme);
   }
-
-  if (selection && selection.size > 0) drawSelection(ctx, sch, libById, viewport, selection);
 }
 
 // ----- labels (SCH_LABEL / GLOBALLABEL / HIERLABEL / TEXT) -------------------
@@ -232,16 +236,18 @@ function spinRotate(p: Vec2, spin: number): Vec2 {
   }
 }
 
-function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme): void {
+/** When `shadow` is set, draw only the blue selection underglow (wider strokes, no text). */
+function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme, shadow?: { color: string; width: number }): void {
   const h = l.effects?.fontSize?.[0] ?? 1.27 * MM;
   const spin = labelSpin(l.angle, l.effects?.justify);
-  const color = l.kind === 'global_label' ? theme.globalLabel : l.kind === 'hierarchical_label' ? theme.hierLabel : theme.label;
+  const color = shadow ? shadow.color
+    : l.kind === 'global_label' ? theme.globalLabel : l.kind === 'hierarchical_label' ? theme.hierLabel : theme.label;
   const dist = h * 0.26; // ~ text offset + pen, to lift text off the wire
   // Reading direction unit vector for the spin style (where the text flows).
   const flow = spin === SPIN.LEFT ? { x: -1, y: 0 } : spin === SPIN.RIGHT ? { x: 1, y: 0 }
     : spin === SPIN.UP ? { x: 0, y: -1 } : { x: 0, y: 1 };
 
-  ctx.lineWidth = DEFAULT_LINE_WIDTH;
+  ctx.lineWidth = shadow ? DEFAULT_LINE_WIDTH + shadow.width : DEFAULT_LINE_WIDTH;
   ctx.strokeStyle = color;
 
   if (l.kind === 'hierarchical_label' || l.kind === 'global_label') {
@@ -253,7 +259,7 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme): vo
       polygon(ctx, pts, false, true);
       // Text sits just beyond the flag (which spans ~2*halfSize from the anchor).
       const off = 2 * halfSize + dist;
-      drawText(ctx, l.text, { x: l.at.x + flow.x * off, y: l.at.y + flow.y * off }, h, color, justifyFor(spin));
+      if (!shadow) drawText(ctx, l.text, { x: l.at.x + flow.x * off, y: l.at.y + flow.y * off }, h, color, justifyFor(spin));
     } else {
       // Global label: 6-point box (margined) with a notch/point per shape, then spin-rotated.
       const margin = LABEL_RATIO * h;
@@ -270,15 +276,25 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme): vo
       polygon(ctx, pts, false, true);
       // Centre the text in the box (box centre is at -symbLen/2 along the reading axis).
       const c = spinRotate({ x: -x / 2 + xoff, y: 0 }, spin);
-      drawText(ctx, l.text, { x: l.at.x + c.x, y: l.at.y + c.y }, h, color);
+      if (!shadow) drawText(ctx, l.text, { x: l.at.x + c.x, y: l.at.y + c.y }, h, color);
     }
     return;
   }
 
   // Local label / free text: text lifted off the wire, flowing in the reading direction.
   const perp = spin === SPIN.UP || spin === SPIN.BOTTOM ? { x: -dist, y: 0 } : { x: 0, y: -dist };
-  drawText(ctx, l.text, { x: l.at.x + perp.x, y: l.at.y + perp.y }, h, color, justifyFor(spin));
+  const anchor = { x: l.at.x + perp.x, y: l.at.y + perp.y };
+  if (shadow) {
+    // No flag to glow: underline the text run in the reading direction as the cue.
+    const len = Math.max(1, l.text.length) * h * 0.6;
+    const from = spin === SPIN.LEFT || spin === SPIN.BOTTOM ? { x: anchor.x - flow.x * len, y: anchor.y - flow.y * len } : anchor;
+    const to = { x: from.x + flow.x * len, y: from.y + flow.y * len };
+    strokeLine(ctx, from, to);
+    return;
+  }
+  drawText(ctx, l.text, anchor, h, color, justifyFor(spin));
 }
+
 
 /** Text justification for a spin style: anchored at the connection point, reading outward. */
 function justifyFor(spin: number): string[] {
@@ -290,45 +306,57 @@ function justifyFor(spin: number): string[] {
   }
 }
 
-/** Draw a highlight box around each selected item. */
-function drawSelection(
+/**
+ * KiCad-style selection: a blue LAYER_SELECTION_SHADOWS glow drawn *under* each
+ * selected item by re-stroking the item's own geometry wider in the shadow colour
+ * (SCH_PAINTER draws selected items on the shadow layer at getShadowWidth() extra
+ * width). Wires, junctions, symbol bodies + pins, and label flags/anchors each get
+ * the halo; there is no bounding box, matching the desktop app.
+ */
+function drawSelectionShadows(
   ctx: CanvasRenderingContext2D,
   sch: Schematic,
   libById: Map<string, LibSymbol>,
-  viewport: Viewport,
   selection: ReadonlySet<string>,
+  theme: Theme,
+  color: string,
+  width: number,
 ): void {
-  const pad = 0.6 * MM;
-  const boxes: BBox[] = [];
-  sch.symbols.forEach((s, i) => {
-    if (selection.has(refId('symbol', s.uuid, i))) boxes.push(symbolBodyBBox(s, libById.get(s.libId)));
-  });
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+
+  // Wires / buses: wider stroke of the segment.
   sch.lines.forEach((l, i) => {
-    if (selection.has(refId('line', l.uuid, i)))
-      boxes.push({ minX: Math.min(l.start.x, l.end.x), minY: Math.min(l.start.y, l.end.y), maxX: Math.max(l.start.x, l.end.x), maxY: Math.max(l.start.y, l.end.y) });
-  });
-  sch.junctions.forEach((j, i) => {
-    if (selection.has(refId('junction', j.uuid, i))) {
-      const r = (j.diameter > 0 ? j.diameter : 0.9 * MM) / 2;
-      boxes.push({ minX: j.at.x - r, minY: j.at.y - r, maxX: j.at.x + r, maxY: j.at.y + r });
-    }
-  });
-  sch.labels.forEach((l, i) => {
-    if (selection.has(refId('label', l.uuid, i))) {
-      const h = l.effects?.fontSize?.[0] ?? 1.27 * MM;
-      const w = Math.max(1, l.text.length) * h * 0.7;
-      boxes.push({ minX: l.at.x - h, minY: l.at.y - h, maxX: l.at.x + w, maxY: l.at.y + h });
-    }
+    if (!selection.has(refId('line', l.uuid, i))) return;
+    const base = l.stroke && l.stroke.width > 0 ? l.stroke.width : DEFAULT_LINE_WIDTH;
+    ctx.lineWidth = base + width;
+    strokeLine(ctx, l.start, l.end);
   });
 
-  ctx.strokeStyle = SELECT_COLOR;
-  ctx.fillStyle = 'rgba(29,127,221,0.10)';
-  ctx.lineWidth = 1 / viewport.scale; // ~1px regardless of zoom
-  for (const b of boxes) {
-    const x = b.minX - pad, y = b.minY - pad, w = b.maxX - b.minX + 2 * pad, h = b.maxY - b.minY + 2 * pad;
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeRect(x, y, w, h);
-  }
+  // Junctions: a slightly larger filled disc under the dot.
+  sch.junctions.forEach((j, i) => {
+    if (!selection.has(refId('junction', j.uuid, i))) return;
+    const r = (j.diameter > 0 ? j.diameter : 0.9 * MM) / 2 + width / 2;
+    ctx.beginPath();
+    ctx.arc(j.at.x, j.at.y, r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Symbols: re-stroke the body graphics and pins in the shadow colour.
+  sch.symbols.forEach((sym, i) => {
+    if (!selection.has(refId('symbol', sym.uuid, i))) return;
+    const lib = libById.get(sym.libId);
+    if (!lib) return;
+    const t = symbolTransform(sym.angle, sym.mirror);
+    for (const unit of lib.units)
+      if (libUnitMatches(unit, sym.unit, sym.bodyStyle)) drawLibUnitShadow(ctx, unit, sym.at, t, color, width);
+  });
+
+  // Labels: re-stroke the flag/box geometry wider in the shadow colour.
+  sch.labels.forEach((l, i) => {
+    if (l.effects?.hidden || !selection.has(refId('label', l.uuid, i))) return;
+    drawLabel(ctx, l, theme, { color, width });
+  });
 }
 
 interface PinDisplay {
@@ -344,6 +372,48 @@ function pinDir(angle: number): Vec2 {
     case 90: return { x: 0, y: -1 };
     case 180: return { x: -1, y: 0 };
     default: return { x: 0, y: 1 };
+  }
+}
+
+/** Underglow for a selected symbol: re-stroke its body graphics and pins wider in `color`. */
+function drawLibUnitShadow(
+  ctx: CanvasRenderingContext2D, unit: LibSymbolUnit, origin: Vec2, t: Transform, color: string, width: number,
+): void {
+  ctx.strokeStyle = color;
+  for (const g of unit.graphics) {
+    const base = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
+    ctx.lineWidth = base + width;
+    switch (g.kind) {
+      case 'rectangle': {
+        const corners = [
+          { x: g.start.x, y: g.start.y }, { x: g.end.x, y: g.start.y },
+          { x: g.end.x, y: g.end.y }, { x: g.start.x, y: g.end.y },
+        ].map((c) => localToWorld(origin, t, c));
+        polygon(ctx, corners, false, true);
+        break;
+      }
+      case 'polyline':
+        polygon(ctx, g.points.map((p) => localToWorld(origin, t, p)), false, false);
+        break;
+      case 'circle': {
+        const c = localToWorld(origin, t, g.center);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, g.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        break;
+      }
+      case 'arc':
+        drawArc(ctx, localToWorld(origin, t, g.start), localToWorld(origin, t, g.mid), localToWorld(origin, t, g.end), false);
+        break;
+      case 'text': break; // text has no stroke halo
+    }
+  }
+  ctx.lineWidth = DEFAULT_LINE_WIDTH + width;
+  for (const pin of unit.pins) {
+    if (pin.hidden) continue;
+    const a = localToWorld(origin, t, pin.at);
+    const b = localToWorld(origin, t, pinBodyEnd(pin.at, pin.angle, pin.length));
+    strokeLine(ctx, a, b);
   }
 }
 

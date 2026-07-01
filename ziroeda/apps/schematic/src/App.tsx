@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape } from '@ziroeda/core';
+import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
 import { LabelDialog } from './components/LabelDialog.js';
 import { Toolbar } from './ui/Toolbar.js';
@@ -50,6 +50,10 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
 
   const [doc, setDoc] = useState<Schematic | null>(initial);
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
+  // The item whose net is highlighted by the Highlight-Net tool (KiCad's
+  // m_highlightedConn). Distinct from selection: plain selection is never a net
+  // highlight in KiCad; it's the explicit highlight action that brightens a net.
+  const [highlightItem, setHighlightItem] = useState<string | null>(null);
   const history = useRef(new History());
   const controller = useRef<CanvasController>(null);
   const [activeTool, setActiveTool] = useState('select');
@@ -66,27 +70,28 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     [doc?.libSymbols],
   );
 
-  // Connectivity: compute the netlist, then highlight the net of any selected item.
-  // The renderer only matches wire ids against this set, so passing all net-item
-  // ids (which also include label/junction/pin ids) is harmless.
+  // Connectivity: compute the netlist, then brighten the net the Highlight-Net tool
+  // picked (not the selection — KiCad keeps those separate). The renderer matches
+  // wire/junction/pin ids against this set.
   const netlist = useMemo(() => (doc ? computeNetlist(doc, libById) : null), [doc, libById]);
   const { highlightWires, highlightName } = useMemo(() => {
     const items = new Set<string>();
     let name: string | null = null;
-    if (netlist) {
-      for (const id of selection) {
-        const code = netlist.netByItem.get(id);
-        if (code === undefined) continue;
+    if (netlist && highlightItem !== null) {
+      const code = netlist.netByItem.get(highlightItem);
+      if (code !== undefined) {
         const net = netlist.nets.find((n) => n.code === code);
-        if (!net) continue;
-        name = net.name;
-        for (const item of net.items) items.add(item);
+        if (net) {
+          name = net.name;
+          for (const item of net.items) items.add(item);
+        }
       }
     }
     return { highlightWires: items, highlightName: name };
-  }, [netlist, selection]);
+  }, [netlist, highlightItem]);
 
   const onSelect = useCallback((id: string | null, additive: boolean) => {
+    setHighlightItem(null); // a selection clears any net highlight (KiCad keeps the two exclusive)
     setSelection((prev) => {
       if (id === null) return additive ? prev : new Set();
       if (additive) {
@@ -98,8 +103,17 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     });
   }, []);
 
+  // Highlight-Net tool: brighten a net and clear the selection (KiCad's
+  // HighlightNet calls ClearSelection so the whole net shows, not a selection halo).
+  const onHighlight = useCallback((id: string | null) => {
+    setSelection(new Set());
+    setHighlightItem(id);
+  }, []);
+
+  // Every edit runs through KiCad's post-commit cleanup (colinear wire merge),
+  // as part of the same undoable step (SCHEMATIC::CleanUp / RecalculateConnections).
   const runCommand = useCallback((cmd: EditCommand) => {
-    setDoc((d) => (d ? history.current.execute(d, cmd) : d));
+    setDoc((d) => (d ? history.current.execute(d, withCleanup(cmd)) : d));
   }, []);
 
   const undo = useCallback(() => setDoc((d) => (d ? history.current.undo(d) ?? d : d)), []);
@@ -260,6 +274,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             pendingLabel={pendingLabel}
             highlight={highlightWires}
             onSelect={onSelect}
+            onHighlight={onHighlight}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}
