@@ -22,6 +22,7 @@ import {
   type Vec2,
 } from '@ziroeda/core';
 import type { Theme } from '../theme.js';
+import { layoutText } from './strokeFont.js';
 
 /** World(IU) -> screen(px): screenX = worldX * scale + offsetX. */
 export interface Viewport {
@@ -628,23 +629,37 @@ function drawText(
   angleDeg = 0,
 ): void {
   if (text === '' || text === '~') return;
-  ctx.fillStyle = color;
-  // NOTE: KiCad renders schematic text with the Newstroke stroke font. Using a
-  // system font here is intentional first-pass debt; Newstroke is a tracked
-  // follow-up for exact visual parity.
-  ctx.font = `${heightIU}px sans-serif`;
-  ctx.textAlign = justify?.includes('right') ? 'right' : justify?.includes('left') ? 'left' : 'center';
-  ctx.textBaseline = justify?.includes('top') ? 'top' : justify?.includes('bottom') ? 'bottom' : 'middle';
-  const a = ((angleDeg % 360) + 360) % 360;
-  if (a === 0) {
-    ctx.fillText(text, at.x, at.y);
-  } else {
-    // Vertical (or rotated) schematic text: KiCad reads 90° text bottom-to-top.
-    ctx.save();
-    ctx.translate(at.x, at.y);
-    ctx.rotate((-a * Math.PI) / 180);
-    ctx.fillText(text, 0, 0);
-    ctx.restore();
+
+  // KiCad strokes schematic text with the Newstroke font. Lay the run out with a
+  // baseline-left origin, then place it per the justify flags: cap-height ~= the
+  // text size, letters extend up from the baseline (negative local y).
+  const { strokes, width } = layoutText(text, heightIU);
+  const cap = heightIU;
+  const right = justify?.includes('right'), left = justify?.includes('left');
+  const top = justify?.includes('top'), bottom = justify?.includes('bottom');
+  const offX = right ? -width : left ? 0 : -width / 2; // default: centre
+  const offY = top ? cap : bottom ? 0 : cap / 2;       // baseline placement; default: middle
+
+  // KiCad reads 90°/rotated text turned counter-clockwise (screen y is down).
+  const a = (((angleDeg % 360) + 360) % 360) * (Math.PI / 180);
+  const cos = Math.cos(-a), sin = Math.sin(-a);
+  const place = (p: Vec2): Vec2 => {
+    const x = p.x + offX, y = p.y + offY;
+    return { x: at.x + x * cos - y * sin, y: at.y + x * sin + y * cos };
+  };
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(heightIU * 0.11, DEFAULT_LINE_WIDTH * 0.6); // ~KiCad default text pen
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const stroke of strokes) {
+    if (stroke.length === 0) continue;
+    ctx.beginPath();
+    const p0 = place(stroke[0]!);
+    ctx.moveTo(p0.x, p0.y);
+    if (stroke.length === 1) ctx.lineTo(p0.x + 0.01, p0.y); // lone point -> tiny dot
+    else for (let i = 1; i < stroke.length; i++) { const p = place(stroke[i]!); ctx.lineTo(p.x, p.y); }
+    ctx.stroke();
   }
 }
 
