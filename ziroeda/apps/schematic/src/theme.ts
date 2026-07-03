@@ -25,6 +25,9 @@ export interface Theme {
   selectionShadow: string;
   noteLine: string;
   noText: string;
+  noConnect: string;
+  ercError: string;
+  ercWarning: string;
 }
 
 export const KICAD_CLASSIC: Theme = {
@@ -47,4 +50,7 @@ export const KICAD_CLASSIC: Theme = {
   selectionShadow: 'rgba(102, 178, 255, 0.8)', // KiCad LAYER_SELECTION_SHADOWS = COLOR4D(.4,.7,1.0,0.8)
   noteLine: '#0000c2', // KiCad LAYER_NOTES rgb(0,0,194) (graphic lines without an explicit colour)
   noText: '#0000c2', // KiCad LAYER_NOTES rgb(0,0,194)
+  noConnect: '#000084', // KiCad LAYER_NOCONNECT rgb(0,0,132)
+  ercError: 'rgba(230, 9, 13, 0.8)', // KiCad LAYER_ERC_ERR
+  ercWarning: 'rgba(209, 146, 0, 0.8)', // KiCad LAYER_ERC_WARN
 };

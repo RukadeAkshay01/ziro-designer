@@ -329,3 +329,28 @@ html, body { background: var(--chrome-bg2); }
 .ze-props-group label.row > span { width: 56px; flex: 0 0 auto; color: #c7c9cc; font-size: 13px; }
 .ze-props-libid { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: #9a9ca0; }
 .ze-props-libid .val { color: var(--chrome-fg); font-family: monospace; overflow: hidden; text-overflow: ellipsis; }
+
+/* ERC results panel (KiCad DIALOG_ERC, modeless) */
+.ze-erc-panel {
+  position: absolute; top: 12px; right: 12px; width: 380px; max-height: 70%;
+  display: flex; flex-direction: column; z-index: 120;
+  background: var(--chrome-bg); border: 1px solid var(--chrome-border);
+  border-radius: 6px; box-shadow: 0 10px 32px rgba(0,0,0,0.5);
+}
+.ze-erc-list { flex: 1; overflow: auto; padding: 6px 0; min-height: 60px; }
+.ze-erc-empty { padding: 14px; color: #9a9ca0; font-size: 13px; }
+.ze-erc-row {
+  display: flex; gap: 8px; align-items: baseline; padding: 4px 12px;
+  font-size: 12.5px; cursor: pointer; line-height: 1.35;
+}
+.ze-erc-row:hover { background: var(--chrome-hover); }
+.ze-erc-row.error .sev { color: #e6090d; }
+.ze-erc-row.warning .sev { color: #d19200; }
+.ze-erc-row .msg { flex: 1; }
+.ze-erc-footer {
+  display: flex; gap: 12px; align-items: center; padding: 8px 12px;
+  border-top: 1px solid var(--chrome-border); font-size: 12.5px;
+}
+.ze-erc-footer .tally.err { color: #e6090d; }
+.ze-erc-footer .tally.warn { color: #d19200; }
+.ze-erc-footer .grow { flex: 1; }

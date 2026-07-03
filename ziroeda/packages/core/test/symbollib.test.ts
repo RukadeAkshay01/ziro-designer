@@ -49,7 +49,7 @@ describe('placeSymbol', () => {
   });
 
   it('adds the instance and embeds the library def, and undoes both', () => {
-    const empty = { version: 1, libSymbols: [], symbols: [], lines: [], junctions: [], labels: [], source: parse('(kicad_sch (version 1))') } as const;
+    const empty = { version: 1, libSymbols: [], symbols: [], lines: [], junctions: [], noConnects: [], labels: [], source: parse('(kicad_sch (version 1))') } as const;
     const history = new History();
     const placed = history.execute(empty, placeSymbol(lib[0]!, { x: mmToIU(100), y: mmToIU(100) }));
     expect(placed.symbols).toHaveLength(1);

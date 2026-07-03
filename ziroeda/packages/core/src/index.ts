@@ -77,6 +77,7 @@ export {
   makeWire,
   makeBus,
   makeJunction,
+  makeNoConnect,
   makeLabel,
   makeSymbol,
   transformItems,
@@ -100,6 +101,9 @@ export {
 } from './edit/index.js';
 
 export * as connectivity from './connectivity/index.js';
-export { computeNetlist, danglingPinPositions, allPinPositions, type Net, type Netlist } from './connectivity/index.js';
+export {
+  computeNetlist, danglingPinPositions, allPinPositions, enumeratePins, runErc,
+  type Net, type Netlist, type PinNode, type ErcViolation, type ErcCode, type ErcSeverity,
+} from './connectivity/index.js';
 
 export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';

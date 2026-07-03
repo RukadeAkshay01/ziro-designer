@@ -174,6 +174,13 @@ export interface SchJunction {
   readonly source: SList;
 }
 
+/** A no-connect flag (the X on a deliberately unconnected pin). Mirrors KiCad `SCH_NO_CONNECT`. */
+export interface SchNoConnect {
+  readonly at: Vec2;
+  readonly uuid?: string;
+  readonly source: SList;
+}
+
 /** Kinds of text label, matching KiCad tokens. */
 export type LabelKind = 'label' | 'global_label' | 'hierarchical_label' | 'text';
 
@@ -215,6 +222,7 @@ export interface Schematic {
   readonly symbols: readonly SchSymbol[];
   readonly lines: readonly SchLine[];
   readonly junctions: readonly SchJunction[];
+  readonly noConnects: readonly SchNoConnect[];
   readonly labels: readonly SchLabel[];
   /** The root AST node, retained as the lossless source of truth. */
   readonly source: SList;

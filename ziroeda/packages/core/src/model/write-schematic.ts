@@ -18,7 +18,7 @@ import { head, isList, list, atom, str, type SList, type SNode } from '../sexpr/
 import { childNamed, numArg } from '../sexpr/query.js';
 import { iuToMM, mmToIU } from '../units.js';
 import { readField } from './read-schematic.js';
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, TextEffects, Vec2 } from './types.js';
+import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, SchNoConnect, TextEffects, Vec2 } from './types.js';
 
 function mm(iu: number): string {
   let s = iuToMM(iu).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
@@ -329,6 +329,8 @@ function writeLine(l: SchLine): SList {
 
 const writeJunction = (j: SchJunction): SList => patchAt(j.source, j.at);
 
+const writeNoConnect = (nc: SchNoConnect): SList => patchAt(nc.source, nc.at);
+
 function writeLabel(l: SchLabel): SList {
   return patchAt(setItem(l.source, 1, str(l.text)), l.at);
 }
@@ -355,6 +357,7 @@ export function writeSchematic(sch: Schematic): SList {
     ...sch.symbols.map(writeSymbol),
     ...sch.lines.map(writeLine),
     ...sch.junctions.map(writeJunction),
+    ...sch.noConnects.map(writeNoConnect),
     ...sch.labels.map(writeLabel),
   );
 

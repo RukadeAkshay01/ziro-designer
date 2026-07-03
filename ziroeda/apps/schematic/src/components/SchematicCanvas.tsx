@@ -1,12 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback, useMemo } from 'react';
 import {
   hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
-  makeWire, makeBus, makeJunction, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
+  makeWire, makeBus, makeJunction, makeNoConnect, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
   collectAnchors, selectionAnchors, nearestAnchor, danglingPinPositions, boxSelect, pasteItems, translatePayload,
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
-  type PastePayload,
+  type PastePayload, type ErcViolation,
 } from '@ziroeda/core';
-import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
+import { renderSchematic, drawErcMarkers, fitToContent, type Viewport } from '../render/renderer.js';
 import { KICAD_CLASSIC } from '../theme.js';
 
 const GRID = 12700; // 1.27 mm (50 mil)
@@ -61,6 +61,8 @@ export interface CanvasController {
   zoomToFit: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Centre the viewport on a world point (used by ERC click-to-locate). */
+  centerOn: (p: Vec2) => void;
 }
 
 interface Props {
@@ -80,13 +82,15 @@ interface Props {
   /** Switch the active tool (used to auto-start a wire from a dangling pin). */
   onRequestTool?: (id: string) => void;
   /** Double-clicked item (KiCad's Properties action, sch_edit_tool.cpp). */
-  onEditItem?: (id: string, kind: 'symbol' | 'line' | 'junction' | 'label') => void;
+  onEditItem?: (id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label') => void;
   /** Box-selection result (KiCad SelectMultiple): replace/add/subtract the ids. */
   onSelectBox?: (ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => void;
   /** Items being pasted: they follow the cursor until clicked to drop (KiCad's paste-then-move). */
   pastePending?: PastePayload | null;
   /** The paste was dropped: the command was submitted; `ids` are the pasted item ids. */
   onPasteDone?: (ids: ReadonlySet<string>) => void;
+  /** ERC violations to draw as KiCad marker arrows (null = ERC not run). */
+  ercMarkers?: readonly ErcViolation[] | null;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
@@ -103,7 +107,7 @@ const BOX_OUTLINE_L2R = 'rgb(179, 179, 0)'; // window select: dark yellow
 const BOX_OUTLINE_R2L = 'rgb(26, 26, 255)'; // greedy select: blue
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -199,6 +203,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     }
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection, highlight);
 
+    // ERC markers (KiCad's bent-arrow fault indicators).
+    if (ercMarkers && ercMarkers.length > 0) drawErcMarkers(ctx, ercMarkers, vp, KICAD_CLASSIC);
+
     // Box-selection rubber band, in KiCad's colours: the fill shows the mode
     // (normal/additive/subtractive) and the outline shows the direction —
     // dark yellow for a left-to-right "window", blue for right-to-left greedy.
@@ -231,7 +238,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, wireEndPoint, buildMove, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -247,6 +254,15 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     zoomToFit: () => { const c = canvasRef.current; if (c) { viewportRef.current = fitToContent(schematic, c.width, c.height); draw(); } },
     zoomIn: () => { const c = canvasRef.current; if (c) zoomAbout(c.width / 2, c.height / 2, 1.25); },
     zoomOut: () => { const c = canvasRef.current; if (c) zoomAbout(c.width / 2, c.height / 2, 0.8); },
+    centerOn: (p: Vec2) => {
+      const c = canvasRef.current;
+      const vp = viewportRef.current;
+      if (!c || !vp) return;
+      // Keep the zoom, but make sure the fault is legible (~ 0.02 px/IU minimum).
+      const scale = Math.max(vp.scale, 0.002);
+      viewportRef.current = { scale, offsetX: c.width / 2 - p.x * scale, offsetY: c.height / 2 - p.y * scale };
+      draw();
+    },
   }), [schematic, draw, zoomAbout]);
 
   useEffect(() => {
@@ -361,6 +377,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
     if (activeTool === 'junction') {
       onCommand(addItems({ junctions: [makeJunction(snapConn(world))] }));
+      return;
+    }
+
+    // No-connect flags snap to the nearest pin/anchor, as KiCad's placement does.
+    if (activeTool === 'noConnect') {
+      onCommand(addItems({ noConnects: [makeNoConnect(snapConn(world))] }));
       return;
     }
 

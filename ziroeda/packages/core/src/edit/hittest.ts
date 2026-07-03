@@ -10,7 +10,7 @@ import { contains, inflate, labelBox, symbolBodyBBox } from './bbox.js';
 
 /** A reference to a top-level, selectable schematic item. */
 export interface ItemRef {
-  kind: 'symbol' | 'line' | 'junction' | 'label';
+  kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label';
   /** Stable identity: the item's uuid, or `idx:<n>` when one is absent. */
   id: string;
 }
@@ -45,6 +45,14 @@ export function hitTest(
     const j = sch.junctions[i]!;
     const r = (j.diameter > 0 ? j.diameter : 9000) / 2 + accuracy;
     if (Math.hypot(p.x - j.at.x, p.y - j.at.y) <= r) return { kind: 'junction', id: refId('junction', j.uuid, i) };
+  }
+
+  // No-connect flags: KiCad's X spans DEFAULT_NOCONNECT_SIZE (48 mil) about the point.
+  for (let i = 0; i < sch.noConnects.length; i++) {
+    const nc = sch.noConnects[i]!;
+    const half = 6096 + accuracy; // 24 mil in IU
+    if (Math.abs(p.x - nc.at.x) <= half && Math.abs(p.y - nc.at.y) <= half)
+      return { kind: 'noconnect', id: refId('noconnect', nc.uuid, i) };
   }
 
   for (let i = 0; i < sch.labels.length; i++) {

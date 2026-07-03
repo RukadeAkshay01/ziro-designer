@@ -209,6 +209,23 @@ export function renderSchematic(
     ctx.fill();
   });
 
+  // No-connect flags: KiCad's X, spanning DEFAULT_NOCONNECT_SIZE (48 mil) about
+  // the point, in the LAYER_NOCONNECT colour (SCH_PAINTER::draw(SCH_NO_CONNECT)).
+  if (sch.noConnects.length > 0) {
+    ctx.strokeStyle = theme.noConnect;
+    ctx.lineWidth = DEFAULT_LINE_WIDTH;
+    const delta = Math.max(NOCONNECT_SIZE, DEFAULT_LINE_WIDTH * 3) / 2;
+    for (const nc of sch.noConnects) {
+      if (!inView(nc.at.x - delta, nc.at.y - delta, nc.at.x + delta, nc.at.y + delta)) continue;
+      ctx.beginPath();
+      ctx.moveTo(nc.at.x - delta, nc.at.y - delta);
+      ctx.lineTo(nc.at.x + delta, nc.at.y + delta);
+      ctx.moveTo(nc.at.x - delta, nc.at.y + delta);
+      ctx.lineTo(nc.at.x + delta, nc.at.y - delta);
+      ctx.stroke();
+    }
+  }
+
   // Placed symbols (culled to the visible rect, including their fields).
   sch.symbols.forEach((sym, si) => {
     const lib = libById.get(sym.libId);
@@ -273,6 +290,43 @@ export function renderSchematic(
 // KiCad's TARGET_PIN_RADIUS is 15 mil, but that reads visually large here; use a
 // smaller target that matches the desktop app's on-screen appearance.
 const TARGET_PIN_RADIUS = 0.3 * MM; // ~11.8 mil radius
+
+// KiCad DEFAULT_NOCONNECT_SIZE: 48 mil.
+const NOCONNECT_SIZE = 1.2192 * MM;
+
+// KiCad's ERC marker: MarkerShapeCorners (marker_base.cpp) scaled by 0.15 mm
+// (sch_marker.cpp SCALING_FACTOR) — the little bent arrow anchored at the fault.
+const MARKER_SHAPE: readonly (readonly [number, number])[] = [
+  [0, 0], [8, 1], [4, 3], [13, 8], [9, 9], [8, 13], [3, 4], [1, 8], [0, 0],
+];
+const MARKER_SCALE = 0.15 * MM;
+
+/** An ERC marker to draw: position + severity (colour). */
+export interface MarkerDraw {
+  at: Vec2;
+  severity: 'error' | 'warning';
+}
+
+/** Draw ERC markers over the schematic (sets its own canvas transform). */
+export function drawErcMarkers(
+  ctx: CanvasRenderingContext2D,
+  markers: readonly MarkerDraw[],
+  viewport: Viewport,
+  theme: Theme,
+): void {
+  ctx.setTransform(viewport.scale, 0, 0, viewport.scale, viewport.offsetX, viewport.offsetY);
+  for (const m of markers) {
+    ctx.fillStyle = m.severity === 'error' ? theme.ercError : theme.ercWarning;
+    ctx.beginPath();
+    MARKER_SHAPE.forEach(([x, y], i) => {
+      const px = m.at.x + x * MARKER_SCALE;
+      const py = m.at.y + y * MARKER_SCALE;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+}
 
 /** KiCad COLOR4D::Brightened(f): move the colour a fraction f toward white. */
 function brighten(hex: string, f: number): string {
@@ -455,6 +509,19 @@ function drawSelectionShadows(
     ctx.beginPath();
     ctx.arc(j.at.x, j.at.y, r, 0, Math.PI * 2);
     ctx.fill();
+  });
+
+  // No-connect flags: a wider X under the mark.
+  sch.noConnects.forEach((nc, i) => {
+    if (!selection.has(refId('noconnect', nc.uuid, i))) return;
+    ctx.lineWidth = DEFAULT_LINE_WIDTH + width;
+    const delta = Math.max(NOCONNECT_SIZE, DEFAULT_LINE_WIDTH * 3) / 2;
+    ctx.beginPath();
+    ctx.moveTo(nc.at.x - delta, nc.at.y - delta);
+    ctx.lineTo(nc.at.x + delta, nc.at.y + delta);
+    ctx.moveTo(nc.at.x - delta, nc.at.y + delta);
+    ctx.lineTo(nc.at.x + delta, nc.at.y - delta);
+    ctx.stroke();
   });
 
   // Symbols: re-stroke the body graphics and pins in the shadow colour.

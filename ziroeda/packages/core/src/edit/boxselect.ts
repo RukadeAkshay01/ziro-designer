@@ -102,6 +102,13 @@ export function boxSelect(
       ids.add(refId('junction', j.uuid, i));
   });
 
+  sch.noConnects.forEach((nc, i) => {
+    const half = 6096; // DEFAULT_NOCONNECT_SIZE/2 (24 mil)
+    const box: BBox = { minX: nc.at.x - half, minY: nc.at.y - half, maxX: nc.at.x + half, maxY: nc.at.y + half };
+    if (contained ? boxContains(rect, box) : boxIntersects(rect, box))
+      ids.add(refId('noconnect', nc.uuid, i));
+  });
+
   sch.labels.forEach((l, i) => {
     const box = labelBox(l);
     if (contained ? boxContains(rect, box) : boxIntersects(rect, box))

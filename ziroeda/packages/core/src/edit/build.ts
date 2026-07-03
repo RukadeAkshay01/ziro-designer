@@ -9,7 +9,7 @@
 
 import { list, atom, str, type SList } from '../sexpr/types.js';
 import { iuToMM } from '../units.js';
-import type { SchLine, SchJunction, SchSymbol, SchField, SchLabel, LabelKind, LabelShape, LibSymbol, Vec2 } from '../model/types.js';
+import type { SchLine, SchJunction, SchNoConnect, SchSymbol, SchField, SchLabel, LabelKind, LabelShape, LibSymbol, Vec2 } from '../model/types.js';
 import type { Orientation } from '../geom/transform.js';
 
 /** A UUID for a new item. Falls back to a random hex string off-platform. */
@@ -120,6 +120,17 @@ export function makeLabel(kind: LabelKind, text: string, at: Vec2, opts: LabelOp
 export function makeJunction(at: Vec2): SchJunction {
   const uuid = newUuid();
   return { at, diameter: 0, uuid, source: buildJunctionNode(at, uuid) };
+}
+
+/** Create a new no-connect flag — KiCad's `(no_connect (at ..) (uuid ..))`. */
+export function makeNoConnect(at: Vec2): SchNoConnect {
+  const uuid = newUuid();
+  const source = list(
+    atom('no_connect'),
+    list(atom('at'), atom(mm(at.x)), atom(mm(at.y))),
+    list(atom('uuid'), str(uuid)),
+  );
+  return { at, uuid, source };
 }
 
 const DEFAULT_FONT = (): SList => list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))));

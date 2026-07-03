@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload } from '@ziroeda/core';
+import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, runErc, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload, type ErcViolation } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
 import { LabelDialog } from './components/LabelDialog.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
+import { ErcDialog } from './components/ErcDialog.js';
 import { Toolbar } from './ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from './ui/toolbars.js';
 import { MenuBar } from './ui/MenuBar.js';
@@ -68,6 +69,8 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
   const [propsTarget, setPropsTarget] = useState<string | null>(null);
   // Items parsed from the clipboard, attached to the cursor until dropped.
   const [pastePending, setPastePending] = useState<PastePayload | null>(null);
+  // ERC results: null = panel closed; a list (possibly empty) = panel open.
+  const [ercResult, setErcResult] = useState<readonly ErcViolation[] | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -146,7 +149,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
   const redo = useCallback(() => setDoc((d) => (d ? history.current.redo(d) ?? d : d)), []);
 
   // KiCad's Properties action: only symbols have a properties dialog so far.
-  const onEditItem = useCallback((id: string, kind: 'symbol' | 'line' | 'junction' | 'label') => {
+  const onEditItem = useCallback((id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label') => {
     if (kind === 'symbol') setPropsTarget(id);
   }, []);
 
@@ -272,6 +275,20 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     setSelection(new Set(ids));
   }, []);
 
+  // ----- ERC (Inspect > Electrical Rules Checker) ------------------------------
+  const runErcNow = useCallback(() => {
+    setDoc((d) => {
+      if (d) setErcResult(runErc(d, new Map(d.libSymbols.map((l) => [l.libId, l]))));
+      return d;
+    });
+  }, []);
+
+  // Clicking a violation centres the fault and selects the offending items.
+  const locateViolation = useCallback((v: ErcViolation) => {
+    controller.current?.centerOn(v.at);
+    setSelection(new Set(v.items));
+  }, []);
+
   const lineMode: LineMode = toggles.has('lineModeFree') ? 'free' : toggles.has('lineMode45') ? '45' : '90';
 
   // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
@@ -291,8 +308,9 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     else if (id === 'redo') redo();
     else if (id === 'open') promptOpen();
     else if (id === 'save') save();
+    else if (id === 'erc') runErcNow();
     else if (TX[id]) setSelection((sel) => { if (sel.size > 0) runCommand(transformItems(sel, TX[id]!)); return sel; });
-  }, [undo, redo, save, promptOpen, runCommand]);
+  }, [undo, redo, save, promptOpen, runCommand, runErcNow]);
 
   const menus = useMemo(() => buildMenus({ tool: onToolSelect, action: onTopAction }), [onToolSelect, onTopAction]);
 
@@ -466,10 +484,19 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             onSelectBox={onSelectBox}
             pastePending={pastePending}
             onPasteDone={onPasteDone}
+            ercMarkers={ercResult}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}
           />
+          {ercResult !== null && (
+            <ErcDialog
+              violations={ercResult}
+              onRun={runErcNow}
+              onLocate={locateViolation}
+              onClose={() => setErcResult(null)}
+            />
+          )}
         </div>
 
         <Toolbar entries={RIGHT_TOOLBAR} orientation="vertical" side="right" activeTool={activeTool} onActivate={onToolSelect} />

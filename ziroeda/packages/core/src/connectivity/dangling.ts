@@ -59,6 +59,7 @@ export function danglingPinPositions(sch: Schematic, libById: Map<string, LibSym
   // the common case — a pin connects at a wire end far more often than mid-span).
   const nodePoints = new Set<string>();
   for (const j of sch.junctions) nodePoints.add(key(j.at));
+  for (const nc of sch.noConnects) nodePoints.add(key(nc.at)); // an NC flag "connects" the pin
   for (const l of sch.labels) if (l.kind !== 'text') nodePoints.add(key(l.at));
 
   const wires = sch.lines.filter((l) => l.kind === 'wire' || l.kind === 'bus');

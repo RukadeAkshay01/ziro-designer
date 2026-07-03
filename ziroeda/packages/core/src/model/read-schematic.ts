@@ -32,6 +32,7 @@ import type {
   SchJunction,
   SchLabel,
   SchLine,
+  SchNoConnect,
   SchSymbol,
   Stroke,
   TextEffects,
@@ -359,6 +360,14 @@ function readJunction(node: SList): SchJunction {
   return j;
 }
 
+function readNoConnect(node: SList): SchNoConnect {
+  const { at } = readAt(node);
+  const nc: { -readonly [K in keyof SchNoConnect]: SchNoConnect[K] } = { at, source: node };
+  const uuid = stringField(node, 'uuid');
+  if (uuid) nc.uuid = uuid;
+  return nc;
+}
+
 function readLabel(node: SList, kind: LabelKind): SchLabel {
   const { at, angle } = readAt(node);
   const label: { -readonly [K in keyof SchLabel]: SchLabel[K] } = {
@@ -424,6 +433,7 @@ export function readSchematic(root: SList): Schematic {
   const symbols: SchSymbol[] = [];
   const lines: SchLine[] = [];
   const junctions: SchJunction[] = [];
+  const noConnects: SchNoConnect[] = [];
   const labels: SchLabel[] = [];
 
   const libSymbolsNode = childNamed(root, 'lib_symbols');
@@ -440,6 +450,7 @@ export function readSchematic(root: SList): Schematic {
     if (name === 'symbol') symbols.push(readSymbol(item));
     else if (LINE_KINDS[name]) lines.push(readLine(item, LINE_KINDS[name]!));
     else if (name === 'junction') junctions.push(readJunction(item));
+    else if (name === 'no_connect') noConnects.push(readNoConnect(item));
     else if (LABEL_KINDS[name]) labels.push(readLabel(item, LABEL_KINDS[name]!));
   }
 
@@ -449,6 +460,7 @@ export function readSchematic(root: SList): Schematic {
     symbols,
     lines,
     junctions,
+    noConnects,
     labels,
     source: root,
   };

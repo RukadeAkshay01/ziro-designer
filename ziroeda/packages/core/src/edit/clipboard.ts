@@ -38,13 +38,14 @@ export function copySelectionText(sch: Schematic, ids: ReadonlySet<string>): str
   const symbols = sch.symbols.filter((s, i) => ids.has(refId('symbol', s.uuid, i)));
   const lines = sch.lines.filter((l, i) => ids.has(refId('line', l.uuid, i)));
   const junctions = sch.junctions.filter((j, i) => ids.has(refId('junction', j.uuid, i)));
+  const noConnects = sch.noConnects.filter((nc, i) => ids.has(refId('noconnect', nc.uuid, i)));
   const labels = sch.labels.filter((l, i) => ids.has(refId('label', l.uuid, i)));
 
   const usedLibIds = new Set(symbols.map((s) => s.libId));
   const libs = sch.libSymbols.filter((l) => usedLibIds.has(l.libId));
 
   // Round the subset through the writer so item nodes carry current geometry.
-  const subset: Schematic = { ...sch, symbols, lines, junctions, labels, libSymbols: libs };
+  const subset: Schematic = { ...sch, symbols, lines, junctions, noConnects, labels, libSymbols: libs };
   const root = writeSchematic(subset);
 
   const parts: string[] = [];
@@ -54,7 +55,7 @@ export function copySelectionText(sch: Schematic, ids: ReadonlySet<string>): str
     if (h === 'lib_symbols') {
       if (it.items.length > 1) parts.push(serialize(it));
     } else if (h === 'symbol' || h === 'wire' || h === 'bus' || h === 'polyline'
-        || h === 'junction' || h === 'label' || h === 'global_label'
+        || h === 'junction' || h === 'no_connect' || h === 'label' || h === 'global_label'
         || h === 'hierarchical_label' || h === 'text') {
       parts.push(serialize(it));
     }
@@ -153,7 +154,7 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
 
   // Not schematic data: paste as a text object (KiCad's IO_ERROR fallback).
   const asTextItem = (): PastePayload => ({
-    batch: { symbols: [], lines: [], junctions: [], labels: [makeLabel('text', text, { x: 0, y: 0 })] },
+    batch: { symbols: [], lines: [], junctions: [], noConnects: [], labels: [makeLabel('text', text, { x: 0, y: 0 })] },
     libs: [],
     refPoint: { x: 0, y: 0 },
   });
@@ -191,9 +192,10 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
   };
   const lines = doc.lines.map(reuuid);
   const junctions = doc.junctions.map(reuuid);
+  const noConnects = doc.noConnects.map(reuuid);
   const labels = doc.labels.map(reuuid);
 
-  if (symbols.length + lines.length + junctions.length + labels.length === 0) return null;
+  if (symbols.length + lines.length + junctions.length + noConnects.length + labels.length === 0) return null;
 
   // Only bring along lib definitions the target sheet doesn't already have.
   const have = new Set(existing.libSymbols.map((l) => l.libId));
@@ -208,10 +210,11 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
   for (const s of symbols) consider(s.at);
   for (const l of lines) consider(l.start);
   for (const j of junctions) consider(j.at);
+  for (const nc of noConnects) consider(nc.at);
   for (const l of labels) consider(l.at);
 
   return {
-    batch: { symbols, lines, junctions, labels },
+    batch: { symbols, lines, junctions, noConnects, labels },
     libs,
     refPoint: refPoint ?? { x: 0, y: 0 },
   };
@@ -236,6 +239,7 @@ export function translatePayload(p: PastePayload, delta: Vec2): PastePayload {
         points: l.points?.map(mv),
       })),
       junctions: p.batch.junctions.map((j) => ({ ...j, at: mv(j.at) })),
+      noConnects: p.batch.noConnects.map((nc) => ({ ...nc, at: mv(nc.at) })),
       labels: p.batch.labels.map((l) => ({ ...l, at: mv(l.at) })),
     },
   };
@@ -255,6 +259,7 @@ export function pasteItems(payload: PastePayload): EditCommand {
         symbols: [...doc.symbols, ...batch.symbols],
         lines: [...doc.lines, ...batch.lines],
         junctions: [...doc.junctions, ...batch.junctions],
+        noConnects: [...doc.noConnects, ...batch.noConnects],
         labels: [...doc.labels, ...batch.labels],
       };
     },
@@ -265,6 +270,7 @@ export function pasteItems(payload: PastePayload): EditCommand {
       batch.symbols.forEach((s) => ids.add(s.uuid!));
       batch.lines.forEach((l) => ids.add(l.uuid!));
       batch.junctions.forEach((j) => ids.add(j.uuid!));
+      batch.noConnects.forEach((nc) => ids.add(nc.uuid!));
       batch.labels.forEach((l) => ids.add(l.uuid!));
       return unpasteItems(payload, ids, addedLibs);
     },
@@ -281,6 +287,7 @@ function unpasteItems(payload: PastePayload, ids: ReadonlySet<string>, libIds: r
         symbols: doc.symbols.filter((s) => !ids.has(s.uuid ?? '')),
         lines: doc.lines.filter((l) => !ids.has(l.uuid ?? '')),
         junctions: doc.junctions.filter((j) => !ids.has(j.uuid ?? '')),
+        noConnects: doc.noConnects.filter((nc) => !ids.has(nc.uuid ?? '')),
         labels: doc.labels.filter((l) => !ids.has(l.uuid ?? '')),
       };
     },

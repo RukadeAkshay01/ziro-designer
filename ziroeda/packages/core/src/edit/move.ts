@@ -7,7 +7,7 @@
  * exact.
  */
 
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, Vec2 } from '../model/types.js';
+import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchNoConnect, SchField, Vec2 } from '../model/types.js';
 import { refId } from './hittest.js';
 import { makeWireWithUuid } from './build.js';
 import type { MoveSpec, StubWire } from './connect.js';
@@ -24,6 +24,7 @@ function moveSymbol(s: SchSymbol, d: Vec2): SchSymbol {
 }
 const moveLine = (l: SchLine, d: Vec2): SchLine => ({ ...l, start: add(l.start, d), end: add(l.end, d) });
 const moveJunction = (j: SchJunction, d: Vec2): SchJunction => ({ ...j, at: add(j.at, d) });
+const moveNoConnect = (nc: SchNoConnect, d: Vec2): SchNoConnect => ({ ...nc, at: add(nc.at, d) });
 const moveLabel = (l: SchLabel, d: Vec2): SchLabel => ({ ...l, at: add(l.at, d) });
 
 /** Create a command that moves every item in `ids` by `delta`. */
@@ -37,6 +38,7 @@ export function moveItems(ids: ReadonlySet<string>, delta: Vec2): EditCommand {
         symbols: doc.symbols.map((s, i) => (ids.has(refId('symbol', s.uuid, i)) ? moveSymbol(s, delta) : s)),
         lines: doc.lines.map((l, i) => (ids.has(refId('line', l.uuid, i)) ? moveLine(l, delta) : l)),
         junctions: doc.junctions.map((j, i) => (ids.has(refId('junction', j.uuid, i)) ? moveJunction(j, delta) : j)),
+        noConnects: doc.noConnects.map((nc, i) => (ids.has(refId('noconnect', nc.uuid, i)) ? moveNoConnect(nc, delta) : nc)),
         labels: doc.labels.map((l, i) => (ids.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l)),
       };
     },
@@ -63,6 +65,7 @@ function applyConnectedMove(
     ...doc,
     symbols: doc.symbols.map((s, i) => (spec.fullIds.has(refId('symbol', s.uuid, i)) ? moveSymbol(s, delta) : s)),
     junctions: doc.junctions.map((j, i) => (spec.fullIds.has(refId('junction', j.uuid, i)) ? moveJunction(j, delta) : j)),
+    noConnects: doc.noConnects.map((nc, i) => (spec.fullIds.has(refId('noconnect', nc.uuid, i)) ? moveNoConnect(nc, delta) : nc)),
     labels: doc.labels.map((l, i) => (spec.fullIds.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l)),
     lines: stubs.length ? [...lines, ...stubs] : lines,
   };

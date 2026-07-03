@@ -74,6 +74,57 @@ export interface Netlist {
 
 const key = (p: Vec2): string => `${p.x},${p.y}`;
 
+/** A symbol pin instance in world coordinates, as enumerated for the netlist/ERC. */
+export interface PinNode {
+  /** Node id, `<symbolRefId>:pin<k>` — identical to the ids computeNetlist emits. */
+  id: string;
+  symId: string;
+  ref: string;
+  number: string;
+  name: string;
+  /** Electrical type token: input | output | ... (see ERC pin matrix). */
+  electricalType: string;
+  at: Vec2;
+  /** True when the pin's parent lib symbol is a power symbol (GND, +5V, ...). */
+  isPowerSymbol: boolean;
+  hidden: boolean;
+}
+
+/**
+ * Enumerate every placed symbol's pins in world coordinates. This is the single
+ * source of pin identity shared by computeNetlist and the ERC checker, so the
+ * `:pin<k>` ids always agree.
+ */
+export function enumeratePins(sch: Schematic, libById: Map<string, LibSymbol>): PinNode[] {
+  const out: PinNode[] = [];
+  sch.symbols.forEach((sym, si) => {
+    const lib = libById.get(sym.libId);
+    if (!lib) return;
+    const symId = refId('symbol', sym.uuid, si);
+    const t = symbolTransform(sym.angle, sym.mirror);
+    const ref = fieldValue(sym, 'Reference') ?? '?';
+    let k = 0;
+    for (const u of lib.units) {
+      if ((u.unit !== 0 && u.unit !== sym.unit) || (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)) continue;
+      for (const pin of u.pins) {
+        out.push({
+          id: `${symId}:pin${k}`,
+          symId,
+          ref,
+          number: pin.number,
+          name: pin.name,
+          electricalType: pin.electricalType,
+          at: localToWorld(sym.at, t, pin.at),
+          isPowerSymbol: lib.isPower,
+          hidden: pin.hidden,
+        });
+        k++;
+      }
+    }
+  });
+  return out;
+}
+
 /** True if point p lies on the segment a-b (exact, integer IU coordinates). */
 function onSegment(p: Vec2, a: Vec2, b: Vec2): boolean {
   const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
@@ -126,32 +177,24 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
     nodes.push({ id: refId('label', l.uuid, i), points: [l.at], driver: { priority, name: l.text } });
   });
 
+  // No-connect flags join the net at their point (KiCad: SCH_NO_CONNECT is a
+  // connectable item; the subgraph carrying one is exempt from unconnected checks).
+  sch.noConnects.forEach((nc, i) => {
+    nodes.push({ id: refId('noconnect', nc.uuid, i), points: [nc.at], driver: null });
+  });
+
   // Symbol pins (through the placement transform). Power symbols drive a power net
   // named by the symbol's Value; ordinary pins drive a Net-(REF-pin) auto name.
-  sch.symbols.forEach((sym, si) => {
-    const lib = libById.get(sym.libId);
-    if (!lib) return;
-    const symId = refId('symbol', sym.uuid, si);
-    const t = symbolTransform(sym.angle, sym.mirror);
-    const isPower = lib.isPower;
-    const ref = fieldValue(sym, 'Reference') ?? '?';
-    const value = fieldValue(sym, 'Value') ?? '';
-    let k = 0;
-    for (const u of lib.units) {
-      if ((u.unit !== 0 && u.unit !== sym.unit) || (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)) continue;
-      for (const pin of u.pins) {
-        const at = localToWorld(sym.at, t, pin.at);
-        const node: Node = { id: `${symId}:pin${k}`, points: [at], driver: null };
-        if (isPower) {
-          node.driver = { priority: Priority.GlobalPowerPin, name: value };
-        } else {
-          node.autoName = `Net-(${ref}-Pad${pin.number || k + 1})`;
-        }
-        nodes.push(node);
-        k++;
-      }
+  const valueBySym = new Map(sch.symbols.map((s, i) => [refId('symbol', s.uuid, i), fieldValue(s, 'Value') ?? '']));
+  for (const pin of enumeratePins(sch, libById)) {
+    const node: Node = { id: pin.id, points: [pin.at], driver: null };
+    if (pin.isPowerSymbol) {
+      node.driver = { priority: Priority.GlobalPowerPin, name: valueBySym.get(pin.symId) ?? '' };
+    } else {
+      node.autoName = `Net-(${pin.ref}-Pad${pin.number || Number(pin.id.slice(pin.id.lastIndexOf(':pin') + 4)) + 1})`;
     }
-  });
+    nodes.push(node);
+  }
 
   // Build the point -> node-ids map (KiCad's connection_map).
   const pointMap = new Map<string, Set<string>>();
