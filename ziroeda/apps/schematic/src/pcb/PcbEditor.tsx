@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { parse, readBoard, iuToMM, type Board } from '@ziroeda/core';
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
-import { buildScene, drawBoard, type BoardScene } from './renderBoard.js';
+import { buildScene, buildDrawSteps, type BoardScene } from './renderBoard.js';
 import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
 import '../ui/shell.css';
 
@@ -49,20 +49,85 @@ export function PcbEditor({ fileName, text, onExit }: {
     return () => { cancelled = true; clearTimeout(id); };
   }, [text, fileName]);
 
-  const draw = useCallback(() => {
+  // pcbnew rasterises into a backing store and pans that bitmap; same here:
+  // the full scene renders into an offscreen cache, pan/zoom frames just blit
+  // the cache with a delta transform, and a crisp re-render follows on idle.
+  const cacheRef = useRef<{ canvas: HTMLCanvasElement; view: { scale: number; tx: number; ty: number } } | null>(null);
+  const idleTimer = useRef(0);
+
+  // Time-sliced rasteriser: run paint steps in ≤12 ms bursts per frame into a
+  // work canvas, then promote it to the blit cache. Interaction stays at 60fps
+  // because pan/zoom frames only ever blit the previous cache.
+  const jobRef = useRef(0);
+  const renderToCache = useCallback((onDone?: () => void) => {
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
-    if (!canvas || !scene) return;
+    if (!canvas || !scene || canvas.width < 2) return;
+    const job = ++jobRef.current;
+    const work = document.createElement('canvas');
+    work.width = canvas.width;
+    work.height = canvas.height;
+    const cctx = work.getContext('2d');
+    if (!cctx) return;
+    const jobView = { ...viewRef.current };
+    const steps = buildDrawSteps(cctx, scene, jobView, visible, work.width, work.height);
+    let i = 0;
+    const run = (): void => {
+      if (job !== jobRef.current) return; // superseded by a newer render
+      const t0 = performance.now();
+      while (i < steps.length && performance.now() - t0 < 12) steps[i++]!();
+      if (i < steps.length) {
+        requestAnimationFrame(run);
+      } else {
+        cacheRef.current = { canvas: work, view: jobView };
+        onDone?.();
+      }
+    };
+    run();
+  }, [visible]);
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !sceneRef.current) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    drawBoard(ctx, scene, viewRef.current, visible, canvas.width, canvas.height);
-    setScale(viewRef.current.scale);
-  }, [visible]);
+    const v = viewRef.current;
+    const cache = cacheRef.current;
+    const fresh = cache && cache.view.scale === v.scale && cache.view.tx === v.tx && cache.view.ty === v.ty
+      && cache.canvas.width === canvas.width && cache.canvas.height === canvas.height;
+    if (!fresh) {
+      // Blit whatever cache exists now; kick a time-sliced crisp render that
+      // promotes itself when finished (debounced while interacting).
+      clearTimeout(idleTimer.current);
+      idleTimer.current = window.setTimeout(() => renderToCache(() => requestDraw()), cache ? 120 : 0);
+    }
+    const c = cacheRef.current;
+    if (!c) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = 'rgb(0,16,35)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgb(0,16,35)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const k = v.scale / c.view.scale;
+    ctx.setTransform(k, 0, 0, k, v.tx - c.view.tx * k, v.ty - c.view.ty * k);
+    ctx.drawImage(c.canvas, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    setScale(v.scale);
+  }, [renderToCache]);
 
   const requestDraw = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
     rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
+
+  // Layer toggles change the scene: invalidate and re-render.
+  useEffect(() => {
+    cacheRef.current = null;
+    requestDraw();
+  }, [visible, requestDraw]);
 
   const zoomToFit = useCallback(() => {
     const canvas = canvasRef.current;
@@ -104,8 +169,6 @@ export function PcbEditor({ fileName, text, onExit }: {
     ro.observe(wrap);
     return () => ro.disconnect();
   }, [dpr, requestDraw, zoomToFit, board]);
-
-  useEffect(() => { requestDraw(); }, [visible, requestDraw]);
 
   // Wheel zoom about the cursor; drag to pan (left or middle button).
   useEffect(() => {

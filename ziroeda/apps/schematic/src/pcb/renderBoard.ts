@@ -33,6 +33,10 @@ import { layoutText, measureText } from '../render/strokeFont.js';
 
 const MM = 10000; // IU per mm, matches core units
 
+// KiCad object-opacity defaults (project_local_settings.cpp): tracks/vias/
+// pads 1.0, zones 0.6 — the translucent planes are a big part of the pcbnew look.
+const ZONE_OPACITY = 0.6;
+
 interface LayerBuckets {
   zones: Path2D;
   hasZones: boolean;
@@ -335,6 +339,7 @@ export function buildScene(board: Board): BoardScene {
   }
   for (const fp of board.footprints) {
     for (const s of fp.shapes) addShape(scene, s);
+    for (const t of fp.texts) if (!t.hide) addText(scene, t);
     for (const pad of fp.pads) {
       if (pad.type === 'np_thru_hole') {
         // Painter draws NPTH as its hole in LAYER_NON_PLATEDHOLES.
@@ -353,13 +358,41 @@ export function buildScene(board: Board): BoardScene {
       }
       grow(pad.at.x, pad.at.y, Math.max(pad.size.x, pad.size.y) / 2);
     }
-    for (const t of fp.texts) if (!t.hide) scene.texts.push(t);
     grow(fp.at.x, fp.at.y);
   }
-  for (const t of board.texts) if (!t.hide) scene.texts.push(t);
+  for (const t of board.texts) if (!t.hide) addText(scene, t);
 
   scene.bbox = minX < maxX ? { minX, minY, maxX, maxY } : null;
   return scene;
+}
+
+function addText(scene: BoardScene, t: PcbTextItem): void {
+  const size = t.size.y;
+  if (size <= 0 || t.text === '') return;
+  const { strokes, width } = layoutText(t.text, size);
+  const thickness = Math.max(t.thickness ?? Math.round(size * 0.15), 1);
+  // PCB text anchors CENTER/CENTER by default (EDA_TEXT on boards).
+  const justify = t.justify ?? [];
+  const hAlign = justify.includes('left') ? 'left' : justify.includes('right') ? 'right' : 'center';
+  const vAlign = justify.includes('top') ? 'top' : justify.includes('bottom') ? 'bottom' : 'center';
+  const offX = hAlign === 'left' ? 0 : hAlign === 'right' ? -width : -width / 2;
+  const offY = vAlign === 'top' ? size : vAlign === 'bottom' ? 0 : size / 2;
+  const rad = (-t.angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const mir = t.mirror ? -1 : 1;
+  const path = strokePath(buckets(scene, t.layer), thickness);
+  for (const stroke of strokes) {
+    for (let i = 0; i < stroke.length; i++) {
+      const gx = (stroke[i]!.x + offX) * mir;
+      const gy = stroke[i]!.y + offY;
+      const x = t.at.x + gx * cos - gy * sin;
+      const y = t.at.y + gx * sin + gy * cos;
+      if (i === 0) path.moveTo(x, y);
+      else path.lineTo(x, y);
+      if (stroke.length === 1) path.lineTo(x + 1, y);
+    }
+  }
 }
 
 const addHole = (path: Path2D, pad: PcbPad, drill: { oblong: boolean; w: number; h: number; offset?: Vec2 }): void => {
@@ -390,8 +423,12 @@ export interface PcbViewTransform {
   ty: number;
 }
 
-/** Paint the compiled scene. `visible` holds real layer names to show. */
-export function drawBoard(
+/**
+ * The paint sequence as resumable steps, one per stacking pass. The editor
+ * runs these across animation frames with a time budget so a 20k-track board
+ * never blocks the UI while the crisp raster streams in.
+ */
+export function buildDrawSteps(
   ctx: CanvasRenderingContext2D,
   scene: BoardScene,
   view: PcbViewTransform,
@@ -399,22 +436,29 @@ export function drawBoard(
   widthPx: number,
   heightPx: number,
   showHoles = true,
-): void {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = PCB_BACKGROUND;
-  ctx.fillRect(0, 0, widthPx, heightPx);
-  ctx.setTransform(view.scale, 0, 0, view.scale, view.tx, view.ty);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
+): (() => void)[] {
+  const steps: (() => void)[] = [];
+  steps.push(() => {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = PCB_BACKGROUND;
+    ctx.fillRect(0, 0, widthPx, heightPx);
+    ctx.setTransform(view.scale, 0, 0, view.scale, view.tx, view.ty);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+  });
 
-  const paintLayer = (layer: string): void => {
+  const paintZones = (layer: string) => (): void => {
+    const b = scene.layers.get(layer);
+    if (!b?.hasZones) return;
+    ctx.fillStyle = layerColor(layer);
+    ctx.globalAlpha = ZONE_OPACITY;
+    ctx.fill(b.zones, 'nonzero');
+    ctx.globalAlpha = 1;
+  };
+  const paintCopper = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
     const color = layerColor(layer);
-    if (b.hasZones) {
-      ctx.fillStyle = color;
-      ctx.fill(b.zones, 'nonzero');
-    }
     if (b.hasFlash) {
       ctx.fillStyle = color;
       ctx.fill(b.flash, 'nonzero');
@@ -425,70 +469,44 @@ export function drawBoard(
       ctx.stroke(path);
     }
   };
+  const pushLayer = (layer: string): void => {
+    if (!visible.has(layer) || !scene.layers.has(layer)) return;
+    steps.push(paintZones(layer), paintCopper(layer));
+  };
 
   const fCuIndex = PCB_PAINT_ORDER.indexOf('F.Cu');
-  for (let i = 0; i <= fCuIndex; i++) {
-    const layer = PCB_PAINT_ORDER[i]!;
-    if (visible.has(layer)) paintLayer(layer);
-  }
+  for (let i = 0; i <= fCuIndex; i++) pushLayer(PCB_PAINT_ORDER[i]!);
 
   if (showHoles) {
-    ctx.fillStyle = PCB_SPECIAL.padHoleWall;
-    ctx.fill(scene.padHoleWalls);
-    ctx.fillStyle = PCB_SPECIAL.padPlatedHole;
-    ctx.fill(scene.padHolesPlated);
-    ctx.fillStyle = PCB_SPECIAL.viaHoleWall;
-    ctx.fill(scene.viaHoleWalls);
-    ctx.fillStyle = PCB_SPECIAL.viaHole;
-    ctx.fill(scene.viaHoles);
-    ctx.fillStyle = PCB_SPECIAL.nonPlatedHole;
-    ctx.fill(scene.padHolesNP);
+    steps.push(() => {
+      ctx.fillStyle = PCB_SPECIAL.padHoleWall;
+      ctx.fill(scene.padHoleWalls);
+      ctx.fillStyle = PCB_SPECIAL.padPlatedHole;
+      ctx.fill(scene.padHolesPlated);
+      ctx.fillStyle = PCB_SPECIAL.viaHoleWall;
+      ctx.fill(scene.viaHoleWalls);
+      ctx.fillStyle = PCB_SPECIAL.viaHole;
+      ctx.fill(scene.viaHoles);
+      ctx.fillStyle = PCB_SPECIAL.nonPlatedHole;
+      ctx.fill(scene.padHolesNP);
+    });
   }
 
-  // Footprint/board text above copper (LAYER_FP_TEXT position in GAL order).
-  const minTextPx = 0.6;
-  for (const t of scene.texts) {
-    if (!visible.has(t.layer)) continue;
-    if (t.size.y * view.scale < minTextPx) continue;
-    drawPcbText(ctx, t);
-  }
-
-  for (let i = fCuIndex + 1; i < PCB_PAINT_ORDER.length; i++) {
-    const layer = PCB_PAINT_ORDER[i]!;
-    if (visible.has(layer)) paintLayer(layer);
-  }
+  for (let i = fCuIndex + 1; i < PCB_PAINT_ORDER.length; i++) pushLayer(PCB_PAINT_ORDER[i]!);
+  return steps;
 }
 
-function drawPcbText(ctx: CanvasRenderingContext2D, t: PcbTextItem): void {
-  const size = t.size.y;
-  const { strokes, width } = layoutText(t.text, size);
-  const thickness = t.thickness ?? Math.round(size * 0.15);
-  // PCB text anchors CENTER/CENTER by default (EDA_TEXT on boards).
-  const justify = t.justify ?? [];
-  const hAlign = justify.includes('left') ? 'left' : justify.includes('right') ? 'right' : 'center';
-  const vAlign = justify.includes('top') ? 'top' : justify.includes('bottom') ? 'bottom' : 'center';
-  const offX = hAlign === 'left' ? 0 : hAlign === 'right' ? -width : -width / 2;
-  // layoutText puts the baseline at y=0 with ascent above; approximate cap
-  // height with the glyph size for vertical centring, like EDA_TEXT.
-  const offY = vAlign === 'top' ? size : vAlign === 'bottom' ? 0 : size / 2;
-  ctx.save();
-  ctx.translate(t.at.x, t.at.y);
-  ctx.rotate((-t.angle * Math.PI) / 180);
-  if (t.mirror) ctx.scale(-1, 1);
-  ctx.translate(offX, offY);
-  ctx.strokeStyle = layerColor(t.layer);
-  ctx.lineWidth = Math.max(thickness, 1);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  for (const stroke of strokes) {
-    if (stroke.length === 0) continue;
-    ctx.moveTo(stroke[0]!.x, stroke[0]!.y);
-    if (stroke.length === 1) ctx.lineTo(stroke[0]!.x + 1, stroke[0]!.y);
-    for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i]!.x, stroke[i]!.y);
-  }
-  ctx.stroke();
-  ctx.restore();
+/** Paint the compiled scene in one blocking pass (small boards / exports). */
+export function drawBoard(
+  ctx: CanvasRenderingContext2D,
+  scene: BoardScene,
+  view: PcbViewTransform,
+  visible: ReadonlySet<string>,
+  widthPx: number,
+  heightPx: number,
+  showHoles = true,
+): void {
+  for (const step of buildDrawSteps(ctx, scene, view, visible, widthPx, heightPx, showHoles)) step();
 }
 
 export { measureText };
