@@ -10,6 +10,7 @@ import { MenuBar } from './ui/MenuBar.js';
 import { buildMenus, TOOL_HOTKEYS } from './ui/menus.js';
 import { SymbolChooser } from './components/SymbolChooser.js';
 import { HomePage } from './HomePage.js';
+import { PcbEditor } from './pcb/PcbEditor.js';
 import './ui/shell.css';
 
 // What KiCad writes for File > New Schematic: an empty sheet on A4 paper.
@@ -685,13 +686,24 @@ function renderSheetNode(
 
 /** Top-level app: the KiCad-style project manager, then the schematic editor. */
 export function App(): JSX.Element {
-  const [view, setView] = useState<'home' | 'schematic'>('home');
+  const [view, setView] = useState<'home' | 'schematic' | 'pcb'>('home');
   const [projectFiles, setProjectFiles] = useState<PickedFile[] | null>(null);
   const [startFile, setStartFile] = useState<string | null>(null);
+  const [pcbFile, setPcbFile] = useState<PickedFile | null>(null);
+  if (view === 'pcb' && pcbFile) {
+    return (
+      <PcbEditor
+        fileName={pcbFile.name.split('/').pop()!.split('\\').pop()!}
+        text={pcbFile.text}
+        onExit={() => setView('home')}
+      />
+    );
+  }
   return view === 'home' ? (
     <HomePage
       onOpenSchematic={() => { setProjectFiles(null); setStartFile(null); setView('schematic'); }}
       onOpenProject={(files, start) => { setProjectFiles(files); setStartFile(start ?? null); setView('schematic'); }}
+      onOpenPcb={(file) => { setPcbFile(file); setView('pcb'); }}
     />
   ) : (
     <SchematicEditor onExitToHome={() => setView('home')} initialProject={projectFiles} initialFile={startFile} />

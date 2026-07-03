@@ -108,3 +108,7 @@ export {
 } from './connectivity/index.js';
 
 export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';
+
+// --- PCB (board) -------------------------------------------------------------
+export * from './pcb/types.js';
+export { readBoard, rotatePcb, tessellateArc, arcCenter } from './pcb/read-board.js';

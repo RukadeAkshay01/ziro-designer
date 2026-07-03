@@ -69,9 +69,10 @@ const treeIconFor = (file: string): string =>
  * desktop app's project window. Until a project is opened, the bundled demo
  * project is shown.
  */
-export function HomePage({ onOpenSchematic, onOpenProject }: {
+export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb }: {
   onOpenSchematic: () => void;
   onOpenProject?: (files: PickedHomeFile[], startFile?: string) => void;
+  onOpenPcb?: (file: PickedHomeFile) => void;
 }): JSX.Element {
   const dirInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
@@ -87,7 +88,7 @@ export function HomePage({ onOpenSchematic, onOpenProject }: {
       if (base.startsWith('.')) continue;
       out.push({
         name: f.name,
-        text: /\.(kicad_sch|kicad_pro)$/i.test(base) ? await f.textOf() : '',
+        text: /\.(kicad_sch|kicad_pro|kicad_pcb)$/i.test(base) ? await f.textOf() : '',
       });
     }
     if (out.length > 0) setPicked(out);
@@ -203,6 +204,14 @@ export function HomePage({ onOpenSchematic, onOpenProject }: {
     else onOpenSchematic();
   };
 
+  const pcbFile = useMemo(
+    () => picked?.find((f) => /\.kicad_pcb$/i.test(basename(f.name))) ?? null,
+    [picked],
+  );
+  const launchPcb = (): void => {
+    if (pcbFile && onOpenPcb) onOpenPcb(pcbFile);
+  };
+
   // The nested schematic hierarchy, exactly like KiCad's project window: the
   // root schematic with its sub-sheets as children (recursively).
   const renderTreeNode = (node: SheetTreeNode, depth: number): JSX.Element => (
@@ -314,12 +323,21 @@ export function HomePage({ onOpenSchematic, onOpenProject }: {
                   </div>
                 ))}
                 {/* remaining project files (pcb, dru, readme, …) */}
-                {otherFiles.map((f) => (
-                  <div key={f.name} className="ze-tree-item" style={{ paddingLeft: 24 }} title={f.name}>
-                    <TreeIcon name={treeIconFor(f.name)} />
-                    <span>{basename(f.name)}</span>
-                  </div>
-                ))}
+                {otherFiles.map((f) => {
+                  const isPcb = /\.kicad_pcb$/i.test(f.name);
+                  return (
+                    <div
+                      key={f.name}
+                      className="ze-tree-item"
+                      style={{ paddingLeft: 24, cursor: isPcb ? 'pointer' : 'default' }}
+                      title={isPcb ? 'Open in the PCB Editor' : f.name}
+                      onClick={isPcb && onOpenPcb ? () => onOpenPcb(f) : undefined}
+                    >
+                      <TreeIcon name={treeIconFor(f.name)} />
+                      <span>{basename(f.name)}</span>
+                    </div>
+                  );
+                })}
               </>
             ) : (
               <>
@@ -348,22 +366,26 @@ export function HomePage({ onOpenSchematic, onOpenProject }: {
 
         {/* launcher tiles */}
         <div className="ze-launchers">
-          {TILES.map((t) => (
-            <button
-              key={t.id}
-              className="ze-launcher"
-              disabled={!t.enabled}
-              title={t.desc}
-              onClick={t.enabled ? () => launchSchematic() : undefined}
-            >
-              <span className="ico">{tileIcon(t.id)}</span>
-              <span className="txt">
-                <span className="name">{t.name}</span>
-                <span className="desc">{t.desc}</span>
-              </span>
-              {!t.enabled && <span className="soon">coming soon</span>}
-            </button>
-          ))}
+          {TILES.map((t) => {
+            const enabled = t.enabled || (t.id === 'pcb' && !!pcbFile);
+            const launch = t.id === 'pcb' ? launchPcb : (): void => launchSchematic();
+            return (
+              <button
+                key={t.id}
+                className="ze-launcher"
+                disabled={!enabled}
+                title={t.id === 'pcb' && !pcbFile ? 'Open a project containing a .kicad_pcb first' : t.desc}
+                onClick={enabled ? launch : undefined}
+              >
+                <span className="ico">{tileIcon(t.id)}</span>
+                <span className="txt">
+                  <span className="name">{t.name}</span>
+                  <span className="desc">{t.desc}</span>
+                </span>
+                {!enabled && <span className="soon">{t.id === 'pcb' ? 'open a project' : 'coming soon'}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
