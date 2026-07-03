@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit } from '@ziroeda/core';
+import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
 import { LabelDialog } from './components/LabelDialog.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
@@ -66,6 +66,8 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
   const [scale, setScale] = useState(1);
   // The symbol whose properties dialog is open (its refId), or null.
   const [propsTarget, setPropsTarget] = useState<string | null>(null);
+  // Items parsed from the clipboard, attached to the cursor until dropped.
+  const [pastePending, setPastePending] = useState<PastePayload | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -113,6 +115,25 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
   const onHighlight = useCallback((id: string | null) => {
     setSelection(new Set());
     setHighlightItem(id);
+  }, []);
+
+  // Box-selection result (KiCad SelectMultiple): plain drags replace the
+  // selection, shift-drags add, ctrl+shift-drags subtract.
+  const onSelectBox = useCallback((ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => {
+    setHighlightItem(null);
+    setSelection((prev) => {
+      if (subtractive) {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      }
+      if (additive) {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      }
+      return new Set(ids);
+    });
   }, []);
 
   // Every edit runs through KiCad's post-commit cleanup (colinear wire merge),
@@ -181,6 +202,76 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     });
   }, [fileName]);
 
+  // ----- copy / cut / paste / duplicate (SCH_EDITOR_CONTROL port) -------------
+  // Copy writes KiCad's clipboard format (lib_symbols + items as S-expressions),
+  // so text copied here pastes into desktop KiCad and vice versa. Paste parses
+  // the clipboard, gives everything fresh UUIDs, re-annotates duplicate
+  // references, and attaches the items to the cursor until clicked to drop.
+  const isTyping = (): boolean => {
+    const el = document.activeElement as HTMLElement | null;
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  };
+
+  useEffect(() => {
+    const onCopy = (e: ClipboardEvent): void => {
+      if (isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
+      e.clipboardData?.setData('text/plain', copySelectionText(doc, selection));
+      e.preventDefault();
+    };
+    const onCut = (e: ClipboardEvent): void => {
+      if (isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
+      e.clipboardData?.setData('text/plain', copySelectionText(doc, selection));
+      e.preventDefault();
+      runCommand(deleteByIds(selection));
+      setSelection(new Set());
+    };
+    const onPaste = (e: ClipboardEvent): void => {
+      if (isTyping() || propsTarget !== null || !doc) return;
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      const payload = parsePastedText(text, doc);
+      if (!payload) return;
+      e.preventDefault();
+      setActiveTool('select');
+      setPastePending(payload);
+    };
+    document.addEventListener('copy', onCopy);
+    document.addEventListener('cut', onCut);
+    document.addEventListener('paste', onPaste);
+    return () => {
+      document.removeEventListener('copy', onCopy);
+      document.removeEventListener('cut', onCut);
+      document.removeEventListener('paste', onPaste);
+    };
+  }, [doc, selection, propsTarget, runCommand]);
+
+  // Duplicate (Ctrl+D): copy to a local buffer and paste from it. KiCad anchors
+  // the copy at the connection point closest to the cursor so it doesn't jump.
+  const duplicateSelection = useCallback(() => {
+    if (!doc || selection.size === 0) return;
+    const payload = parsePastedText(copySelectionText(doc, selection), doc);
+    if (!payload) return;
+    let refPoint = payload.refPoint;
+    if (cursor) {
+      let best = Infinity;
+      const consider = (p: Vec2): void => {
+        const d = (p.x - cursor.x) ** 2 + (p.y - cursor.y) ** 2;
+        if (d < best) { best = d; refPoint = p; }
+      };
+      payload.batch.symbols.forEach((s) => consider(s.at));
+      payload.batch.lines.forEach((l) => { consider(l.start); consider(l.end); });
+      payload.batch.junctions.forEach((j) => consider(j.at));
+      payload.batch.labels.forEach((l) => consider(l.at));
+    }
+    setActiveTool('select');
+    setPastePending({ ...payload, refPoint });
+  }, [doc, selection, cursor]);
+
+  // The paste was dropped: keep the pasted items selected, as KiCad does.
+  const onPasteDone = useCallback((ids: ReadonlySet<string>) => {
+    setPastePending(null);
+    setSelection(new Set(ids));
+  }, []);
+
   const lineMode: LineMode = toggles.has('lineModeFree') ? 'free' : toggles.has('lineMode45') ? '45' : '90';
 
   // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
@@ -232,8 +323,12 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        duplicateSelection();
       } else if (e.key === 'Escape') {
         if (propsTarget !== null) setPropsTarget(null);
+        else if (pastePending) setPastePending(null);
         else if (pendingLabel) { setPendingLabel(null); setActiveTool('select'); }
         else if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
         else setSelection(new Set());
@@ -264,7 +359,7 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, save, promptOpen, selection, runCommand, activeTool, onToolSelect, pendingLabel, propsTarget]);
+  }, [undo, redo, save, promptOpen, selection, runCommand, activeTool, onToolSelect, pendingLabel, propsTarget, pastePending, duplicateSelection]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
   const fmt = (iu: number): string => {
@@ -368,6 +463,9 @@ function SchematicEditor({ onExitToHome }: { onExitToHome: () => void }): JSX.El
             onHighlight={onHighlight}
             onRequestTool={onToolSelect}
             onEditItem={onEditItem}
+            onSelectBox={onSelectBox}
+            pastePending={pastePending}
+            onPasteDone={onPasteDone}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}

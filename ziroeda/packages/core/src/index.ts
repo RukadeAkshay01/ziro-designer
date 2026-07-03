@@ -91,6 +91,12 @@ export {
   MANDATORY_FIELDS,
   type SymbolEdit,
   type EditedField,
+  boxSelect,
+  copySelectionText,
+  parsePastedText,
+  translatePayload,
+  pasteItems,
+  type PastePayload,
 } from './edit/index.js';
 
 export * as connectivity from './connectivity/index.js';

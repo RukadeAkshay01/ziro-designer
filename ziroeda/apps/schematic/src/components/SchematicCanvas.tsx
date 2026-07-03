@@ -2,8 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallba
 import {
   hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
   makeWire, makeBus, makeJunction, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
-  collectAnchors, selectionAnchors, nearestAnchor, danglingPinPositions,
+  collectAnchors, selectionAnchors, nearestAnchor, danglingPinPositions, boxSelect, pasteItems, translatePayload,
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
+  type PastePayload,
 } from '@ziroeda/core';
 import { renderSchematic, fitToContent, type Viewport } from '../render/renderer.js';
 import { KICAD_CLASSIC } from '../theme.js';
@@ -80,15 +81,29 @@ interface Props {
   onRequestTool?: (id: string) => void;
   /** Double-clicked item (KiCad's Properties action, sch_edit_tool.cpp). */
   onEditItem?: (id: string, kind: 'symbol' | 'line' | 'junction' | 'label') => void;
+  /** Box-selection result (KiCad SelectMultiple): replace/add/subtract the ids. */
+  onSelectBox?: (ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => void;
+  /** Items being pasted: they follow the cursor until clicked to drop (KiCad's paste-then-move). */
+  pastePending?: PastePayload | null;
+  /** The paste was dropped: the command was submitted; `ids` are the pasted item ids. */
+  onPasteDone?: (ids: ReadonlySet<string>) => void;
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
 }
 
-type Mode = 'idle' | 'pan' | 'move';
+type Mode = 'idle' | 'pan' | 'move' | 'box';
+
+// KiCad's selection-rectangle colours for a bright background
+// (common/preview_items/selection_area.cpp, selectionColorScheme[1]).
+const BOX_FILL_NORMAL = 'rgba(128, 77, 255, 0.5)'; // COLOR4D(0.5,0.3,1.0,0.5)
+const BOX_FILL_ADDITIVE = 'rgba(128, 255, 128, 0.5)'; // COLOR4D(0.5,1.0,0.5,0.5)
+const BOX_FILL_SUBTRACT = 'rgba(255, 128, 128, 0.5)'; // COLOR4D(1.0,0.5,0.5,0.5)
+const BOX_OUTLINE_L2R = 'rgb(179, 179, 0)'; // window select: dark yellow
+const BOX_OUTLINE_R2L = 'rgb(26, 26, 255)'; // greedy select: blue
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, onCommand, onCursorMove, onScaleChange },
   ref,
 ): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -106,6 +121,11 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   // anchors of everything else, so a dragged pin/wire-end snaps onto a matching anchor.
   const movePointsRef = useRef<Vec2[]>([]);
   const moveAnchorsRef = useRef<Vec2[]>([]);
+
+  // Box-selection drag (KiCad selectMultiple): origin/end in world coordinates.
+  const boxOriginRef = useRef<Vec2 | null>(null);
+  const boxEndRef = useRef<Vec2 | null>(null);
+  const boxModifiersRef = useRef({ additive: false, subtractive: false });
 
   // Wire-drawing state.
   const wireAnchorRef = useRef<Vec2 | null>(null);
@@ -171,7 +191,31 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (pendingLabel && cursorRef.current) {
       doc = addItems({ labels: [makeLabel(pendingLabel.kind, pendingLabel.text, snap(cursorRef.current), { shape: pendingLabel.shape })] }).apply(doc);
     }
+    // Ghost: pasted items follow the cursor until dropped (KiCad's paste-then-move).
+    if (pastePending && cursorRef.current) {
+      const c = snap(cursorRef.current);
+      const delta = { x: c.x - pastePending.refPoint.x, y: c.y - pastePending.refPoint.y };
+      doc = pasteItems(translatePayload(pastePending, delta)).apply(doc);
+    }
     renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection, highlight);
+
+    // Box-selection rubber band, in KiCad's colours: the fill shows the mode
+    // (normal/additive/subtractive) and the outline shows the direction —
+    // dark yellow for a left-to-right "window", blue for right-to-left greedy.
+    const bo = boxOriginRef.current;
+    const be = boxEndRef.current;
+    if (modeRef.current === 'box' && bo && be) {
+      const greedy = be.x < bo.x;
+      const { additive, subtractive } = boxModifiersRef.current;
+      ctx.setTransform(vp.scale, 0, 0, vp.scale, vp.offsetX, vp.offsetY);
+      ctx.fillStyle = subtractive ? BOX_FILL_SUBTRACT : additive ? BOX_FILL_ADDITIVE : BOX_FILL_NORMAL;
+      ctx.strokeStyle = greedy ? BOX_OUTLINE_R2L : BOX_OUTLINE_L2R;
+      ctx.lineWidth = 1 / vp.scale;
+      const x = Math.min(bo.x, be.x), y = Math.min(bo.y, be.y);
+      const w = Math.abs(be.x - bo.x), h = Math.abs(be.y - bo.y);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+    }
 
     // Wire / bus preview segment.
     const anchor = wireAnchorRef.current;
@@ -187,7 +231,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, wireEndPoint, buildMove, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, wireEndPoint, buildMove, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -274,6 +318,32 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (!vp) return;
     const world = toWorld(e.clientX, e.clientY);
 
+    // Middle-button drag pans, whatever the active tool (KiCad's pan button).
+    if (e.button === 1) {
+      (e.target as Element).setPointerCapture(e.pointerId);
+      modeRef.current = 'pan';
+      panLastRef.current = { x: e.clientX, y: e.clientY };
+      panMovedRef.current = false;
+      e.preventDefault();
+      return;
+    }
+
+    // A pending paste follows the cursor; a left click drops it (KiCad's paste-then-move).
+    if (pastePending) {
+      if (e.button !== 0) return;
+      const c = snap(world);
+      const delta = { x: c.x - pastePending.refPoint.x, y: c.y - pastePending.refPoint.y };
+      const placed = translatePayload(pastePending, delta);
+      onCommand(pasteItems(placed));
+      const ids = new Set<string>();
+      placed.batch.symbols.forEach((s) => ids.add(s.uuid!));
+      placed.batch.lines.forEach((l) => ids.add(l.uuid!));
+      placed.batch.junctions.forEach((j) => ids.add(j.uuid!));
+      placed.batch.labels.forEach((l) => ids.add(l.uuid!));
+      onPasteDone?.(ids);
+      return;
+    }
+
     if (activeTool === 'drawWire' || activeTool === 'drawBus') {
       const bus = activeTool === 'drawBus';
       const anchor = wireAnchorRef.current;
@@ -355,11 +425,18 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const moving = new Set([...effSel, ...spec.wireStart, ...spec.wireEnd]);
       moveAnchorsRef.current = collectAnchors(schematic, libById, moving);
     } else {
-      modeRef.current = 'pan';
-      panLastRef.current = { x: e.clientX, y: e.clientY };
-      panMovedRef.current = false;
+      // Empty canvas: start a KiCad drag-box selection (left-to-right = window
+      // select, right-to-left = greedy). A no-drag click clears the selection.
+      (e.target as Element).setPointerCapture(e.pointerId);
+      modeRef.current = 'box';
+      boxOriginRef.current = world;
+      boxEndRef.current = world;
+      boxModifiersRef.current = {
+        additive: (e.ctrlKey || e.shiftKey) && !e.altKey, // m_drag_additive
+        subtractive: e.ctrlKey && e.shiftKey && !e.altKey, // m_drag_subtractive
+      };
     }
-  }, [activeTool, lineMode, placeLib, pendingLabel, schematic, libById, selection, onSelect, onHighlight, onRequestTool, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, pastePending, schematic, libById, selection, onSelect, onHighlight, onRequestTool, onPasteDone, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -375,6 +452,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       canvas.style.cursor = danglingPinAt(world) ? WIRE_CURSOR : 'default';
 
     if (pendingLabel) { draw(); return; } // update the attached label ghost
+    if (pastePending && modeRef.current !== 'pan') { draw(); return; } // pasted items track the cursor
+
+    if (modeRef.current === 'box') {
+      boxEndRef.current = world;
+      draw();
+      return;
+    }
 
     if (activeTool === 'drawWire' || activeTool === 'drawBus') {
       if (wireAnchorRef.current) draw();
@@ -412,9 +496,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       draw();
     }
-  }, [activeTool, placeLib, pendingLabel, danglingPinAt, draw, onCursorMove]);
+  }, [activeTool, placeLib, pendingLabel, pastePending, danglingPinAt, draw, onCursorMove]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
+    // Middle-button pan ends regardless of the active tool.
+    if (modeRef.current === 'pan' && e.button === 1) {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+      modeRef.current = 'idle';
+      panLastRef.current = null;
+      return;
+    }
     if (activeTool !== 'select') return;
     (e.target as Element).releasePointerCapture(e.pointerId);
     let committedMove = false;
@@ -422,6 +513,20 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const d = moveDeltaRef.current;
       const spec = moveSpecRef.current;
       if (d && spec && (d.x !== 0 || d.y !== 0)) { onCommand(buildMove(spec, d)); committedMove = true; }
+    } else if (modeRef.current === 'box') {
+      const bo = boxOriginRef.current;
+      const be = boxEndRef.current;
+      const vp = viewportRef.current;
+      // Under ~4 screen px of travel it's a click, which clears the selection.
+      const movedPx = bo && be && vp ? Math.hypot(be.x - bo.x, be.y - bo.y) * vp.scale : 0;
+      if (bo && be && movedPx > 4) {
+        const { additive, subtractive } = boxModifiersRef.current;
+        onSelectBox?.(boxSelect(schematic, libById, bo, be), additive, subtractive);
+      } else {
+        onSelect(null, e.shiftKey);
+      }
+      boxOriginRef.current = null;
+      boxEndRef.current = null;
     } else if (modeRef.current === 'pan' && !panMovedRef.current) {
       onSelect(null, e.shiftKey);
     }
@@ -431,7 +536,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     moveSpecRef.current = null;
     panLastRef.current = null;
     if (!committedMove) draw();
-  }, [activeTool, onCommand, buildMove, onSelect, draw]);
+  }, [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, draw]);
 
   const onDoubleClick = useCallback((e: React.MouseEvent) => {
     if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); return; }

@@ -6,7 +6,7 @@
  */
 
 import type { Schematic, SchSymbol, LibSymbol, Vec2 } from '../model/types.js';
-import { contains, inflate, symbolBodyBBox, type BBox } from './bbox.js';
+import { contains, inflate, labelBox, symbolBodyBBox } from './bbox.js';
 
 /** A reference to a top-level, selectable schematic item. */
 export interface ItemRef {
@@ -30,18 +30,6 @@ function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
-function labelBBox(at: Vec2, textLen: number, height: number, justify?: readonly string[]): BBox {
-  // Approximate text extent; refined once stroke-font metrics land. The anchor is
-  // the connection point and the text grows away from it per its justification,
-  // so a 'bottom'/'right' justified label extends up/left rather than symmetrically.
-  const w = Math.max(1, textLen) * height * 0.7;
-  const left = justify?.includes('right') ? at.x - w : at.x;
-  const right = justify?.includes('right') ? at.x : at.x + w;
-  const top = justify?.includes('bottom') ? at.y - height : justify?.includes('top') ? at.y : at.y - height / 2;
-  const bottom = justify?.includes('bottom') ? at.y : justify?.includes('top') ? at.y + height : at.y + height / 2;
-  return { minX: left, minY: top, maxX: right, maxY: bottom };
-}
-
 /**
  * Find the top-most selectable item at a world point, within `accuracy` (world
  * units). Priority roughly follows KiCad: small/precise items (junctions, labels,
@@ -61,8 +49,7 @@ export function hitTest(
 
   for (let i = 0; i < sch.labels.length; i++) {
     const l = sch.labels[i]!;
-    const h = l.effects?.fontSize?.[0] ?? 12700;
-    if (contains(inflate(labelBBox(l.at, l.text.length, h, l.effects?.justify), accuracy), p))
+    if (contains(inflate(labelBox(l), accuracy), p))
       return { kind: 'label', id: refId('label', l.uuid, i) };
   }
 

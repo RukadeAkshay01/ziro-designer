@@ -10,3 +10,5 @@ export * from './cleanup.js';
 export * from './build.js';
 export * from './mutate.js';
 export * from './properties.js';
+export * from './boxselect.js';
+export * from './clipboard.js';

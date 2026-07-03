@@ -8,7 +8,7 @@
 
 import { localToWorld, type Transform } from '../geom/transform.js';
 import { symbolTransform } from '../geom/transform.js';
-import type { LibSymbol, LibSymbolUnit, SchSymbol, Vec2 } from '../model/types.js';
+import type { LibSymbol, LibSymbolUnit, SchLabel, SchSymbol, Vec2 } from '../model/types.js';
 
 export interface BBox {
   minX: number;
@@ -74,6 +74,22 @@ function includeUnit(b: BBox, unit: LibSymbolUnit, origin: Vec2, t: Transform): 
 
 function unitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
   return (u.unit === 0 || u.unit === unit) && (u.bodyStyle === 0 || u.bodyStyle === bodyStyle);
+}
+
+/**
+ * Approximate text box of a label/text item: anchored at its connection point and
+ * growing away from it per the justification. Shared by click and box selection.
+ */
+export function labelBox(l: SchLabel): BBox {
+  const h = l.effects?.fontSize?.[0] ?? 12700;
+  const justify = l.effects?.justify;
+  const w = Math.max(1, l.text.length) * h * 0.7;
+  const at = l.at;
+  const left = justify?.includes('right') ? at.x - w : at.x;
+  const right = justify?.includes('right') ? at.x : at.x + w;
+  const top = justify?.includes('bottom') ? at.y - h : justify?.includes('top') ? at.y : at.y - h / 2;
+  const bottom = justify?.includes('bottom') ? at.y : justify?.includes('top') ? at.y + h : at.y + h / 2;
+  return { minX: left, minY: top, maxX: right, maxY: bottom };
 }
 
 /** Body bounding box of a placed symbol (graphics + pins through the transform). */
