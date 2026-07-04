@@ -41,6 +41,7 @@ export interface PcbDrawOptions {
   fpValues: boolean;
   fpReferences: boolean;
   fpText: boolean;
+  drawingSheet: boolean;
   trackOpacity: number;
   viaOpacity: number;
   padOpacity: number;
@@ -58,6 +59,7 @@ export const DEFAULT_DRAW_OPTIONS: PcbDrawOptions = {
   fpValues: true,
   fpReferences: true,
   fpText: true,
+  drawingSheet: true,
   trackOpacity: 1.0,
   viaOpacity: 1.0,
   padOpacity: 1.0,
@@ -494,6 +496,124 @@ const strokeAll = (ctx: CanvasRenderingContext2D, map: Map<number, Path2D>): voi
   }
 };
 
+// ----- drawing sheet (page frame + title block) ------------------------------
+// KiCad's default worksheet (common/drawing_sheet/drawing_sheet_default_
+// description.cpp): 10 mm margins, a double border 2 mm apart, a 50 mm
+// coordinate band, and the 110×34 mm title block in the bottom-right corner.
+// pcbnew draws it in LAYER_DRAWINGSHEET colour rgb(200,114,171)
+// (builtin_color_themes.h). The board origin (0,0) is the page's top-left.
+
+const PAPER_MM: Record<string, [number, number]> = {
+  A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841],
+  A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
+  USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
+};
+
+const paperSizeIU = (paper: string | undefined): { w: number; h: number } | null => {
+  if (!paper) return null;
+  const parts = paper.split(/\s+/);
+  const dims = PAPER_MM[parts[0]!];
+  if (!dims) return null;
+  const [w, h] = parts.includes('portrait') ? [dims[1], dims[0]] : dims;
+  return { w: w! * MM, h: h! * MM };
+};
+
+export interface SheetInfo {
+  paper?: string;
+  titleBlock?: { title?: string; date?: string; rev?: string; company?: string };
+  fileName?: string;
+}
+
+/** Stroke a Newstroke string left/right/centre-justified at (x, y) baseline. */
+function sheetText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  justify: 'left' | 'center' = 'left',
+): void {
+  if (!text) return;
+  const { strokes, width } = layoutText(text, size);
+  const offX = justify === 'center' ? -width / 2 : 0;
+  ctx.beginPath();
+  for (const stroke of strokes) {
+    for (let i = 0; i < stroke.length; i++) {
+      const px = x + stroke[i]!.x + offX;
+      const py = y + stroke[i]!.y;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+      if (stroke.length === 1) ctx.lineTo(px + 1, py);
+    }
+  }
+  ctx.stroke();
+}
+
+const DRAWINGSHEET_COLOR = 'rgb(200,114,171)';
+
+export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo): void {
+  const page = paperSizeIU(info.paper);
+  if (!page) return;
+  const M = 10 * MM;
+  const L = M, T = M, R = page.w - M, B = page.h - M;
+  const color = DRAWINGSHEET_COLOR;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.15 * MM;
+  ctx.setLineDash([]);
+  ctx.strokeRect(L, T, R - L, B - T);
+  const i2 = 2 * MM;
+  ctx.strokeRect(L + i2, T + i2, R - L - 2 * i2, B - T - 2 * i2);
+
+  // Coordinate band (numbers across, letters down), 50 mm divisions.
+  const refH = 1.3 * MM;
+  const step = 50 * MM;
+  ctx.beginPath();
+  for (let x = L + step; x < R - i2; x += step) {
+    ctx.moveTo(x, T); ctx.lineTo(x, T + i2);
+    ctx.moveTo(x, B); ctx.lineTo(x, B - i2);
+  }
+  for (let y = T + step; y < B - i2; y += step) {
+    ctx.moveTo(L, y); ctx.lineTo(L + i2, y);
+    ctx.moveTo(R, y); ctx.lineTo(R - i2, y);
+  }
+  ctx.stroke();
+  let n = 1;
+  for (let x = L; x < R - i2; x += step, n++) {
+    const cx = Math.min(x + step / 2, (x + R) / 2);
+    sheetText(ctx, String(n), cx, T + i2 / 2 + refH / 2, refH, 'center');
+    sheetText(ctx, String(n), cx, B - i2 / 2 + refH / 2, refH, 'center');
+  }
+  let li = 0;
+  for (let y = T; y < B - i2; y += step, li++) {
+    const cy = Math.min(y + step / 2, (y + B) / 2);
+    const ch = String.fromCharCode(65 + (li % 26));
+    sheetText(ctx, ch, L + i2 / 2, cy + refH / 2, refH, 'center');
+    sheetText(ctx, ch, R - i2 / 2, cy + refH / 2, refH, 'center');
+  }
+
+  // Title block, default description (110×34 off the bottom-right corner).
+  const rx = (d: number): number => R - d * MM;
+  const ry = (d: number): number => B - d * MM;
+  ctx.strokeRect(rx(110), ry(34), 108 * MM, 32 * MM);
+  ctx.beginPath();
+  for (const yy of [5.5, 8.5, 12.5, 18.5]) { ctx.moveTo(rx(110), ry(yy)); ctx.lineTo(rx(2), ry(yy)); }
+  ctx.moveTo(rx(90), ry(8.5)); ctx.lineTo(rx(90), ry(5.5));
+  ctx.moveTo(rx(26), ry(8.5)); ctx.lineTo(rx(26), ry(2));
+  ctx.stroke();
+
+  const tb = info.titleBlock;
+  const t15 = 1.5 * MM;
+  sheetText(ctx, `Date: ${tb?.date ?? ''}`, rx(87), ry(6.9), t15);
+  sheetText(ctx, 'ZiroEDA', rx(109), ry(4.1), t15);
+  sheetText(ctx, `Rev: ${tb?.rev ?? ''}`, rx(24), ry(6.9), t15);
+  sheetText(ctx, `Size: ${info.paper ?? ''}`, rx(109), ry(6.9), t15);
+  sheetText(ctx, 'Id: 1/1', rx(24), ry(4.1), t15);
+  sheetText(ctx, `Title: ${tb?.title ?? ''}`, rx(109), ry(10.7), 2 * MM);
+  sheetText(ctx, `File: ${info.fileName ?? ''}`, rx(109), ry(14.3), t15);
+  sheetText(ctx, 'Sheet: /', rx(109), ry(17), t15);
+  sheetText(ctx, tb?.company ?? '', rx(109), ry(20), t15);
+}
+
 /**
  * The paint sequence as resumable steps, one per stacking pass. The editor
  * runs these across animation frames with a time budget so a 20k-track board
@@ -507,6 +627,7 @@ export function buildDrawSteps(
   widthPx: number,
   heightPx: number,
   opts: PcbDrawOptions = DEFAULT_DRAW_OPTIONS,
+  sheet?: SheetInfo,
 ): (() => void)[] {
   const steps: (() => void)[] = [];
   steps.push(() => {
@@ -516,6 +637,8 @@ export function buildDrawSteps(
     ctx.setTransform(view.scale, 0, 0, view.scale, view.tx, view.ty);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    // Drawing sheet (page frame + title block) behind the board, like pcbnew.
+    if (sheet && opts.drawingSheet) drawDrawingSheet(ctx, sheet);
   });
 
   const paintZones = (layer: string) => (): void => {

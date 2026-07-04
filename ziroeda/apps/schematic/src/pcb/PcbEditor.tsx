@@ -11,12 +11,16 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { parse, readBoard, iuToMM, type Board } from '@ziroeda/core';
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
 import { Toolbar } from '../ui/Toolbar.js';
-import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions } from './renderBoard.js';
+import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions, type SheetInfo } from './renderBoard.js';
 import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
 import { PCB_TOP_TOOLBAR, PCB_LEFT_TOOLBAR, PCB_RIGHT_TOOLBAR, PCB_FILTER_CATS } from './pcbToolbars.js';
 import '../ui/shell.css';
 
 const MM = 10000;
+
+// KiCad's own visibility (eye) icons, vendored under assets/.
+const EYE_ICONS = import.meta.glob('../assets/toolbar/visibility*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const eyeUrl = (on: boolean): string | undefined => EYE_ICONS[`../assets/toolbar/visibility${on ? '' : '_off'}.svg`];
 
 // Left-toolbar radio groups (same convention as the schematic editor).
 const RADIO_GROUPS: string[][] = [
@@ -124,6 +128,7 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
     fpValues: objects.fpValues,
     fpReferences: objects.fpReferences,
     fpText: objects.fpText,
+    drawingSheet: objects.drawingSheet,
     trackOpacity: opacity.tracks,
     viaOpacity: opacity.vias,
     padOpacity: opacity.pads,
@@ -194,7 +199,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
     const cctx = work.getContext('2d');
     if (!cctx) { renderingRef.current = false; return; }
     const jobView = { ...viewRef.current };
-    const steps = buildDrawSteps(cctx, scene, jobView, visible, work.width, work.height, drawOpts);
+    const sheet: SheetInfo | undefined = boardRef.current
+      ? { paper: boardRef.current.paper, titleBlock: boardRef.current.titleBlock, fileName }
+      : undefined;
+    const steps = buildDrawSteps(cctx, scene, jobView, visible, work.width, work.height, drawOpts, sheet);
     let i = 0;
     const run = (): void => {
       const t0 = performance.now();
@@ -255,7 +263,15 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
     if (!canvas || !scene?.bbox) return;
-    const { minX, minY, maxX, maxY } = scene.bbox;
+    let { minX, minY, maxX, maxY } = scene.bbox;
+    // Include the drawing sheet (page origin at 0,0) so the frame fits on screen.
+    const paper = boardRef.current?.paper?.split(/\s+/)[0];
+    const PAGE: Record<string, [number, number]> = { A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
+    if (paper && PAGE[paper] && objects.drawingSheet) {
+      const [pw, ph] = PAGE[paper]!;
+      minX = Math.min(minX, 0); minY = Math.min(minY, 0);
+      maxX = Math.max(maxX, pw * MM); maxY = Math.max(maxY, ph * MM);
+    }
     const margin = 5 * MM;
     const s = Math.min(
       canvas.width / (maxX - minX + margin * 2),
@@ -550,7 +566,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
 
   return (
     <div className="ze-app">
-      <MenuBar menus={menus} />
+      <MenuBar
+        menus={menus}
+        leftSlot={<div className="ze-home-link" onClick={onExit} title="Back to project manager">⌂ ZiroEDA</div>}
+      />
       <Toolbar entries={PCB_TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       {/* TOP_AUX bar: track width / via size / active layer / grid / zoom */}
@@ -638,14 +657,14 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
                           onClick={() => setActiveLayer(name)}
                           title="Click to make active; click the eye to show/hide"
                         >
-                          {/* eye toggle, like APPEARANCE_CONTROLS' visibility column */}
-                          <span
+                          {/* eye toggle, KiCad's APPEARANCE_CONTROLS visibility column */}
+                          <img
+                            src={eyeUrl(on)}
+                            alt={on ? 'visible' : 'hidden'}
                             onClick={(e) => { e.stopPropagation(); toggleLayer(name); }}
-                            style={{ width: 16, textAlign: 'center', opacity: on ? 1 : 0.3, cursor: 'pointer', userSelect: 'none' }}
+                            style={{ width: 16, height: 16, opacity: on ? 0.9 : 0.35, cursor: 'pointer' }}
                             title={on ? 'Hide layer' : 'Show layer'}
-                          >
-                            {on ? '👁' : '—'}
-                          </span>
+                          />
                           <span style={{
                             width: 14, height: 14, borderRadius: 2, flex: '0 0 auto',
                             background: layerColor(name), border: '1px solid #444',

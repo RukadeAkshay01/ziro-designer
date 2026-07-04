@@ -133,7 +133,15 @@ export function readField(node: SList, invertY = false): SchField {
   };
   if (childNamed(node, 'at')) field.at = at;
   const effects = readEffects(node);
-  if (effects) field.effects = effects;
+  // KiCad 7 files place the field's `(hide yes)` (or bare `hide`) as a DIRECT
+  // child of the property, outside `(effects …)`; KiCad 8+ moved it inside
+  // effects. Honor both so hidden Description/Datasheet/Footprint fields don't
+  // render (sch_io_kicad_sexpr_parser.cpp parseSchField / parseEDA_TEXT).
+  const directHide =
+    node.items.some((it) => it.kind === 'atom' && it.value === 'hide') ||
+    (childNamed(node, 'hide') ? boolField(node, 'hide', false) : false);
+  if (effects) field.effects = directHide ? { ...effects, hidden: true } : effects;
+  else if (directHide) field.effects = { hidden: true };
   if (boolField(node, 'show_name', false)) field.nameShown = true;
   return field;
 }

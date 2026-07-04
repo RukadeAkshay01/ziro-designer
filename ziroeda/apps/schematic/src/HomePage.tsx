@@ -99,15 +99,17 @@ const treeIconFor = (file: string): string =>
  * desktop app's project window. Until a project is opened, the bundled demo
  * project is shown.
  */
-export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb }: {
+export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFiles }: {
   onOpenSchematic: () => void;
   onOpenProject?: (files: PickedHomeFile[], startFile?: string) => void;
   onOpenPcb?: (file: PickedHomeFile, files?: PickedHomeFile[]) => void;
+  /** A project already open in the app: keep it in the tree on return to home. */
+  initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
   const dirInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   // The picked project's files (shown in the tree until the editor is launched).
-  const [picked, setPicked] = useState<PickedHomeFile[] | null>(null);
+  const [picked, setPicked] = useState<PickedHomeFile[] | null>(initialFiles ?? null);
 
   // Read every picked file; all files show in the tree (like KiCad's project
   // window), but only .kicad_sch/.kicad_pro contents are read.

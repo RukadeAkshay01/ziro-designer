@@ -717,8 +717,11 @@ export function App(): JSX.Element {
   const showSchematic = useCallback(() => { setSchMounted(true); setView('schematic'); }, []);
 
   if (view === 'home') {
+    // Keep the open project visible in the manager tree on return from an editor.
+    const openFiles = projectFiles ?? (standalonePcb ? [standalonePcb] : null);
     return (
       <HomePage
+        initialFiles={openFiles}
         onOpenSchematic={() => {
           setProjectFiles(null); setStandalonePcb(null); setStartFile(null);
           setSchMounted(true); setView('schematic');

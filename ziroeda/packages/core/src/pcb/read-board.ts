@@ -387,6 +387,16 @@ export function readBoard(root: SList): Board {
   const board: Board = {
     version: numberField(root, 'version') ?? 0,
     paper: stringField(root, 'paper'),
+    titleBlock: (() => {
+      const tb = childNamed(root, 'title_block');
+      if (!tb) return undefined;
+      return {
+        title: stringField(tb, 'title'),
+        date: stringField(tb, 'date'),
+        rev: stringField(tb, 'rev'),
+        company: stringField(tb, 'company'),
+      };
+    })(),
     layers: [],
     nets: new Map(),
     footprints: [],

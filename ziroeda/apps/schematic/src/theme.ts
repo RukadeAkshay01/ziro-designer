@@ -38,9 +38,9 @@ export interface Theme {
 export const KICAD_CLASSIC: Theme = {
   background: '#ffffff',
   grid: '#c8c8c8',
-  wire: '#008400', // green
+  wire: '#009600', // KiCad LAYER_WIRE rgb(0,150,0)
   bus: '#000084', // blue
-  junction: '#008400',
+  junction: '#009600',
   symbolOutline: '#840000', // dark red
   symbolFill: '#ffffc2', // pale yellow (background fill)
   pin: '#840000',

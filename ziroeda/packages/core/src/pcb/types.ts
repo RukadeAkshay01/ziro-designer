@@ -158,6 +158,7 @@ export interface Board {
   version: number;
   thickness?: number;
   paper?: string;
+  titleBlock?: { title?: string; date?: string; rev?: string; company?: string };
   layers: PcbLayerDef[];
   /** net code -> name, from the top-level `(net N "name")` declarations. */
   nets: Map<number, string>;
