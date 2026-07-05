@@ -452,8 +452,31 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
           </div>
         </div>
 
-        {/* launcher tiles */}
+        {/* launcher tiles (fixed) with the Recent Projects list scrolling below */}
         <div className="ze-launchers">
+          <div className="ze-tiles">
+            {TILES.map((t) => {
+              const enabled = t.enabled || t.id === 'pcb';
+              const launch = t.id === 'pcb' ? launchPcb : (): void => launchSchematic();
+              return (
+                <button
+                  key={t.id}
+                  className="ze-launcher"
+                  disabled={!enabled}
+                  title={t.desc}
+                  onClick={enabled ? launch : undefined}
+                >
+                  <span className="ico">{tileIcon(t.id)}</span>
+                  <span className="txt">
+                    <span className="name">{t.name}</span>
+                    <span className="desc">{t.desc}</span>
+                  </span>
+                  {!enabled && <span className="soon">coming soon</span>}
+                </button>
+              );
+            })}
+          </div>
+
           {saved.length > 0 && (
             <div className="ze-recent">
               <div className="ze-recent-head">Recent Projects</div>
@@ -482,26 +505,6 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
               </div>
             </div>
           )}
-          {TILES.map((t) => {
-            const enabled = t.enabled || t.id === 'pcb';
-            const launch = t.id === 'pcb' ? launchPcb : (): void => launchSchematic();
-            return (
-              <button
-                key={t.id}
-                className="ze-launcher"
-                disabled={!enabled}
-                title={t.desc}
-                onClick={enabled ? launch : undefined}
-              >
-                <span className="ico">{tileIcon(t.id)}</span>
-                <span className="txt">
-                  <span className="name">{t.name}</span>
-                  <span className="desc">{t.desc}</span>
-                </span>
-                {!enabled && <span className="soon">coming soon</span>}
-              </button>
-            );
-          })}
         </div>
       </div>
 
