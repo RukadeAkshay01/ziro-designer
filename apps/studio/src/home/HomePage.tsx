@@ -8,10 +8,10 @@ import '../ui/shell.css';
 export interface PickedHomeFile { name: string; text: string }
 
 // KiCad's own dark-theme icons (GPL), vendored under assets/.
-const TILE_ICONS = import.meta.glob('./assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const MGR_ICONS = import.meta.glob('./assets/manager/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const tileUrl = (id: string): string | undefined => TILE_ICONS[`./assets/launcher/${id}.svg`];
-const mgrUrl = (name: string): string | undefined => MGR_ICONS[`./assets/manager/${name}.svg`];
+const TILE_ICONS = import.meta.glob('../assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const MGR_ICONS = import.meta.glob('../assets/manager/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const tileUrl = (id: string): string | undefined => TILE_ICONS[`../assets/launcher/${id}.svg`];
+const mgrUrl = (name: string): string | undefined => MGR_ICONS[`../assets/manager/${name}.svg`];
 
 interface Tile {
   id: string;
