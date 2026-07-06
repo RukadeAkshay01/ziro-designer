@@ -6,7 +6,7 @@
  * same convention the schematic toolbars.ts uses.
  */
 
-import type { ToolEntry } from '../ui/toolbars.js';
+import type { ToolEntry } from '../../ui/toolbars.js';
 
 const sep: ToolEntry = 'sep';
 

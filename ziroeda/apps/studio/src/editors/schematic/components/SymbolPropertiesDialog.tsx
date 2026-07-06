@@ -6,7 +6,7 @@ import {
   DEFAULT_TEXT_SIZE, letterSubReference,
   type SchSymbol, type SchField, type LibSymbol, type SymbolEdit, type EditedField, type TextEffects,
 } from '@ziroeda/core';
-import { measureText } from '../render/strokeFont.js';
+import { measureText } from '../../../common/strokeFont.js';
 
 /**
  * Symbol Properties dialog, ported from KiCad's DIALOG_SYMBOL_PROPERTIES

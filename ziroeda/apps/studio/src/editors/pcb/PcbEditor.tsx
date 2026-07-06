@@ -9,13 +9,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { parse, readBoard, iuToMM, type Board } from '@ziroeda/core';
-import { MenuBar, type Menu } from '../ui/MenuBar.js';
-import { Toolbar } from '../ui/Toolbar.js';
+import { MenuBar, type Menu } from '../../ui/MenuBar.js';
+import { Toolbar } from '../../ui/Toolbar.js';
 import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions, type SheetInfo } from './renderBoard.js';
 import { mount3DViewer, type Viewer3D } from './pcb3d.js';
 import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
 import { PCB_TOP_TOOLBAR, PCB_LEFT_TOOLBAR, PCB_RIGHT_TOOLBAR, PCB_FILTER_CATS } from './pcbToolbars.js';
-import '../ui/shell.css';
+import '../../ui/shell.css';
 
 const MM = 10000;
 

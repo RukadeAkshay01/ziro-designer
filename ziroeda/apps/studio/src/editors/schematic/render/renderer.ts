@@ -29,7 +29,7 @@ import {
   type Vec2,
 } from '@ziroeda/core';
 import type { Theme } from '../theme.js';
-import { layoutText, measureText } from './strokeFont.js';
+import { layoutText, measureText } from '../../../common/strokeFont.js';
 
 // Per-render state (single-threaded): the visible world rect for culling and the
 // current zoom, so text below a few screen pixels is drawn cheaply.

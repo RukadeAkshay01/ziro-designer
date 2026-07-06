@@ -28,7 +28,7 @@ import {
   type Vec2,
 } from '@ziroeda/core';
 import { PCB_PAINT_ORDER, PCB_SPECIAL, layerColor, PCB_BACKGROUND } from './pcbTheme.js';
-import { layoutText, measureText } from '../render/strokeFont.js';
+import { layoutText, measureText } from '../../common/strokeFont.js';
 
 const MM = 10000; // IU per mm, matches core units
 

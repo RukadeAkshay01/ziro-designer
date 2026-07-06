@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { parse, readSchematic, buildSheetTree, findRootFile, type Schematic, type SheetTreeNode } from '@ziroeda/core';
-import { MenuBar, type Menu } from './ui/MenuBar.js';
-import { storageAvailable, listProjects, saveProject, loadProject, deleteProject, type ProjectMeta } from './storage/projectStore.js';
-import './ui/shell.css';
+import { MenuBar, type Menu } from '../ui/MenuBar.js';
+import { storageAvailable, listProjects, saveProject, loadProject, deleteProject, type ProjectMeta } from './projectStore.js';
+import '../ui/shell.css';
 
 /** A file picked from disk for a project open. */
 export interface PickedHomeFile { name: string; text: string }

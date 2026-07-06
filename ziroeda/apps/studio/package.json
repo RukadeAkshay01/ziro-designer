@@ -1,7 +1,7 @@
 {
-  "name": "@ziroeda/schematic",
+  "name": "@ziroeda/studio",
   "version": "0.0.0",
-  "description": "ZiroEDA schematic editor (browser app).",
+  "description": "ZiroEDA — browser-native EDA suite (KiCad-compatible).",
   "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {

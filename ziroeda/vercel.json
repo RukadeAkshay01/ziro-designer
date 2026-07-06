@@ -2,6 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm -C apps/schematic build",
-  "outputDirectory": "apps/schematic/dist"
+  "buildCommand": "pnpm -C apps/studio build",
+  "outputDirectory": "apps/studio/dist"
 }
