@@ -1,0 +1,18 @@
+{
+  "name": "ziroeda",
+  "version": "0.0.0",
+  "private": true,
+  "description": "ZiroEDA — a browser-native, open-source electronics design suite. Reads and writes KiCad file formats.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  },
+  "packageManager": "pnpm@10.33.0"
+}

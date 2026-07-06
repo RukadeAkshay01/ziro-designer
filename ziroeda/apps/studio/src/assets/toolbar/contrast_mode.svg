@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   xmlns:dc="http://purl.org/dc/elements/1.1/"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:xlink="http://www.w3.org/1999/xlink"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   id="Слой_1"
+   data-name="Слой 1"
+   viewBox="0 0 24 24"
+   version="1.1"
+   sodipodi:docname="contrast_mode.svg"
+   inkscape:version="1.0.2 (1.0.2+r75+1)"
+   inkscape:export-filename="/home/seth/code/kicad/kicad_bitmaps/bitmaps_png/sources/contrast_mode.png"
+   inkscape:export-xdpi="1890.4615"
+   inkscape:export-ydpi="1890.4615">
+  <metadata
+     id="metadata3145">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+        <dc:title>contrast_mode</dc:title>
+        <cc:license
+           rdf:resource="http://creativecommons.org/licenses/by-sa/4.0/" />
+      </cc:Work>
+      <cc:License
+         rdf:about="http://creativecommons.org/licenses/by-sa/4.0/">
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Reproduction" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#Distribution" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Notice" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#Attribution" />
+        <cc:permits
+           rdf:resource="http://creativecommons.org/ns#DerivativeWorks" />
+        <cc:requires
+           rdf:resource="http://creativecommons.org/ns#ShareAlike" />
+      </cc:License>
+    </rdf:RDF>
+  </metadata>
+  <sodipodi:namedview
+     pagecolor="#ffffff"
+     bordercolor="#666666"
+     borderopacity="1"
+     objecttolerance="10"
+     gridtolerance="10"
+     guidetolerance="10"
+     inkscape:pageopacity="0"
+     inkscape:pageshadow="2"
+     inkscape:window-width="2560"
+     inkscape:window-height="1371"
+     id="namedview3143"
+     showgrid="true"
+     inkscape:zoom="45.254834"
+     inkscape:cx="7.8087159"
+     inkscape:cy="9.3949822"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="Слой_1"
+     inkscape:document-rotation="0">
+    <inkscape:grid
+       type="xygrid"
+       id="grid3708"
+       spacingx="0.5"
+       spacingy="0.5"
+       color="#c1c1ff"
+       opacity="0.1254902"
+       empspacing="2"
+       enabled="true" />
+  </sodipodi:namedview>
+  <defs
+     id="defs3124">
+    <linearGradient
+       id="linearGradient6193"
+       x1="18"
+       y1="21.4931"
+       x2="5.1177"
+       y2="21.4931"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#ececec"
+         id="stop6189" />
+      <stop
+         offset="1"
+         stop-color="#c6c6c5"
+         id="stop6191"
+         style="stop-color:#DED3DD;stop-opacity:1" />
+    </linearGradient>
+    <style
+       id="style3116">.cls-1,.cls-2,.cls-3,.cls-5{fill:none;stroke-linecap:round;stroke-linejoin:round;}.cls-1,.cls-2,.cls-3{stroke-width:2px;}.cls-1{stroke:url(#Безымянный_градиент_19);}.cls-2{stroke:#42B8EB;}.cls-3{stroke:url(#Безымянный_градиент_19-2);}.cls-4{fill:#f2647e;}.cls-5{stroke:#DED3DD;}</style>
+    <linearGradient
+       id="Безымянный_градиент_19"
+       x1="18"
+       y1="21.4931"
+       x2="5.1177"
+       y2="21.4931"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0"
+         stop-color="#ececec"
+         id="stop3118"
+         style="stop-color:#c6c6c5;stop-opacity:1" />
+      <stop
+         offset="1"
+         stop-color="#c6c6c5"
+         id="stop3120"
+         style="stop-color:#DED3DD;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient
+       id="Безымянный_градиент_19-2"
+       x1="23"
+       y1="9"
+       x2="17"
+       y2="9"
+       xlink:href="#%D0%91%D0%B5%D0%B7%D1%8B%D0%BC%D1%8F%D0%BD%D0%BD%D1%8B%D0%B9_%D0%B3%D1%80%D0%B0%D0%B4%D0%B8%D0%B5%D0%BD%D1%82_19" />
+  </defs>
+  <title
+     id="title3126">contrast_mode</title>
+  <path
+     style="fill:none;stroke:#f2647e;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+     d="m 10.166667,12 h 5.5 l 9,9"
+     id="path1554"
+     sodipodi:nodetypes="ccc" />
+  <path
+     style="fill:none;stroke:#c0c0c0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+     d="m 1,3.4946319 2,2 8,8.0000001"
+     id="polyline3132"
+     sodipodi:nodetypes="ccc"
+     transform="translate(-1,-1.4946319)" />
+  <path
+     id="polyline3132-3"
+     style="fill:none;stroke:#f2647e;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+     d="m 5,-1 6,6 m 0,0 h 5 l 8,8"
+     sodipodi:nodetypes="ccccc" />
+  <path
+     id="polyline3132-3-6"
+     style="fill:none;stroke:#c0c0c0;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+     d="m 0,13 6,6 m 0,0 h 9 l 5,5"
+     sodipodi:nodetypes="ccccc" />
+  <circle
+     style="fill:#ffffff;fill-opacity:1;stroke:#f29100;stroke-width:4;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:0;stroke-dasharray:none;stroke-opacity:1;paint-order:markers stroke fill"
+     id="path991"
+     cy="12"
+     cx="10"
+     r="1.5" />
+</svg>
