@@ -3,6 +3,7 @@ import { parse, readSchematic, buildSheetTree, findRootFile, type Schematic, typ
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
 import { storageAvailable, listProjects, saveProject, loadProject, deleteProject, type ProjectMeta } from './projectStore.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { syncAllProjects, pushProject, deleteCloudProject } from '../cloud/sync.js';
 import '../ui/shell.css';
 
 /** A file picked from disk for a project open. */
@@ -186,6 +187,18 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   const refreshSaved = (): void => { if (storageAvailable()) void listProjects().then(setSaved); };
   useEffect(refreshSaved, []);
 
+  // Sign-in (or session restore): pull the user's cloud projects into the local
+  // store and push any local-only ones up, then refresh the list.
+  const userId = session?.user.id;
+  useEffect(() => {
+    if (!userId || !storageAvailable()) return;
+    let cancelled = false;
+    void syncAllProjects(userId)
+      .then(() => { if (!cancelled) refreshSaved(); })
+      .catch((e) => console.warn('Cloud sync failed:', e));
+    return () => { cancelled = true; };
+  }, [userId]);
+
   // Derive a project name from the .kicad_pro (else the root .kicad_sch, else folder).
   const projectNameOf = (files: PickedHomeFile[]): string => {
     const pro = files.find((f) => /\.kicad_pro$/i.test(f.name));
@@ -217,8 +230,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
           // Reuse an existing record of the same name so reopening a folder
           // updates it rather than piling up duplicates.
           const existing = (await listProjects()).find((p) => p.name === name);
-          await saveProject(name, withText, existing?.id);
+          const pid = await saveProject(name, withText, existing?.id);
           refreshSaved();
+          // Mirror to the cloud when signed in (best-effort, non-blocking).
+          if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
         }
       } catch { /* storage disabled (private mode) — the app still works */ }
     }
@@ -234,6 +249,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
     e.stopPropagation();
     await deleteProject(id);
     refreshSaved();
+    if (userId) void deleteCloudProject(id).catch((e) => console.warn('Cloud delete failed:', e));
   };
 
   const onPicked = async (list: FileList | null): Promise<void> => {

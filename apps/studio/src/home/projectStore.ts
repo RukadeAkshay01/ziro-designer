@@ -153,3 +153,62 @@ export async function renameProject(id: string, name: string): Promise<void> {
   r.updatedAt = Date.now();
   await tx('readwrite', (s) => s.put(r));
 }
+
+// ----- cloud-sync serialization ----------------------------------------------
+
+/** A project record in a JSON-serializable form (gzipped file bytes as base64),
+ *  shared by the IndexedDB store and the Supabase cloud store. */
+export interface SyncableProject {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  files: { name: string; gzB64: string }[];
+}
+
+function bytesToB64(u8: Uint8Array): string {
+  let s = '';
+  const chunk = 0x8000; // avoid arg-count limits on String.fromCharCode
+  for (let i = 0; i < u8.length; i += chunk) {
+    s += String.fromCharCode(...u8.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
+
+function b64ToBytes(b64: string): Uint8Array {
+  const s = atob(b64);
+  const u8 = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i);
+  return u8;
+}
+
+/** id + updatedAt for every local project, for cheap sync diffing. */
+export async function listSyncMeta(): Promise<{ id: string; updatedAt: number }[]> {
+  const all = await tx<StoredRecord[]>('readonly', (s) => s.getAll());
+  return all.map((r) => ({ id: r.id, updatedAt: r.updatedAt }));
+}
+
+/** Export a stored project to its serializable (base64) form, or null if gone. */
+export async function exportProject(id: string): Promise<SyncableProject | null> {
+  const r = await tx<StoredRecord | undefined>('readonly', (s) => s.get(id));
+  if (!r) return null;
+  return {
+    id: r.id,
+    name: r.name,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    files: r.files.map((f) => ({ name: f.name, gzB64: bytesToB64(f.gz) })),
+  };
+}
+
+/** Write a project from its serializable form, preserving its timestamps. */
+export async function importProject(p: SyncableProject): Promise<void> {
+  const record: StoredRecord = {
+    id: p.id,
+    name: p.name,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+    files: p.files.map((f) => ({ name: f.name, gz: b64ToBytes(f.gzB64) })),
+  };
+  await tx('readwrite', (s) => s.put(record));
+}
