@@ -35,8 +35,8 @@ const TILES: Tile[] = [
 ];
 
 // KiCad project-manager left toolbar (toolbars_kicad_manager.cpp).
-const MGR_TOOLS: ({ icon: string; title: string; action?: 'open' } | 'sep')[] = [
-  { icon: 'new_project_from_template', title: 'New Project…' },
+const MGR_TOOLS: ({ icon: string; title: string; action?: 'open' | 'new' } | 'sep')[] = [
+  { icon: 'new_project_from_template', title: 'New Project…', action: 'new' },
   { icon: 'open_project', title: 'Open Project…', action: 'open' },
   'sep',
   { icon: 'zip', title: 'Archive Project…' },
@@ -99,6 +99,76 @@ const EMPTY_PCB = `(kicad_pcb (version 20241229) (generator "ziroeda")
   (net 0 "")
 )
 `;
+
+// What eeschema writes for File > New Schematic: an empty root sheet (A4,
+// page 1). The uuid is the sheet's own id, referenced from the .kicad_pro
+// "sheets" list (KiCad ties the project's root sheet to this uuid).
+const emptySch = (uuid: string): string => `(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "${uuid}")
+	(paper "A4")
+	(lib_symbols)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+)
+`;
+
+// KiCad's default project file (kicad_pro): JSON settings written by File > New
+// Project. Only the essentials KiCad always emits — the app derives the project
+// name from `meta.filename` and ties the root schematic via `sheets`.
+const projectJson = (name: string, rootUuid: string): string =>
+  JSON.stringify(
+    {
+      board: {
+        design_settings: { defaults: {}, rules: {}, track_widths: [], via_dimensions: [] },
+        layer_presets: [],
+        viewports: [],
+      },
+      boards: [],
+      cvpcb: { equivalence_files: [] },
+      erc: { rule_severities: {}, pin_map: [], erc_exclusions: [] },
+      libraries: { pinned_footprint_libs: [], pinned_symbol_libs: [] },
+      meta: { filename: `${name}.kicad_pro`, version: 3 },
+      net_settings: { classes: [{ name: 'Default', clearance: 0.2 }], meta: { version: 3 } },
+      pcbnew: { last_paths: {}, page_layout_descr_file: '' },
+      schematic: {
+        annotate_start_num: 0,
+        drawing: {},
+        legacy_lib_dir: '',
+        legacy_lib_list: [],
+        meta: { version: 1 },
+        net_format_name: '',
+        spice_current_sheet_as_root: false,
+      },
+      sheets: [[rootUuid, '']],
+      text_variables: {},
+    },
+    null,
+    2,
+  ) + '\n';
+
+// Build the three files KiCad's File > New Project writes from scratch, nested
+// under a folder named for the project (mirrors KiCad's project directory). The
+// root schematic shares the .kicad_pro basename so the editor pairs them.
+const newProjectFiles = (name: string): PickedHomeFile[] => {
+  const uuid = (): string =>
+    crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const rootUuid = uuid();
+  const dir = `${name}/`;
+  return [
+    { name: `${dir}${name}.kicad_pro`, text: projectJson(name, rootUuid) },
+    { name: `${dir}${name}.kicad_sch`, text: emptySch(rootUuid) },
+    { name: `${dir}${name}.kicad_pcb`, text: EMPTY_PCB },
+  ];
+};
+
+// KiCad rejects these in project names (invalid on common filesystems).
+const sanitizeProjectName = (s: string): string => s.replace(/[/\\:*?"<>|]/g, '').trim();
 
 const treeIconFor = (file: string): string =>
   /\.kicad_pro$/i.test(file) ? 'project_kicad'
@@ -184,6 +254,8 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   const [saved, setSaved] = useState<ProjectMeta[]>([]);
   // Expanded directory-tree folder paths (collapsed by default, like KiCad).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // New Project dialog (KiCad's File > New Project name prompt).
+  const [newName, setNewName] = useState<string | null>(null);
   const refreshSaved = (): void => { if (storageAvailable()) void listProjects().then(setSaved); };
   useEffect(refreshSaved, []);
 
@@ -235,6 +307,28 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
           // Mirror to the cloud when signed in (best-effort, non-blocking).
           if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
         }
+      } catch { /* storage disabled (private mode) — the app still works */ }
+    }
+  };
+
+  // File > New Project: create a blank project from scratch (the three files
+  // KiCad writes — .kicad_pro, root .kicad_sch, .kicad_pcb), show it in the
+  // manager tree, and persist it like an opened project. KiCad leaves the new
+  // project in the manager; the user then launches an editor from a tile.
+  const createNewProject = async (): Promise<void> => {
+    const name = sanitizeProjectName(newName ?? '');
+    if (!name) return;
+    const files = newProjectFiles(name);
+    setPicked(files);
+    setExpanded(new Set());
+    setNewName(null);
+    if (storageAvailable()) {
+      try {
+        // Reuse an existing record of the same name (overwrite, don't duplicate).
+        const existing = (await listProjects()).find((p) => p.name === name);
+        const pid = await saveProject(name, files, existing?.id);
+        refreshSaved();
+        if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
       } catch { /* storage disabled (private mode) — the app still works */ }
     }
   };
@@ -451,6 +545,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
     {
       label: 'File',
       items: [
+        { label: 'New Project…', action: () => setNewName(''), shortcut: 'Ctrl+N' },
         { label: 'Open Project…', icon: 'open', action: () => void openProjectPicker(), shortcut: 'Ctrl+O' },
         { label: 'Select Project Files…', action: () => filesInputRef.current?.click() },
         { sep: true },
@@ -514,7 +609,11 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
                 key={t.icon}
                 title={t.title}
                 aria-label={t.title}
-                onClick={t.action === 'open' ? () => void openProjectPicker() : undefined}
+                onClick={
+                  t.action === 'open' ? () => void openProjectPicker()
+                  : t.action === 'new' ? () => setNewName('')
+                  : undefined
+                }
               >
                 <img src={mgrUrl(t.icon)} alt="" />
               </button>
@@ -637,6 +736,46 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
           {picked ? `Project: ${proFile?.name ?? hierarchy?.root ?? '—'}` : 'No project loaded'}
         </span>
       </div>
+
+      {newName !== null && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setNewName(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              New Project
+              <span className="x" title="Cancel" onClick={() => setNewName(null)}>✕</span>
+            </div>
+            <div className="ze-label-dialog-body">
+              <div className="row">
+                <span>Name</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  placeholder="untitled"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void createNewProject();
+                    else if (e.key === 'Escape') setNewName(null);
+                  }}
+                />
+              </div>
+              <div style={{ opacity: 0.6, fontSize: 12, paddingLeft: 66 }}>
+                Creates {sanitizeProjectName(newName) || 'untitled'}.kicad_pro, .kicad_sch and .kicad_pcb.
+              </div>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setNewName(null)}>Cancel</button>
+              <button
+                className="ze-btn primary"
+                disabled={!sanitizeProjectName(newName)}
+                onClick={() => void createNewProject()}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
