@@ -25,6 +25,14 @@ export interface SheetTreeNode {
   file: string;
   /** Display name: the Sheetname field, or the file for the root. */
   name: string;
+  /**
+   * Unique instance path — KiCad's SCH_SHEET_PATH (KIID_PATH): the chain of
+   * sheet-symbol UUIDs from the root ("/", then "/<uuid>/", "/<uuid>/<uuid>/"…).
+   * A file used by several sheet instances (a *complex* hierarchy) appears once
+   * per instance with a distinct path, so navigation/highlight can tell them
+   * apart even though they share one document.
+   */
+  path: string;
   children: SheetTreeNode[];
 }
 
@@ -37,19 +45,22 @@ export function buildSheetTree(
   docs: ReadonlyMap<string, Schematic>,
   rootFile: string,
 ): SheetTreeNode {
-  const build = (file: string, name: string, stack: readonly string[]): SheetTreeNode => {
-    const node: SheetTreeNode = { file, name, children: [] };
+  const build = (file: string, name: string, path: string, stack: readonly string[]): SheetTreeNode => {
+    const node: SheetTreeNode = { file, name, path, children: [] };
     if (stack.includes(file)) return node; // recursion guard (KiCad TestForRecursion)
     const doc = docs.get(file);
     if (!doc) return node;
-    for (const sh of doc.sheets) {
+    doc.sheets.forEach((sh, i) => {
       const child = sheetFile(sh);
-      if (child === '') continue;
-      node.children.push(build(child, sheetName(sh) || child, [...stack, file]));
-    }
+      if (child === '') return;
+      // Append this sheet symbol's uuid (falling back to its index) so each
+      // instance of a shared file gets its own path.
+      const childPath = `${path}${sh.uuid || `i${i}`}/`;
+      node.children.push(build(child, sheetName(sh) || child, childPath, [...stack, file]));
+    });
     return node;
   };
-  return build(rootFile, rootFile.replace(/\.kicad_sch$/i, ''), []);
+  return build(rootFile, rootFile.replace(/\.kicad_sch$/i, ''), '/', []);
 }
 
 /**

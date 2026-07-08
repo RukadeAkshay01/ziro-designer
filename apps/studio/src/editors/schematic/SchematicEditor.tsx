@@ -65,6 +65,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
   });
   const histories = useRef<Map<string, History>>(new Map());
   const [currentFile, setCurrentFile] = useState<string>(DEFAULT_FILE);
+  // The active sheet *instance* (KiCad SCH_SHEET_PATH). Distinct from currentFile
+  // so two instances of one shared document highlight/navigate independently.
+  const [currentPath, setCurrentPath] = useState<string>('/');
   // Register the initial sheet's undo stack so returning to it keeps its history.
   useEffect(() => { histories.current.set(DEFAULT_FILE, history.current); }, []);
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
@@ -204,6 +207,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
       histories.current = new Map([[file, new History()]]);
       history.current = histories.current.get(file)!;
       setCurrentFile(file);
+      setCurrentPath('/');
       setDoc(next);
       resetTransient();
       if (name) setFileName(name);
@@ -246,6 +250,8 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
     histories.current = new Map([[start, new History()]]);
     history.current = histories.current.get(start)!;
     setCurrentFile(start);
+    // Home-tree opens the root; deeper instances are entered from the canvas.
+    setCurrentPath('/');
     setDoc(docs.get(start)!);
     resetTransient();
     setFileName(start);
@@ -262,7 +268,11 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
   // Switch the visible sheet (KiCad's Enter Sheet / hierarchy navigation): stash
   // the edited current sheet back into the project, swap in the target document
   // and its own undo history.
-  const switchSheet = useCallback((file: string) => {
+  const switchSheet = useCallback((path: string, file: string) => {
+    // Always record which instance is active (path is unique per instance).
+    setCurrentPath(path);
+    // Two instances of the same file share one document — nothing to swap, just
+    // the active path changed.
     if (!doc || file === currentFile) return;
     const proj = project.current;
     proj.docs.set(currentFile, doc);
@@ -283,11 +293,13 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
     if (kind === 'sheet' && doc) {
       const idx = doc.sheets.findIndex((sh, i) => refId('sheet', sh.uuid, i) === id);
       if (idx !== -1) {
-        const file = sheetFile(doc.sheets[idx]!);
-        if (file) switchSheet(file);
+        const sh = doc.sheets[idx]!;
+        const file = sheetFile(sh);
+        // Descend from the current instance path (KiCad's SCH_SHEET_PATH push).
+        if (file) switchSheet(`${currentPath}${sh.uuid || `i${idx}`}/`, file);
       }
     }
-  }, [doc, switchSheet]);
+  }, [doc, currentPath, switchSheet]);
 
 
   const openFile = useCallback((file: File) => {
@@ -550,7 +562,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
           <div className="ze-panel grow">
             <div className="ze-panel-header">Schematic Hierarchy</div>
             <div className="ze-panel-body">
-              {sheetTree && renderSheetNode(sheetTree, 0, currentFile, switchSheet)}
+              {sheetTree && renderSheetNode(sheetTree, 0, currentPath, switchSheet)}
             </div>
           </div>
           <div className="ze-panel">
@@ -663,21 +675,21 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
 function renderSheetNode(
   node: SheetTreeNode,
   depth: number,
-  currentFile: string,
-  onOpen: (file: string) => void,
+  currentPath: string,
+  onOpen: (path: string, file: string) => void,
 ): JSX.Element {
   return (
-    <div key={`${node.file}:${depth}`}>
+    <div key={node.path}>
       <div
-        className={`ze-tree-item ${node.file === currentFile ? 'active' : ''}`}
+        className={`ze-tree-item ${node.path === currentPath ? 'active' : ''}`}
         style={{ paddingLeft: 8 + depth * 16 }}
-        onClick={() => onOpen(node.file)}
+        onClick={() => onOpen(node.path, node.file)}
         title={node.file}
       >
         📄 {node.name}
       </div>
-      {node.children.map((c, i) => (
-        <div key={`${c.file}:${i}`}>{renderSheetNode(c, depth + 1, currentFile, onOpen)}</div>
+      {node.children.map((c) => (
+        <div key={c.path}>{renderSheetNode(c, depth + 1, currentPath, onOpen)}</div>
       ))}
     </div>
   );

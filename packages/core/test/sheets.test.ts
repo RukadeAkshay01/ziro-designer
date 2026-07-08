@@ -86,9 +86,25 @@ describe('project hierarchy (SCH_SHEET_LIST equivalent)', () => {
   it('builds the nested tree with display names from Sheetname', () => {
     const tree = buildSheetTree(docs, 'main.kicad_sch');
     expect(tree.file).toBe('main.kicad_sch');
+    expect(tree.path).toBe('/'); // root instance path
     expect(tree.children.map((c) => c.name)).toEqual(['Power', 'Amp']);
+    expect(tree.children.map((c) => c.path)).toEqual(['/s1/', '/s2/']);
     expect(tree.children[0]!.children.map((c) => c.name)).toEqual(['Reg']);
     expect(tree.children[0]!.children[0]!.file).toBe('reg.kicad_sch');
+    expect(tree.children[0]!.children[0]!.path).toBe('/s1/s3/'); // chained UUIDs
+  });
+
+  it('gives each instance of a shared file a distinct path (complex hierarchy)', () => {
+    // KiCad's complex_hierarchy demo: the root instantiates ampli_ht.kicad_sch
+    // twice (vertical + horizontal) — same file, two SCH_SHEET_PATHs.
+    const rootTwice = doc(`(sheet (at 10 10) (size 20 20) (uuid "v")
+        (property "Sheetname" "ampli_ht_vertical" (at 0 0 0)) (property "Sheetfile" "ampli_ht.kicad_sch" (at 0 0 0)))
+      (sheet (at 50 10) (size 20 20) (uuid "h")
+        (property "Sheetname" "ampli_ht_horizontal" (at 0 0 0)) (property "Sheetfile" "ampli_ht.kicad_sch" (at 0 0 0)))`);
+    const tree = buildSheetTree(new Map([['complex.kicad_sch', rootTwice], ['ampli_ht.kicad_sch', doc('')]]), 'complex.kicad_sch');
+    expect(tree.children.map((c) => c.file)).toEqual(['ampli_ht.kicad_sch', 'ampli_ht.kicad_sch']); // same file
+    expect(tree.children.map((c) => c.path)).toEqual(['/v/', '/h/']); // distinct paths
+    expect(new Set(tree.children.map((c) => c.path)).size).toBe(2);
   });
 
   it('survives a recursive sheet reference', () => {
