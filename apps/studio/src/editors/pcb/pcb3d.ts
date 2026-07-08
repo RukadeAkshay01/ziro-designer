@@ -4,12 +4,14 @@
  * KiCad's 3D viewer builds a full solid model with component STEP bodies; that
  * is out of scope here. This renders the board the way pcbnew's "realistic
  * board without models" preview does: the copper/silk/mask artwork rendered to
- * textures and mapped onto an extruded FR4 board slab, with orbit + zoom. It
- * reuses the exact 2D PCB_PAINTER output (renderBoard.ts) for the faces, so the
- * copper you see in 2D is what you see in 3D.
+ * textures and mapped onto the real Edge.Cuts board outline (with cutouts),
+ * extruded to the board thickness as FR4, with orbit + zoom. It reuses the exact
+ * 2D PCB_PAINTER output (renderBoard.ts) for the faces, so the copper you see in
+ * 2D is what you see in 3D. Outline chaining/triangulation lives in boardOutline.ts.
  */
 
 import { buildScene, drawBoard, DEFAULT_DRAW_OPTIONS, type PcbDrawOptions } from './renderBoard.js';
+import { buildBoardOutline } from './boardOutline.js';
 import type { Board } from '@ziroeda/core';
 
 const MM = 10000;
@@ -182,42 +184,47 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   gl.linkProgram(prog);
   gl.useProgram(prog);
 
-  // Box geometry centred at origin: X±bw/2, Y±bh/2, Z±th/2. Faces: top(+z)=front
-  // texture, bottom(-z)=back texture, sides FR4. Y is flipped so the texture's
-  // screen-down maps to world so the board reads upright.
-  const hx = bw / 2, hy = bh / 2, hz = th / 2;
-  // The face textures are square (POT, for mipmaps) with the board centred, so
-  // map each face to the board's centred sub-rectangle of the square texture.
+  // Real board geometry: the Edge.Cuts outline (with cutouts) extruded to the
+  // board thickness, instead of a bounding-box slab. Top(+Z)/bottom(−Z) faces
+  // carry the artwork textures; the extruded walls are FR4. UVs map board XY
+  // into the square face texture (board centred, span = max(bw,bh)). Y was
+  // already flipped into the centred 3D frame by buildBoardOutline.
+  const hz = th / 2;
   const span = Math.max(bw, bh);
-  const uHalf = bw / (2 * span);
-  const vHalf = bh / (2 * span);
-  const u0 = 0.5 - uHalf, u1 = 0.5 + uHalf, v0 = 0.5 - vHalf, v1 = 0.5 + vHalf;
-  // Each face: 4 verts (pos xyz, uv, normal). Build two textured faces + 4 sides.
-  interface FaceDef { verts: number[]; tex: 'front' | 'back' | null; }
-  const faces: FaceDef[] = [
-    // top +Z (front). uv (u0,v0) = top-left of the board at (-hx,+hy)
-    { tex: 'front', verts: [
-      -hx, hy, hz, u0, v0, 0, 0, 1,
-      hx, hy, hz, u1, v0, 0, 0, 1,
-      hx, -hy, hz, u1, v1, 0, 0, 1,
-      -hx, -hy, hz, u0, v1, 0, 0, 1,
-    ] },
-    // bottom -Z (back)
-    { tex: 'back', verts: [
-      -hx, hy, -hz, u0, v0, 0, 0, -1,
-      -hx, -hy, -hz, u0, v1, 0, 0, -1,
-      hx, -hy, -hz, u1, v1, 0, 0, -1,
-      hx, hy, -hz, u1, v0, 0, 0, -1,
-    ] },
-    // +X
-    { tex: null, verts: [ hx, -hy, hz, 0, 0, 1, 0, 0, hx, hy, hz, 0, 0, 1, 0, 0, hx, hy, -hz, 0, 0, 1, 0, 0, hx, -hy, -hz, 0, 0, 1, 0, 0 ] },
-    // -X
-    { tex: null, verts: [ -hx, hy, hz, 0, 0, -1, 0, 0, -hx, -hy, hz, 0, 0, -1, 0, 0, -hx, -hy, -hz, 0, 0, -1, 0, 0, -hx, hy, -hz, 0, 0, -1, 0, 0 ] },
-    // +Y
-    { tex: null, verts: [ -hx, hy, hz, 0, 0, 0, 1, 0, hx, hy, hz, 0, 0, 0, 1, 0, hx, hy, -hz, 0, 0, 0, 1, 0, -hx, hy, -hz, 0, 0, 0, 1, 0 ] },
-    // -Y
-    { tex: null, verts: [ hx, -hy, hz, 0, 0, 0, -1, 0, -hx, -hy, hz, 0, 0, 0, -1, 0, -hx, -hy, -hz, 0, 0, 0, -1, 0, hx, -hy, -hz, 0, 0, 0, -1, 0 ] },
-  ];
+  const uvU = (x: number): number => 0.5 + x / span;
+  const uvV = (y: number): number => 0.5 - y / span;
+  const outline = buildBoardOutline(board, box);
+
+  interface Group { verts: number[]; idx: number[]; tex: 'front' | 'back' | null }
+  const gFront: Group = { verts: [], idx: [], tex: 'front' };
+  const gBack: Group = { verts: [], idx: [], tex: 'back' };
+  const gSide: Group = { verts: [], idx: [], tex: null };
+  const push = (g: Group, x: number, y: number, z: number, u: number, v: number, nx: number, ny: number, nz: number): number => {
+    const i = g.verts.length / 8;
+    g.verts.push(x, y, z, u, v, nx, ny, nz);
+    return i;
+  };
+  // Triangulated top + bottom faces (front/back artwork).
+  for (const p of outline.verts) push(gFront, p.x, p.y, hz, uvU(p.x), uvV(p.y), 0, 0, 1);
+  gFront.idx = outline.tris.slice();
+  for (const p of outline.verts) push(gBack, p.x, p.y, -hz, uvU(p.x), uvV(p.y), 0, 0, -1);
+  gBack.idx = outline.tris.slice();
+  // Extruded FR4 walls along every loop edge (outer boundary + cutouts).
+  for (const loop of outline.loops) {
+    for (let i = 0; i < loop.length; i++) {
+      const p0 = loop[i]!;
+      const p1 = loop[(i + 1) % loop.length]!;
+      const dx = p1.x - p0.x, dy = p1.y - p0.y;
+      const L = Math.hypot(dx, dy) || 1;
+      const nx = dy / L, ny = -dx / L; // horizontal wall normal
+      const a = push(gSide, p0.x, p0.y, hz, 0, 0, nx, ny, 0);
+      const b = push(gSide, p1.x, p1.y, hz, 0, 0, nx, ny, 0);
+      const c = push(gSide, p1.x, p1.y, -hz, 0, 0, nx, ny, 0);
+      const d = push(gSide, p0.x, p0.y, -hz, 0, 0, nx, ny, 0);
+      gSide.idx.push(a, b, c, a, c, d);
+    }
+  }
+  const groups = [gFront, gBack, gSide];
 
   const mkTex = (img: HTMLCanvasElement): WebGLTexture => {
     const t = gl.createTexture()!;
@@ -242,15 +249,19 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   const uUseTex = gl.getUniformLocation(prog, 'uUseTex');
   const uColor = gl.getUniformLocation(prog, 'uColor');
 
-  const buffers = faces.map((f) => {
-    const buf = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(f.verts), gl.STATIC_DRAW);
-    return buf;
+  // Tessellated boards can exceed 65 k vertices, so use 32-bit indices when the
+  // extension is available (falls back to 16-bit on the rare GPU without it).
+  const uintOK = !!gl.getExtension('OES_element_index_uint');
+  const idxType = uintOK ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+  const glGroups = groups.map((g) => {
+    const vbo = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(g.verts), gl.STATIC_DRAW);
+    const ibo = gl.createBuffer()!;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, uintOK ? new Uint32Array(g.idx) : new Uint16Array(g.idx), gl.STATIC_DRAW);
+    return { vbo, ibo, count: g.idx.length, tex: g.tex };
   });
-  const idx = gl.createBuffer()!;
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
 
   gl.enable(gl.DEPTH_TEST);
   gl.clearColor(0, 0, 0, 0); // transparent — the CSS gradient is the background
@@ -279,25 +290,26 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     gl.uniformMatrix4fv(uMVP, false, mvp);
     gl.uniformMatrix4fv(uModel, false, model);
 
-    faces.forEach((f, i) => {
-      gl.bindBuffer(gl.ARRAY_BUFFER, buffers[i]!);
+    glGroups.forEach((g) => {
+      if (g.count === 0) return;
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo);
       gl.enableVertexAttribArray(aPos);
       gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
       gl.enableVertexAttribArray(aUV);
       gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 32, 12);
       gl.enableVertexAttribArray(aNormal);
       gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 20);
-      if (f.tex) {
+      if (g.tex) {
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, f.tex === 'front' ? frontTex : backTex);
+        gl.bindTexture(gl.TEXTURE_2D, g.tex === 'front' ? frontTex : backTex);
         gl.uniform1i(uTex, 0);
         gl.uniform1i(uUseTex, 1);
       } else {
         gl.uniform1i(uUseTex, 0);
-        gl.uniform3f(uColor, 0.4, 0.4, 0.5); // FR4 body edge (KiCad m_BoardBodyColor)
+        gl.uniform3f(uColor, 0.4, 0.4, 0.5); // FR4 body (KiCad m_BoardBodyColor)
       }
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
-      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo);
+      gl.drawElements(gl.TRIANGLES, g.count, idxType, 0);
     });
   };
 
