@@ -14,6 +14,11 @@ export interface PickedHomeFile { name: string; text: string; bytes?: Uint8Array
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
+// Let the browser paint (a loading overlay) before we hog the main thread with
+// file reads + gzip. Two rAFs guarantees a committed frame first.
+const nextPaint = (): Promise<void> =>
+  new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
 // KiCad's own dark-theme icons (GPL), vendored under assets/.
 const TILE_ICONS = import.meta.glob('../assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 const MGR_ICONS = import.meta.glob('../assets/manager/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
@@ -314,6 +319,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   const [newName, setNewName] = useState<string | null>(null);
   // Project-tree pane width (px), draggable like KiCad's wxAUI sash.
   const [panelWidth, setPanelWidth] = useState(290);
+  // Non-null while opening/saving a project — drives KiCad's "Load Schematic"
+  // style progress overlay so the UI doesn't look frozen mid-load.
+  const [loading, setLoading] = useState<string | null>(null);
   const refreshSaved = (): void => { if (storageAvailable()) void listProjects().then(setSaved); };
   useEffect(refreshSaved, []);
 
@@ -342,30 +350,37 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   // storage layer gzips text ~10x, so keeping the libs is cheap. The project is
   // persisted to IndexedDB so it survives a reload with no login.
   const ingest = async (files: { name: string; bytesOf: () => Promise<Uint8Array> }[], persist = true): Promise<void> => {
-    const out: PickedHomeFile[] = [];
-    for (const f of files) {
-      const base = f.name.split('/').pop()!;
-      if (base.startsWith('.')) continue;
-      const bytes = await f.bytesOf();
-      out.push({ name: f.name, text: dec.decode(bytes), bytes });
-    }
-    if (out.length === 0) return;
-    setPicked(out);
-    if (persist && storageAvailable()) {
-      try {
-        // Persist every file's raw bytes (empty files carry nothing to reopen).
-        const withBytes = out.filter((f) => f.bytes && f.bytes.length > 0);
-        if (withBytes.length > 0) {
-          const name = projectNameOf(out);
-          // Reuse an existing record of the same name so reopening a folder
-          // updates it rather than piling up duplicates.
-          const existing = (await listProjects()).find((p) => p.name === name);
-          const pid = await saveProject(name, withBytes.map((f) => ({ name: f.name, bytes: f.bytes! })), existing?.id);
-          refreshSaved();
-          // Mirror to the cloud when signed in (best-effort, non-blocking).
-          if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
-        }
-      } catch { /* storage disabled (private mode) — the app still works */ }
+    setLoading('Reading files…');
+    await nextPaint(); // show the overlay before the main thread gets busy
+    try {
+      const out: PickedHomeFile[] = [];
+      for (const f of files) {
+        const base = f.name.split('/').pop()!;
+        if (base.startsWith('.')) continue;
+        const bytes = await f.bytesOf();
+        out.push({ name: f.name, text: dec.decode(bytes), bytes });
+      }
+      if (out.length === 0) return;
+      setPicked(out);
+      if (persist && storageAvailable()) {
+        try {
+          // Persist every file's raw bytes (empty files carry nothing to reopen).
+          const withBytes = out.filter((f) => f.bytes && f.bytes.length > 0);
+          if (withBytes.length > 0) {
+            setLoading('Saving project…');
+            const name = projectNameOf(out);
+            // Reuse an existing record of the same name so reopening a folder
+            // updates it rather than piling up duplicates.
+            const existing = (await listProjects()).find((p) => p.name === name);
+            const pid = await saveProject(name, withBytes.map((f) => ({ name: f.name, bytes: f.bytes! })), existing?.id);
+            refreshSaved();
+            // Mirror to the cloud when signed in (best-effort, non-blocking).
+            if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
+          }
+        } catch { /* storage disabled (private mode) — the app still works */ }
+      }
+    } finally {
+      setLoading(null);
     }
   };
 
@@ -393,8 +408,14 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
 
   // Reopen a project straight from IndexedDB — no folder picker needed.
   const openStored = async (id: string): Promise<void> => {
-    const loaded = await loadProject(id);
-    if (loaded) setPicked(loaded.files.map((f) => ({ name: f.name, text: dec.decode(f.bytes), bytes: f.bytes })));
+    setLoading('Opening project…');
+    await nextPaint();
+    try {
+      const loaded = await loadProject(id);
+      if (loaded) setPicked(loaded.files.map((f) => ({ name: f.name, text: dec.decode(f.bytes), bytes: f.bytes })));
+    } finally {
+      setLoading(null);
+    }
   };
 
   const removeStored = async (id: string, e: React.MouseEvent): Promise<void> => {
@@ -866,6 +887,17 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
                 Create
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* KiCad's "Load Schematic" progress dialog, web-style: a blocking overlay
+          with a spinner so the tree isn't interactable-but-janky mid-load. */}
+      {loading && (
+        <div className="ze-modal-backdrop ze-loading-backdrop">
+          <div className="ze-loading-card">
+            <span className="ze-spinner" />
+            <span>{loading}</span>
           </div>
         </div>
       )}

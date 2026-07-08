@@ -281,6 +281,32 @@ html, body { background: var(--chrome-bg2); }
 
 /* Symbol chooser modal (KiCad-style centered dialog) */
 .ze-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: flex; align-items: center; justify-content: center; }
+
+/* Loading overlay (KiCad's progress dialog): blocks the UI and shows a spinner
+   while a project is read/saved/opened. */
+.ze-loading-backdrop { cursor: progress; z-index: 300; background: rgba(0,0,0,0.35); }
+.ze-loading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  box-shadow: 0 14px 44px rgba(0,0,0,0.55);
+}
+.ze-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid var(--chrome-border);
+  border-top-color: #e07b1a;
+  border-radius: 50%;
+  animation: ze-spin 0.7s linear infinite;
+}
+@keyframes ze-spin { to { transform: rotate(360deg); } }
 .ze-modal { width: 860px; height: 580px; max-width: 92vw; max-height: 88vh; background: var(--chrome-bg); border: 1px solid var(--chrome-border); border-radius: 6px; display: flex; flex-direction: column; box-shadow: 0 14px 44px rgba(0,0,0,0.55); }
 .ze-modal-header { padding: 8px 12px; font-weight: 600; border-bottom: 1px solid var(--chrome-border); display: flex; align-items: center; }
 .ze-modal-header .x { margin-left: auto; cursor: pointer; padding: 0 6px; color: #9a9ca0; }
