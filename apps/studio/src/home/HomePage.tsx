@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
-import { parse, readSchematic, buildSheetTree, findRootFile, type Schematic, type SheetTreeNode } from '@ziroeda/core';
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
 import { storageAvailable, listProjects, saveProject, loadProject, deleteProject, type ProjectMeta } from './projectStore.js';
 import { useAuth } from '../auth/AuthProvider.js';
@@ -200,13 +199,35 @@ const isHiddenFile = (base: string): boolean =>
   base === 'sym-lib-table' ||
   /-backups?$/i.test(base);
 
+// KiCad marks a file as a project "root file" when its basename matches the
+// project name (or "project-*") — PROJECT_TREE_PANE::addItemToProjectTree, and
+// these sort ahead of other files (project_tree.cpp OnCompareItems).
+const isRootFileName = (name: string, projLower: string): boolean => {
+  if (!projLower) return false;
+  const base = name.toLowerCase().replace(/\.[^.]+$/, '');
+  return base === projLower || base.startsWith(projLower + '-');
+};
+
+// PROJECT_TREE::OnCompareItems ordering: directories first, then root files,
+// then case-insensitive by name (wxString::CmpNoCase).
+const compareTreeNodes = (a: DirNode, b: DirNode, projLower: string): number => {
+  if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+  if (!a.isDir) {
+    const ra = isRootFileName(a.name, projLower);
+    const rb = isRootFileName(b.name, projLower);
+    if (ra !== rb) return ra ? -1 : 1;
+  }
+  return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+};
+
 /**
  * Reconstruct the on-disk folder hierarchy from the picked files' relative
  * paths so the tree mirrors KiCad's project window — footprint/3D libraries
  * (CM5IO.pretty, 3d_lib, *.3dshapes) stay inside collapsible folders instead
- * of flooding the list. `stripPrefix` removes the picked folder's own name.
+ * of flooding the list. `stripPrefix` removes the picked folder's own name;
+ * `projLower` drives KiCad's root-file-first sort.
  */
-function buildDirTree(files: PickedHomeFile[], stripPrefix: string): DirNode {
+function buildDirTree(files: PickedHomeFile[], stripPrefix: string, projLower: string): DirNode {
   const root: DirNode = { name: '', path: '', isDir: true, children: [] };
   for (const f of files) {
     let rel = f.name.replace(/\\/g, '/');
@@ -227,7 +248,7 @@ function buildDirTree(files: PickedHomeFile[], stripPrefix: string): DirNode {
     }
   }
   const sortRec = (n: DirNode): void => {
-    n.children.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+    n.children.sort((a, b) => compareTreeNodes(a, b, projLower));
     n.children.forEach(sortRec);
   };
   sortRec(root);
@@ -259,6 +280,8 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // New Project dialog (KiCad's File > New Project name prompt).
   const [newName, setNewName] = useState<string | null>(null);
+  // Project-tree pane width (px), draggable like KiCad's wxAUI sash.
+  const [panelWidth, setPanelWidth] = useState(290);
   const refreshSaved = (): void => { if (storageAvailable()) void listProjects().then(setSaved); };
   useEffect(refreshSaved, []);
 
@@ -476,36 +499,30 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
     }
   };
 
+  // Drag the sash to resize the project-tree pane (clamped like KiCad's panes).
+  const startResize = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = panelWidth;
+    const onMove = (ev: MouseEvent): void =>
+      setPanelWidth(Math.min(600, Math.max(180, startW + ev.clientX - startX)));
+    const onUp = (): void => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    document.body.style.cursor = 'col-resize';
+  };
+
   const proFile = useMemo(() => picked?.find((f) => /\.kicad_pro$/i.test(f.name)) ?? null, [picked]);
   const displayName = proFile ? basename(proFile.name).replace(/\.kicad_pro$/i, '') : '';
 
-  // Parse the schematics to build the same nested hierarchy KiCad's project
-  // window shows under the root schematic (sub-sheets as children).
-  const hierarchy = useMemo<{ root: string; tree: SheetTreeNode } | null>(() => {
-    if (!picked) return null;
-    const docs = new Map<string, Schematic>();
-    for (const f of picked) {
-      const base = basename(f.name);
-      if (!/\.kicad_sch$/i.test(base)) continue;
-      try { docs.set(base, readSchematic(parse(f.text))); } catch { /* listed but unparsed */ }
-    }
-    if (docs.size === 0) return null;
-    const root = findRootFile(docs, proFile ? basename(proFile.name) : undefined);
-    return { root, tree: buildSheetTree(docs, root) };
-  }, [picked, proFile]);
-
-  // Schematics not reachable from the root (e.g. the root sheet itself is
-  // missing from the folder) — still listed so nothing silently disappears.
-  const orphanSheets = useMemo(() => {
-    if (!picked) return [];
-    const reachable = new Set<string>();
-    const walk = (n: SheetTreeNode): void => { reachable.add(n.file); n.children.forEach(walk); };
-    if (hierarchy) walk(hierarchy.tree);
-    return picked
-      .map((f) => basename(f.name))
-      .filter((b) => /\.kicad_sch$/i.test(b) && !reachable.has(b))
-      .sort((a, b) => a.localeCompare(b));
-  }, [picked, hierarchy]);
+  // The project name drives KiCad's root-file detection (which schematic shows,
+  // and the sort weight). Falls back to the root .kicad_sch / first file.
+  const projName = useMemo(() => (picked ? projectNameOf(picked) : ''), [picked]);
+  const projLower = projName.toLowerCase();
 
   const launchSchematic = (startFile?: string): void => {
     if (picked && onOpenProject) onOpenProject(picked, startFile);
@@ -525,43 +542,29 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
     else onOpenPcb({ name: 'untitled.kicad_pcb', text: EMPTY_PCB });
   };
 
-  // The nested schematic hierarchy, exactly like KiCad's project window: the
-  // root schematic with its sub-sheets as children (recursively).
-  const renderTreeNode = (node: SheetTreeNode, depth: number): JSX.Element => (
-    <div key={`${node.file}:${depth}`}>
-      <div
-        className="ze-tree-item"
-        style={{ paddingLeft: 8 + depth * 16, cursor: 'pointer' }}
-        title="Open in the Schematic Editor"
-        onClick={() => launchSchematic(node.file)}
-      >
-        {node.children.length > 0 && <span className="twisty">▾</span>}
-        <TreeIcon name="icon_eeschema_24" />
-        <span>{node.file}</span>
-      </div>
-      {node.children.map((c, i) => (
-        <div key={`${c.file}:${i}`}>{renderTreeNode(c, depth + 1)}</div>
-      ))}
-    </div>
-  );
-
-  // The on-disk directory tree (folders collapsible), so footprint/3D libraries
-  // don't flood the list. Schematics are shown via the hierarchy above, so they
-  // (and hidden config files) are omitted here.
+  // The on-disk directory tree, sorted exactly like KiCad's project window
+  // (dirs first, root files next, then case-insensitive by name). Footprint/3D
+  // libraries stay inside collapsible folders instead of flooding the list.
   const dirRoot = useMemo<DirNode | null>(() => {
     if (!picked) return null;
     const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
     const firstSeg = anyPath.includes('/') ? anyPath.split('/')[0] + '/' : '';
     const strip = firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg)) ? firstSeg : '';
-    return buildDirTree(picked, strip);
-  }, [picked, proFile]);
+    return buildDirTree(picked, strip, projLower);
+  }, [picked, proFile, projLower]);
 
   const toggleDir = (path: string): void =>
     setExpanded((prev) => { const n = new Set(prev); if (n.has(path)) n.delete(path); else n.add(path); return n; });
 
+  // Like KiCad's addItemToProjectTree: a schematic is only listed when its
+  // basename matches the project (i.e. the root sheet). Sub-sheets are hidden
+  // here — they live in the Schematic Editor's hierarchy navigator.
+  const isHiddenNode = (name: string): boolean =>
+    isHiddenFile(name) || (/\.kicad_sch$/i.test(name) && !isRootFileName(name, projLower));
+
   const renderDir = (node: DirNode, depth: number): JSX.Element | null => {
     if (node.isDir) {
-      const kids = node.children.filter((c) => c.isDir || (!/\.kicad_sch$/i.test(c.name) && !isHiddenFile(c.name)));
+      const kids = node.children.filter((c) => c.isDir || !isHiddenNode(c.name));
       if (kids.length === 0) return null;
       const open = expanded.has(node.path);
       return (
@@ -572,7 +575,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
             onClick={() => toggleDir(node.path)}
             title={node.path}
           >
-            <span className="twisty">{open ? '▾' : '▸'}</span>
+            <span className={`twisty expandable${open ? ' open' : ''}`} />
             <TreeIcon name={open ? 'directory_open' : 'directory'} />
             <span>{node.name}</span>
           </div>
@@ -580,15 +583,20 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
         </div>
       );
     }
-    if (/\.kicad_sch$/i.test(node.name) || isHiddenFile(node.name)) return null;
+    if (isHiddenNode(node.name)) return null;
     const isPcb = /\.kicad_pcb$/i.test(node.name);
+    const isSch = /\.kicad_sch$/i.test(node.name);
+    const openFn =
+      isPcb && onOpenPcb && node.file ? () => onOpenPcb(node.file!, picked ?? undefined)
+      : isSch ? () => launchSchematic(basename(node.name))
+      : undefined;
     return (
       <div
         key={node.path}
         className="ze-tree-item"
-        style={{ paddingLeft: 8 + depth * 16 + 15, cursor: isPcb ? 'pointer' : 'default' }}
-        title={isPcb ? 'Open in the PCB Editor' : node.path}
-        onClick={isPcb && onOpenPcb && node.file ? () => onOpenPcb(node.file!, picked ?? undefined) : undefined}
+        style={{ paddingLeft: 8 + depth * 16 + 15, cursor: openFn ? 'pointer' : 'default' }}
+        title={isPcb ? 'Open in the PCB Editor' : isSch ? 'Open in the Schematic Editor' : node.path}
+        onClick={openFn}
       >
         <TreeIcon name={treeIconFor(node.name)} />
         <span>{node.name}</span>
@@ -685,32 +693,18 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
         </div>
 
         {/* project file tree */}
-        <div className="ze-panel left" style={{ width: 290 }}>
+        <div className="ze-panel left" style={{ width: panelWidth }}>
           <div className="ze-panel-header">Project Files</div>
           <div className="ze-panel-body">
             {picked ? (
               <>
-                {/* project root (.kicad_pro), like KiCad's tree root */}
+                {/* project root (.kicad_pro), bold like KiCad's tree root */}
                 <div className="ze-tree-item root active">
-                  <span className="twisty">▾</span>
+                  <span className="twisty expandable open" />
                   <TreeIcon name="project_kicad" />
-                  <span>{displayName || hierarchy?.tree.file.replace(/\.kicad_sch$/i, '') || 'Project'}</span>
+                  <span>{displayName || projName || 'Project'}</span>
                 </div>
-                {/* root schematic with its sub-sheets nested under it */}
-                {hierarchy && renderTreeNode(hierarchy.tree, 1)}
-                {orphanSheets.map((b) => (
-                  <div
-                    key={b}
-                    className="ze-tree-item"
-                    style={{ paddingLeft: 24, cursor: 'pointer' }}
-                    title="Open in the Schematic Editor"
-                    onClick={() => launchSchematic(b)}
-                  >
-                    <TreeIcon name="icon_eeschema_24" />
-                    <span>{b}</span>
-                  </div>
-                ))}
-                {/* remaining project files & folders, mirroring the directory */}
+                {/* project directory contents, flat and KiCad-sorted */}
                 {dirRoot?.children.map((c) => renderDir(c, 1))}
               </>
             ) : (
@@ -737,6 +731,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
             )}
           </div>
         </div>
+
+        {/* draggable sash between the tree and the launchers (KiCad's wxAUI pane) */}
+        <div className="ze-splitter" onMouseDown={startResize} title="Drag to resize" />
 
         {/* launcher tiles (fixed) with the Recent Projects list scrolling below */}
         <div className="ze-launchers">
@@ -796,7 +793,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
 
       <div className="ze-statusbar">
         <span className="cell grow">
-          {picked ? `Project: ${proFile?.name ?? hierarchy?.root ?? '—'}` : 'No project loaded'}
+          {picked ? `Project: ${proFile?.name ?? projName ?? '—'}` : 'No project loaded'}
         </span>
       </div>
 

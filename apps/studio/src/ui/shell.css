@@ -101,7 +101,7 @@ html, body { background: var(--chrome-bg2); }
   flex-direction: column;
   background: var(--panel-bg);
 }
-.ze-panel.left { border-right: 1px solid var(--chrome-border); }
+.ze-panel.left { border-right: 1px solid var(--chrome-border); flex: 0 0 auto; }
 .ze-panel.right { border-left: 1px solid var(--chrome-border); }
 .ze-panel-header {
   padding: 5px 9px;
@@ -127,7 +127,25 @@ html, body { background: var(--chrome-bg2); }
 .ze-tree-item:hover { background: var(--chrome-hover); }
 .ze-tree-item.active { background: var(--chrome-active); color: #fff; }
 .ze-tree-item.root { font-weight: 700; color: #fff; }
-.ze-tree-item .twisty { width: 12px; flex: 0 0 auto; text-align: center; color: #9aa0a6; font-size: 10px; }
+/* KiCad's native disclosure triangle: a small filled arrow that rotates from
+   pointing right (collapsed) to down (expanded). */
+.ze-tree-item .twisty { position: relative; width: 12px; height: 12px; flex: 0 0 auto; }
+.ze-tree-item .twisty.expandable::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 4px 0 4px 6px;
+  border-color: transparent transparent transparent #9aa0a6;
+  transform: translate(-50%, -50%);
+  transition: transform 0.08s ease;
+}
+.ze-tree-item .twisty.expandable.open::before {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
 
 .ze-prop-row { display: flex; justify-content: space-between; padding: 3px 2px; border-bottom: 1px solid var(--chrome-border); }
 .ze-prop-row .k { color: #9a9ca0; }
@@ -162,7 +180,17 @@ html, body { background: var(--chrome-bg2); }
 
 /* ---- Project manager (home) ---- */
 .ze-home-body { flex: 1; display: flex; min-height: 0; background: var(--chrome-bg2); }
-.ze-launchers { flex: 1; min-height: 0; overflow: hidden; padding: 10px 14px; display: flex; flex-direction: column; }
+/* Draggable sash between the project tree and the launchers (KiCad wxAUI pane). */
+.ze-splitter {
+  flex: 0 0 auto;
+  width: 5px;
+  margin-left: -1px;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 2;
+}
+.ze-splitter:hover { background: var(--chrome-active); }
+.ze-launchers { flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 10px 14px; display: flex; flex-direction: column; }
 .ze-tiles { flex: 0 0 auto; }
 .ze-launcher {
   display: flex; align-items: center; gap: 18px;
