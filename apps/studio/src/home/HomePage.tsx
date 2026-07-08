@@ -205,6 +205,32 @@ const isHiddenFile = (base: string): boolean =>
   base === 'sym-lib-table' ||
   /-backups?$/i.test(base);
 
+// KiCad's PROJECT_ARCHIVER::Archive allow-list (common/project/project_archiver.cpp)
+// with aIncludeExtraFiles=true — the flag the manager passes for "Archive Project"
+// (kicad/project_tree_pane.cpp). Extension strings from wildcards_and_files_ext.cpp.
+const ARCHIVE_EXTENSIONS = new Set([
+  // always archived
+  'kicad_pro', 'kicad_prl', 'kicad_sch', 'kicad_mbs', 'kicad_sym', 'kicad_pcb',
+  'kicad_mod', 'kicad_dru', 'kicad_wks', 'kicad_jobset', 'json', 'wbk',
+  // extra files (aIncludeExtraFiles): legacy formats, 3D models, fab outputs…
+  'pro', 'sch', 'lib', 'dcm', 'cmp', 'brd', 'mod', 'stp', 'step', 'wrl',
+  'gbrjob', 'pos', 'drl', 'nc', 'xnc', 'd356', 'rpt', 'net', 'py', 'pdf',
+  'txt', 'cir', 'sub', 'model', 'ibs', 'pkg', 'cad',
+]);
+// Extension-less files KiCad always archives (the library tables).
+const ARCHIVE_FILENAMES = new Set(['fp-lib-table', 'sym-lib-table', 'design-block-lib-table']);
+// Gerber extensions (FILEEXT::GerberFileExtensionsRegex), matched on the ext.
+const GERBER_EXT_RE = /(gbr|gko|pho|(g[tb][alops])|(gm?\d\d*)|(gp[tb]))/i;
+
+// Whether KiCad's archiver would include this file (its extension/name filter).
+const inArchiveAllowList = (name: string): boolean => {
+  const base = name.split('/').pop()!.split('\\').pop()!;
+  const dot = base.lastIndexOf('.');
+  const ext = dot >= 1 ? base.slice(dot + 1).toLowerCase() : '';
+  if (ext) return ARCHIVE_EXTENSIONS.has(ext) || GERBER_EXT_RE.test(ext);
+  return ARCHIVE_FILENAMES.has(base.toLowerCase());
+};
+
 // KiCad marks a file as a project "root file" when its basename matches the
 // project name (or "project-*") — PROJECT_TREE_PANE::addItemToProjectTree, and
 // these sort ahead of other files (project_tree.cpp OnCompareItems).
@@ -465,7 +491,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
   // named for the project (so it unzips the way KiCad expects).
   const archiveProject = (): void => {
     if (!picked) return;
-    const withBytes = picked.filter((f) => f.bytes && f.bytes.length > 0);
+    // KiCad archives only its allow-listed file types (gerbers/backups/images
+    // and other stray files are skipped), reading each as raw bytes.
+    const withBytes = picked.filter((f) => f.bytes && f.bytes.length > 0 && inArchiveAllowList(f.name));
     if (withBytes.length === 0) return;
     const name = projectNameOf(picked);
     const entries: Record<string, Uint8Array> = {};
