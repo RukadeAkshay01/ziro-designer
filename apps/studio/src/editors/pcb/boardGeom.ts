@@ -163,17 +163,24 @@ export function buildBoardGeom(board: Board, box: Box): BoardGeom {
   }
   for (const sh of board.shapes) addSilk(sh, silkSide(sh.layer), poly3d);
 
-  // Silkscreen text (reference designators like R201, values, user text) as
-  // stroke geometry — mirrors renderBoard.addText's placement transform.
-  for (const t of board.texts) addSilkText(t, silkSide(t.layer), poly3d);
-  for (const fp of board.footprints) for (const t of fp.texts) addSilkText(t, silkSide(t.layer), poly3d);
+  // Text as stroke geometry — reference designators/values on silk, plus text
+  // on copper (e.g. a board name on F.Cu/B.Cu) into the copper mesh so it reads
+  // like KiCad. Mirrors renderBoard.addText's placement transform.
+  const textMesh = (layer: string): Mesh | null =>
+    layer === 'F.SilkS' ? front.silk
+    : layer === 'B.SilkS' ? back.silk
+    : layer === 'F.Cu' ? front.copper
+    : layer === 'B.Cu' ? back.copper
+    : null;
+  for (const t of board.texts) addText(t, textMesh(t.layer), poly3d);
+  for (const fp of board.footprints) for (const t of fp.texts) addText(t, textMesh(t.layer), poly3d);
 
   return { front, back };
 }
 
-// One silkscreen text item → stroke-font geometry (thin filled strokes).
-function addSilkText(t: Text, s: SideGeom | null, poly3d: (mesh: Mesh, loop: Pt[]) => void): void {
-  if (!s || t.hide || !t.text || t.size.y <= 0) return;
+// One text item → stroke-font geometry (thin filled strokes) into `mesh`.
+function addText(t: Text, mesh: Mesh | null, poly3d: (mesh: Mesh, loop: Pt[]) => void): void {
+  if (!mesh || t.hide || !t.text || t.size.y <= 0) return;
   const size = t.size.y;
   const { strokes, width } = layoutText(t.text, size);
   const raw = t.thickness && t.thickness > 1 ? t.thickness : (t.bold ? size / 5 : size / 8);
@@ -195,8 +202,8 @@ function addSilkText(t: Text, s: SideGeom | null, poly3d: (mesh: Mesh, loop: Pt[
     return { x: t.at.x + gx * cos - gy * sin, y: t.at.y + gx * sin + gy * cos };
   };
   for (const stroke of strokes) {
-    for (let i = 0; i + 1 < stroke.length; i++) poly3d(s.silk, stadium(world(stroke[i]!), world(stroke[i + 1]!), pen));
-    if (stroke.length === 1) { const w = world(stroke[0]!); poly3d(s.silk, stadium(w, { x: w.x + 1, y: w.y }, pen)); }
+    for (let i = 0; i + 1 < stroke.length; i++) poly3d(mesh, stadium(world(stroke[i]!), world(stroke[i + 1]!), pen));
+    if (stroke.length === 1) { const w = world(stroke[0]!); poly3d(mesh, stadium(w, { x: w.x + 1, y: w.y }, pen)); }
   }
 }
 
