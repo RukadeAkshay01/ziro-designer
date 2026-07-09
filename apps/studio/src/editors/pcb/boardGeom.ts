@@ -197,8 +197,13 @@ function addText(t: Text, mesh: Mesh | null, poly3d: (mesh: Mesh, loop: Pt[]) =>
   }
   const rad = (-ang * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
   const mir = t.mirror ? -1 : 1, tilt = t.italic ? ITALIC_TILT : 0;
+  // KiCad scales glyphs by (width, height) separately (eda_text.cpp writes
+  // "(size height width)"); layoutText used height for both, so condense x by
+  // width/height — otherwise non-square text (a condensed board name) is too
+  // wide and runs off the board.
+  const sx = size > 0 ? t.size.x / size : 1;
   const world = (p: Vec2): Pt => {
-    const gx = (p.x - p.y * tilt + offX) * mir, gy = p.y + offY;
+    const gx = ((p.x + offX) * sx - p.y * tilt) * mir, gy = p.y + offY;
     return { x: t.at.x + gx * cos - gy * sin, y: t.at.y + gx * sin + gy * cos };
   };
   for (const stroke of strokes) {
