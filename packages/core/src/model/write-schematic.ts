@@ -162,12 +162,14 @@ function patchEffects(effectsNode: SList, fx: TextEffects, orig: TextEffects | u
   return e;
 }
 
-/** Build a full `(property ...)` node for a field created in the editor. */
-export function buildPropertyNode(field: Omit<SchField, 'source'>): SList {
+/** Build a full `(property ...)` node for a field created in the editor.
+ * `invertY` writes Y negated for symbol-library fields (stored +Y-up). */
+export function buildPropertyNode(field: Omit<SchField, 'source'>, invertY = false): SList {
   const at = field.at ?? { x: 0, y: 0 };
+  const y = invertY ? -at.y : at.y;
   const items: SNode[] = [
     atom('property'), str(field.key), str(field.value),
-    list(atom('at'), atom(mm(at.x)), atom(mm(at.y)), atom(String(field.angle))),
+    list(atom('at'), atom(mm(at.x)), atom(mm(y)), atom(String(field.angle))),
   ];
   if (field.nameShown) items.push(list(atom('show_name'), atom('yes')));
   const fx = buildEffects(field.effects);
@@ -175,18 +177,26 @@ export function buildPropertyNode(field: Omit<SchField, 'source'>): SList {
   return { kind: 'list', items };
 }
 
-function patchProperty(propNode: SList, field: SchField): SList {
-  const orig = readField(propNode);
+/**
+ * Patch a `(property ...)` node to match the typed field, changing only what
+ * differs. `invertY` writes Y negated — symbol-*library* fields are stored +Y-up
+ * in the file while the model is +Y-down (the mirror of readField's invertY).
+ * Exported for the symbol-library writer.
+ */
+export function patchProperty(propNode: SList, field: SchField, invertY = false): SList {
+  const orig = readField(propNode, invertY);
+  const fileAt = (p: Vec2): Vec2 => (invertY ? { x: p.x, y: -p.y } : p);
   let n = propNode;
   if (field.key !== orig.key) n = setItem(n, 1, str(field.key));
   if (field.value !== orig.value) n = setItem(n, 2, str(field.value)); // the value
   if (field.at && childNamed(n, 'at')) {
-    if (field.at.x !== orig.at?.x || field.at.y !== orig.at?.y) n = patchAt(n, field.at);
+    if (field.at.x !== orig.at?.x || field.at.y !== orig.at?.y) n = patchAt(n, fileAt(field.at));
     if (field.angle !== orig.angle) n = patchAtAngle(n, field.angle);
   } else if (field.at) {
     // Field had no (at ...): insert one right after the value.
     const items = n.items.slice();
-    items.splice(3, 0, list(atom('at'), atom(mm(field.at.x)), atom(mm(field.at.y)), atom(String(field.angle))));
+    const p = fileAt(field.at);
+    items.splice(3, 0, list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(field.angle))));
     n = { kind: 'list', items };
   }
   // show_name sits between (at ...) and (effects ...) in KiCad's canonical order.

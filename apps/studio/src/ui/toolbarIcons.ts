@@ -50,6 +50,15 @@ const BITMAP: Record<string, string> = {
   placeHierLabel: 'add_hierarchical_label', drawSheet: 'add_hierarchical_subsheet', sheetPin: 'add_hierar_pin',
   placeText: 'text', textBox: 'add_textbox', table: 'table', rectangle: 'add_rectangle', circle: 'add_circle',
   arc: 'add_arc', bezier: 'add_bezier', lines: 'add_graphical_segments', image: 'image', delete: 'delete_cursor',
+  // symbol editor (icons per SCH_ACTIONS/ACTIONS .Icon() used by toolbars_symbol_editor.cpp)
+  newSymbol: 'new_component', symbolProperties: 'part_properties', pinTable: 'pin_table',
+  showDatasheet: 'datasheet', checkSymbol: 'erc', morganStd: 'morgan1', morganAlt: 'morgan2',
+  syncedPins: 'pin2pin', addSymbolToSchematic: 'add_symbol_to_schematic',
+  showElectricalTypes: 'pin_show_etype', showHiddenFields: 'text_sketch', showLibraryTree: 'search_tree',
+  placePin: 'pin', placeAnchor: 'anchor', polygon: 'add_graphical_polygon',
+  newLibrary: 'new_library', addLibrary: 'add_library', saveAs: 'save_as', revert: 'restore_from_file',
+  importSymbol: 'import', exportSymbol: 'export_file', cut: 'cut', copy: 'copy', library: 'library',
+  editWithLibEdit: 'edit_cmp_symb_links',
 };
 
 /** KiCad icon URL for a toolbar tool id, or undefined if none is mapped. */

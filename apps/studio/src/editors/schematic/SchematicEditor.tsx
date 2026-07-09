@@ -45,7 +45,16 @@ export interface PickedFile { name: string; text: string }
 
 const DEFAULT_FILE = 'untitled.kicad_sch';
 
-export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initialFile }: { onExitToHome: () => void; onShowPcb?: () => void; initialProject?: PickedFile[] | null; initialFile?: string | null }): JSX.Element {
+export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, initialProject, initialFile, placeRequest }: {
+  onExitToHome: () => void;
+  onShowPcb?: () => void;
+  /** Open the Symbol Editor (the top toolbar's `symbolEditor` button). */
+  onShowSymbolEditor?: () => void;
+  initialProject?: PickedFile[] | null;
+  initialFile?: string | null;
+  /** A symbol handed over by the Symbol Editor's "Add symbol to schematic": attach it to the cursor. */
+  placeRequest?: { lib: LibSymbol; nonce: number } | null;
+}): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const initial = useMemo<Schematic | null>(() => {
     try {
@@ -278,6 +287,15 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProject]);
 
+  // "Add symbol to schematic" from the Symbol Editor: attach the symbol to the
+  // cursor exactly as the Place Symbol tool does after its chooser.
+  useEffect(() => {
+    if (!placeRequest) return;
+    setPlaceLib(placeRequest.lib);
+    setActiveTool('placeSymbol');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placeRequest?.nonce]);
+
   // Switch the visible sheet (KiCad's Enter Sheet / hierarchy navigation): stash
   // the edited current sheet back into the project, swap in the target document
   // and its own undo history.
@@ -441,8 +459,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, initialProject, initi
     else if (id === 'save') save();
     else if (id === 'erc') runErcNow();
     else if (id === 'showPcbNew') onShowPcb?.();
+    else if (id === 'symbolEditor') onShowSymbolEditor?.();
     else if (TX[id]) setSelection((sel) => { if (sel.size > 0) runCommand(transformItems(sel, TX[id]!)); return sel; });
-  }, [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb]);
+  }, [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb, onShowSymbolEditor]);
 
   const menus = useMemo(() => buildMenus({ tool: onToolSelect, action: onTopAction }), [onToolSelect, onTopAction]);
 

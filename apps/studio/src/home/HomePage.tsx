@@ -30,7 +30,7 @@ interface Tile {
 
 const TILES: Tile[] = [
   { id: 'schematic', name: 'Schematic Editor', desc: 'Edit the project schematic', enabled: true },
-  { id: 'symbols', name: 'Symbol Editor', desc: 'Edit global and/or project schematic symbol libraries' },
+  { id: 'symbols', name: 'Symbol Editor', desc: 'Edit global and/or project schematic symbol libraries', enabled: true },
   { id: 'pcb', name: 'PCB Editor', desc: 'Edit the project PCB design' },
   { id: 'footprints', name: 'Footprint Editor', desc: 'Edit global and/or project PCB footprint libraries' },
   { id: 'gerber', name: 'Gerber Viewer', desc: 'Preview Gerber files' },
@@ -294,10 +294,12 @@ function buildDirTree(files: PickedHomeFile[], stripPrefix: string, projLower: s
  * desktop app's project window. Until a project is opened, the bundled demo
  * project is shown.
  */
-export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFiles }: {
+export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymbolEditor, initialFiles }: {
   onOpenSchematic: () => void;
   onOpenProject?: (files: PickedHomeFile[], startFile?: string) => void;
   onOpenPcb?: (file: PickedHomeFile, files?: PickedHomeFile[]) => void;
+  /** Launch the Symbol Editor (with the open project's libraries, if any). */
+  onOpenSymbolEditor?: (files?: PickedHomeFile[]) => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
@@ -678,7 +680,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
     { label: 'View', items: [{ label: 'Refresh', action: () => {} }] },
     {
       label: 'Tools',
-      items: [{ label: 'Edit Schematic', action: () => launchSchematic(), shortcut: 'Ctrl+E' }],
+      items: [
+        { label: 'Edit Schematic', action: () => launchSchematic(), shortcut: 'Ctrl+E' },
+        { label: 'Edit Schematic Symbols', action: () => onOpenSymbolEditor?.(picked ?? undefined), shortcut: 'Ctrl+L' },
+      ],
     },
     { label: 'Help', items: [{ label: 'About ZiroEDA', action: () => {} }] },
   ];
@@ -796,7 +801,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, initialFil
           <div className="ze-tiles">
             {TILES.map((t) => {
               const enabled = t.enabled || t.id === 'pcb';
-              const launch = t.id === 'pcb' ? launchPcb : (): void => launchSchematic();
+              const launch = t.id === 'pcb' ? launchPcb
+                : t.id === 'symbols' ? (): void => onOpenSymbolEditor?.(picked ?? undefined)
+                : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}

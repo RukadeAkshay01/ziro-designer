@@ -155,7 +155,8 @@ function parseUnitName(name: string): { unit: number; bodyStyle: number } {
   return { unit: Number(m[1]), bodyStyle: Number(m[2]) };
 }
 
-function readLibPin(node: SList, invertY = false): LibPin {
+/** Parse a lib `(pin ...)` node. Exported so the symbol-library writer can diff edits. */
+export function readLibPin(node: SList, invertY = false): LibPin {
   const { at, angle } = readAt(node, invertY);
   // hide can be a bare `hide` token (legacy) or `(hide yes)`.
   const hideChild = childNamed(node, 'hide');
@@ -180,7 +181,8 @@ function readLibPin(node: SList, invertY = false): LibPin {
   return pin;
 }
 
-function readGraphic(node: SList, invertY = false): LibGraphic | undefined {
+/** Parse a graphic body item. Exported so the symbol-library writer can diff edits. */
+export function readGraphic(node: SList, invertY = false): LibGraphic | undefined {
   const kind = head(node);
   const stroke = readStroke(node);
   const fill = readFill(node);
