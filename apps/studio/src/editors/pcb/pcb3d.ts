@@ -12,7 +12,7 @@
 
 import { buildScene } from './renderBoard.js';
 import { buildBoardOutline } from './boardOutline.js';
-import { renderRealisticFace } from './pcb3dFace.js';
+import { buildBoardGeom, type Mesh } from './boardGeom.js';
 import type { Board } from '@ziroeda/core';
 
 const MM = 10000;
@@ -46,35 +46,26 @@ function edgeBBox(board: Board, fallback: BBox): BBox {
 
 const VERT = `
 attribute vec3 aPos;
-attribute vec2 aUV;
 attribute vec3 aNormal;
 uniform mat4 uMVP;
 uniform mat4 uModel;
-varying vec2 vUV;
 varying vec3 vNormal;
 void main() {
   gl_Position = uMVP * vec4(aPos, 1.0);
-  vUV = aUV;
   vNormal = mat3(uModel) * aNormal;
 }`;
 
 const FRAG = `
 precision mediump float;
-varying vec2 vUV;
 varying vec3 vNormal;
-uniform sampler2D uTex;
-uniform int uUseTex;
 uniform vec3 uColor;
+uniform vec3 uLightDir;   // world-space direction to the camera (a headlight)
 void main() {
-  vec3 base = uUseTex == 1 ? texture2D(uTex, vUV).rgb : uColor;
-  // KiCad-style lighting: a camera-ish key light + a fill from below plus a
-  // strong hemispheric ambient, so the light background doesn't leave the board
-  // looking flat/dark. (render_3d_opengl uses several lights + ambient.)
+  // Headlight (like KiCad, whose key light tracks the camera): abs() so a thin
+  // layer is lit from whichever side you're looking at, over a soft ambient.
   vec3 n = normalize(vNormal);
-  float key = max(dot(n, normalize(vec3(0.35, 0.5, 1.0))), 0.0);
-  float fill = max(dot(n, normalize(vec3(-0.3, -0.4, -0.6))), 0.0);
-  float amb = 0.62;
-  gl_FragColor = vec4(base * (amb + 0.5 * key + 0.14 * fill), 1.0);
+  float d = abs(dot(n, normalize(uLightDir)));
+  gl_FragColor = vec4(uColor * (0.5 + 0.6 * d), 1.0);
 }`;
 
 function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
@@ -132,12 +123,6 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   const th = (board.thickness ?? 1.6 * MM) / MM;
   const half = Math.max(bw, bh) / 2;
 
-  // Higher-res textures (2048) than before — the old 1024 looked blurry on
-  // larger boards. Realistic KiCad-style materials, not the 2D editor theme.
-  const front = renderRealisticFace(board, box, 'front', 2048);
-  const back = renderRealisticFace(board, box, 'back', 2048);
-  if (!front || !back) return null;
-
   const canvas = document.createElement('canvas');
   canvas.style.width = '100%';
   canvas.style.height = '100%';
@@ -156,70 +141,71 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   gl.linkProgram(prog);
   gl.useProgram(prog);
 
-  // Real board geometry: the Edge.Cuts outline (with cutouts) extruded to the
-  // board thickness, instead of a bounding-box slab. Top(+Z)/bottom(−Z) faces
-  // carry the artwork textures; the extruded walls are FR4. UVs map board XY
-  // into the square face texture (board centred, span = max(bw,bh)). Y was
-  // already flipped into the centred 3D frame by buildBoardOutline.
+  // Real geometry (KiCad create_scene.cpp approach): the board outline extruded
+  // to thickness, then each layer as its own triangle mesh stacked just off the
+  // face — soldermask, copper (faint under the mask), exposed copper (gold), and
+  // silkscreen. All triangles → stays sharp at any zoom, no baked texture.
   const hz = th / 2;
-  const span = Math.max(bw, bh);
-  const uvU = (x: number): number => 0.5 + x / span;
-  const uvV = (y: number): number => 0.5 - y / span;
   const outline = buildBoardOutline(board, box);
+  const geom = buildBoardGeom(board, box);
 
-  interface Group { verts: number[]; idx: number[]; tex: 'front' | 'back' | null }
-  const gFront: Group = { verts: [], idx: [], tex: 'front' };
-  const gBack: Group = { verts: [], idx: [], tex: 'back' };
-  const gSide: Group = { verts: [], idx: [], tex: null };
-  const push = (g: Group, x: number, y: number, z: number, u: number, v: number, nx: number, ny: number, nz: number): number => {
-    const i = g.verts.length / 8;
-    g.verts.push(x, y, z, u, v, nx, ny, nz);
-    return i;
+  // sRGB material colours (approx KiCad board_adapter defaults).
+  const C = {
+    fr4: [0.30, 0.34, 0.20] as const,     // board edge (FR4)
+    mask: [0.11, 0.42, 0.22] as const,    // soldermask
+    copper: [0.16, 0.50, 0.29] as const,  // copper under mask (faint traces)
+    gold: [0.80, 0.64, 0.36] as const,    // exposed copper (pads/vias)
+    silk: [0.93, 0.93, 0.93] as const,    // silkscreen
   };
-  // Triangulated top + bottom faces (front/back artwork).
-  for (const p of outline.verts) push(gFront, p.x, p.y, hz, uvU(p.x), uvV(p.y), 0, 0, 1);
-  gFront.idx = outline.tris.slice();
-  for (const p of outline.verts) push(gBack, p.x, p.y, -hz, uvU(p.x), uvV(p.y), 0, 0, -1);
-  gBack.idx = outline.tris.slice();
-  // Extruded FR4 walls along every loop edge (outer boundary + cutouts).
+
+  interface Group { verts: number[]; idx: number[]; color: readonly [number, number, number] }
+  const mkGroup = (color: readonly [number, number, number]): Group => ({ verts: [], idx: [], color });
+  // A flat mesh placed at height z with a ±Z normal (6 floats/vertex: pos, nrm).
+  const addFlat = (g: Group, mesh: Mesh, z: number, nz: number): void => {
+    const base = g.verts.length / 6;
+    for (const p of mesh.verts) g.verts.push(p.x, p.y, z, 0, 0, nz);
+    for (const t of mesh.tris) g.idx.push(base + t);
+  };
+  const outlineMesh: Mesh = { verts: outline.verts, tris: outline.tris };
+
+  // Stack heights just off each face (mm) so coplanar layers don't z-fight.
+  const zM = hz, zC = hz + 0.02, zP = hz + 0.04, zS = hz + 0.06;
+  const gWall = mkGroup(C.fr4);
+  const gMask = mkGroup(C.mask);
+  const gCopper = mkGroup(C.copper);
+  const gGold = mkGroup(C.gold);
+  const gSilk = mkGroup(C.silk);
+
+  addFlat(gMask, outlineMesh, zM, 1);
+  addFlat(gMask, outlineMesh, -zM, -1);
+  addFlat(gCopper, geom.front.copper, zC, 1);
+  addFlat(gCopper, geom.back.copper, -zC, -1);
+  addFlat(gGold, geom.front.pads, zP, 1);
+  addFlat(gGold, geom.back.pads, -zP, -1);
+  addFlat(gSilk, geom.front.silk, zS, 1);
+  addFlat(gSilk, geom.back.silk, -zS, -1);
+
+  // Extruded FR4 walls along every outline loop (outer boundary + cutouts).
   for (const loop of outline.loops) {
     for (let i = 0; i < loop.length; i++) {
-      const p0 = loop[i]!;
-      const p1 = loop[(i + 1) % loop.length]!;
+      const p0 = loop[i]!, p1 = loop[(i + 1) % loop.length]!;
       const dx = p1.x - p0.x, dy = p1.y - p0.y;
       const L = Math.hypot(dx, dy) || 1;
-      const nx = dy / L, ny = -dx / L; // horizontal wall normal
-      const a = push(gSide, p0.x, p0.y, hz, 0, 0, nx, ny, 0);
-      const b = push(gSide, p1.x, p1.y, hz, 0, 0, nx, ny, 0);
-      const c = push(gSide, p1.x, p1.y, -hz, 0, 0, nx, ny, 0);
-      const d = push(gSide, p0.x, p0.y, -hz, 0, 0, nx, ny, 0);
-      gSide.idx.push(a, b, c, a, c, d);
+      const nx = dy / L, ny = -dx / L;
+      const b = gWall.verts.length / 6;
+      gWall.verts.push(p0.x, p0.y, hz, nx, ny, 0, p1.x, p1.y, hz, nx, ny, 0, p1.x, p1.y, -hz, nx, ny, 0, p0.x, p0.y, -hz, nx, ny, 0);
+      gWall.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
     }
   }
-  const groups = [gFront, gBack, gSide];
 
-  const mkTex = (img: HTMLCanvasElement): WebGLTexture => {
-    const t = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.generateMipmap(gl.TEXTURE_2D);
-    return t;
-  };
-  const frontTex = mkTex(front);
-  const backTex = mkTex(back);
+  const groups = [gWall, gMask, gCopper, gGold, gSilk];
 
   const aPos = gl.getAttribLocation(prog, 'aPos');
-  const aUV = gl.getAttribLocation(prog, 'aUV');
   const aNormal = gl.getAttribLocation(prog, 'aNormal');
   const uMVP = gl.getUniformLocation(prog, 'uMVP');
   const uModel = gl.getUniformLocation(prog, 'uModel');
-  const uTex = gl.getUniformLocation(prog, 'uTex');
-  const uUseTex = gl.getUniformLocation(prog, 'uUseTex');
   const uColor = gl.getUniformLocation(prog, 'uColor');
+  const uLightDir = gl.getUniformLocation(prog, 'uLightDir');
 
   // Tessellated boards can exceed 65 k vertices, so use 32-bit indices when the
   // extension is available (falls back to 16-bit on the rare GPU without it).
@@ -232,16 +218,20 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     const ibo = gl.createBuffer()!;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, uintOK ? new Uint32Array(g.idx) : new Uint16Array(g.idx), gl.STATIC_DRAW);
-    return { vbo, ibo, count: g.idx.length, tex: g.tex };
+    return { vbo, ibo, count: g.idx.length, color: g.color };
   });
 
   gl.enable(gl.DEPTH_TEST);
   gl.clearColor(0, 0, 0, 0); // transparent — the CSS gradient is the background
 
-  // orbit state. Default to KiCad's opening view: looking down onto the top
-  // (component) side, tilted so the board thickness/edges read as 3D.
-  let yaw = -0.5, pitch = 0.5, dist = half * 3.2;
-  let dragging = false, lastX = 0, lastY = 0;
+  // ---- trackball camera: free 360° tumble (no clamp) + pan + zoom ----------
+  const rotX = (a: number): Mat4 => { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([1, 0, 0, 0, 0, c, s, 0, 0, -s, c, 0, 0, 0, 0, 1]); };
+  const rotY = (a: number): Mat4 => { const c = Math.cos(a), s = Math.sin(a); return new Float32Array([c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0, 0, 0, 0, 1]); };
+  let rot = mul(rotX(-0.9), rotY(-0.45)); // open on a tilted top view
+  let dist = half * 3.2;
+  let panX = 0, panY = 0;
+  let mode: 'none' | 'rotate' | 'pan' = 'none';
+  let lastX = 0, lastY = 0;
 
   const render = (): void => {
     const dpr = window.devicePixelRatio || 1;
@@ -251,35 +241,21 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     gl.viewport(0, 0, w, h);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    const eye = [
-      dist * Math.cos(pitch) * Math.sin(yaw),
-      dist * Math.sin(pitch),
-      dist * Math.cos(pitch) * Math.cos(yaw),
-    ];
-    const proj = perspective(Math.PI / 4, w / h, 0.1, dist * 10 + 100);
-    const model = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
-    const mvp = mul(proj, lookAt(eye, [0, 0, 0], [0, 1, 0]));
+    const eye = [panX, panY, dist];
+    const proj = perspective(Math.PI / 4, w / h, 0.05, dist * 10 + 100);
+    const mvp = mul(mul(proj, lookAt(eye, [panX, panY, 0], [0, 1, 0])), rot);
     gl.uniformMatrix4fv(uMVP, false, mvp);
-    gl.uniformMatrix4fv(uModel, false, model);
+    gl.uniformMatrix4fv(uModel, false, rot);
+    gl.uniform3f(uLightDir, 0, 0, 1); // camera sits on +Z (a headlight)
 
     glGroups.forEach((g) => {
       if (g.count === 0) return;
       gl.bindBuffer(gl.ARRAY_BUFFER, g.vbo);
       gl.enableVertexAttribArray(aPos);
-      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 32, 0);
-      gl.enableVertexAttribArray(aUV);
-      gl.vertexAttribPointer(aUV, 2, gl.FLOAT, false, 32, 12);
+      gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 24, 0);
       gl.enableVertexAttribArray(aNormal);
-      gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 32, 20);
-      if (g.tex) {
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, g.tex === 'front' ? frontTex : backTex);
-        gl.uniform1i(uTex, 0);
-        gl.uniform1i(uUseTex, 1);
-      } else {
-        gl.uniform1i(uUseTex, 0);
-        gl.uniform3f(uColor, 0.4, 0.4, 0.5); // FR4 body (KiCad m_BoardBodyColor)
-      }
+      gl.vertexAttribPointer(aNormal, 3, gl.FLOAT, false, 24, 12);
+      gl.uniform3f(uColor, g.color[0], g.color[1], g.color[2]);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibo);
       gl.drawElements(gl.TRIANGLES, g.count, idxType, 0);
     });
@@ -288,24 +264,36 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   let raf = 0;
   const requestRender = (): void => { cancelAnimationFrame(raf); raf = requestAnimationFrame(render); };
 
-  const onDown = (e: PointerEvent): void => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); };
-  const onMove = (e: PointerEvent): void => {
-    if (!dragging) return;
-    yaw -= (e.clientX - lastX) * 0.01;
-    pitch = Math.max(-1.5, Math.min(1.5, pitch - (e.clientY - lastY) * 0.01));
+  const onDown = (e: PointerEvent): void => {
+    mode = e.button === 0 ? 'rotate' : 'pan';
     lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: PointerEvent): void => {
+    if (mode === 'none') return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    if (mode === 'rotate') {
+      // Left-multiply small screen-space rotations → free tumble, no gimbal clamp.
+      rot = mul(mul(rotX(dy * 0.01), rotY(dx * 0.01)), rot);
+    } else {
+      const k = dist / (canvas.clientHeight || 1);
+      panX -= dx * k; panY += dy * k;
+    }
     requestRender();
   };
-  const onUp = (): void => { dragging = false; };
+  const onUp = (e: PointerEvent): void => { mode = 'none'; try { canvas.releasePointerCapture(e.pointerId); } catch { /* ignore */ } };
   const onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    dist = Math.max(half * 0.6, Math.min(half * 12, dist * (e.deltaY < 0 ? 0.9 : 1.1)));
+    dist = Math.max(half * 0.4, Math.min(half * 14, dist * (e.deltaY < 0 ? 0.9 : 1.1)));
     requestRender();
   };
+  const onCtx = (e: Event): void => e.preventDefault(); // right-drag pans; no menu
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('contextmenu', onCtx);
   const ro = new ResizeObserver(requestRender);
   ro.observe(canvas);
   requestRender();
@@ -318,6 +306,7 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('contextmenu', onCtx);
       if (canvas.parentElement === container) container.removeChild(canvas);
     },
   };
