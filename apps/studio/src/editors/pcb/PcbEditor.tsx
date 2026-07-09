@@ -12,7 +12,7 @@ import { parse, readBoard, iuToMM, type Board } from '@ziroeda/core';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions, type SheetInfo } from './renderBoard.js';
-import { mount3DViewer, type Viewer3D } from './pcb3d.js';
+import type { Viewer3D } from './pcb3d.js';
 import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
 import { PCB_TOP_TOOLBAR, PCB_LEFT_TOOLBAR, PCB_RIGHT_TOOLBAR, PCB_FILTER_CATS } from './pcbToolbars.js';
 import '../../ui/shell.css';
@@ -386,14 +386,18 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic }: {
     return () => window.removeEventListener('keydown', onKey);
   }, [zoomToFit]);
 
-  // Mount the WebGL 3D viewer while the overlay is open.
+  // Mount the three.js 3D viewer while the overlay is open. Lazy-imported so
+  // three.js only downloads when the user actually opens the 3D view.
   useEffect(() => {
     if (!show3D || !viewer3dRef.current || !boardRef.current) return;
     let viewer: Viewer3D | null = null;
-    try {
-      viewer = mount3DViewer(viewer3dRef.current, boardRef.current);
-    } catch { viewer = null; }
-    return () => viewer?.dispose();
+    let cancelled = false;
+    const el = viewer3dRef.current, brd = boardRef.current;
+    void import('./pcb3d.js').then(({ mount3DViewer }) => {
+      if (cancelled) return;
+      try { viewer = mount3DViewer(el, brd); } catch { viewer = null; }
+    });
+    return () => { cancelled = true; viewer?.dispose(); };
   }, [show3D]);
 
   // ----- appearance data ------------------------------------------------------
