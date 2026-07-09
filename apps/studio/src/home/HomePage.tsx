@@ -313,6 +313,8 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   const [saved, setSaved] = useState<ProjectMeta[]>([]);
   // Expanded directory-tree folder paths (collapsed by default, like KiCad).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Selected tree row (single click). Double click opens — like KiCad's tree.
+  const [selected, setSelected] = useState<string | null>(null);
   // New Project dialog (KiCad's File > New Project name prompt).
   const [newName, setNewName] = useState<string | null>(null);
   // Project-tree pane width (px), draggable like KiCad's wxAUI sash.
@@ -650,13 +652,15 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
       isPcb && onOpenPcb && node.file ? () => onOpenPcb(node.file!, picked ?? undefined)
       : isSch ? () => launchSchematic(basename(node.name))
       : undefined;
+    // KiCad's project tree: single click selects, double click opens the file.
     return (
       <div
         key={node.path}
-        className="ze-tree-item"
+        className={`ze-tree-item${selected === node.path ? ' active' : ''}`}
         style={{ paddingLeft: 8 + depth * 16 + 15, cursor: openFn ? 'pointer' : 'default' }}
-        title={isPcb ? 'Open in the PCB Editor' : isSch ? 'Open in the Schematic Editor' : node.path}
-        onClick={openFn}
+        title={isPcb ? 'Double-click to open in the PCB Editor' : isSch ? 'Double-click to open in the Schematic Editor' : node.path}
+        onClick={() => setSelected(node.path)}
+        onDoubleClick={openFn}
       >
         <TreeIcon name={treeIconFor(node.name)} />
         <span>{node.name}</span>
@@ -802,7 +806,13 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
         <div className="ze-launchers">
           <div className="ze-tiles">
             {TILES.map((t) => {
-              const enabled = t.enabled || t.id === 'pcb';
+              const hasSch = !!picked?.some((f) => /\.kicad_sch$/i.test(f.name));
+              const hasPcb = !!picked?.some((f) => /\.kicad_pcb$/i.test(f.name));
+              // Schematic/PCB edit a project, so they need one open (like KiCad's
+              // project manager). Symbol Editor is a library editor — standalone.
+              const needsProject = t.id === 'schematic' || t.id === 'pcb';
+              const implemented = t.id === 'schematic' || t.id === 'pcb' || !!t.enabled;
+              const enabled = implemented && (!needsProject || (t.id === 'schematic' ? hasSch : hasPcb));
               const launch = t.id === 'pcb' ? launchPcb
                 : t.id === 'symbols' ? (): void => onOpenSymbolEditor?.(picked ?? undefined)
                 : (): void => launchSchematic();
@@ -811,7 +821,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                   key={t.id}
                   className="ze-launcher"
                   disabled={!enabled}
-                  title={t.desc}
+                  title={!implemented ? t.desc : enabled ? t.desc : 'Open or create a project first'}
                   onClick={enabled ? launch : undefined}
                 >
                   <span className="ico">{tileIcon(t.id)}</span>
@@ -819,7 +829,7 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                     <span className="name">{t.name}</span>
                     <span className="desc">{t.desc}</span>
                   </span>
-                  {!enabled && <span className="soon">coming soon</span>}
+                  {!implemented && <span className="soon">coming soon</span>}
                 </button>
               );
             })}
