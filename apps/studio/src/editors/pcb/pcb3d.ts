@@ -128,14 +128,16 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.25;
+  renderer.toneMappingExposure = 0.9;
 
   const scene = new THREE.Scene();
-  // A soft indoor environment so the PBR metals (copper/gold) actually catch
-  // light instead of reflecting black — this is what made it look dark.
+  // A soft indoor environment so the PBR metals (copper/gold) catch light
+  // instead of reflecting black — but keep it subtle so it doesn't wash the
+  // board out (the env alone at full strength made it pale).
   const pmrem = new THREE.PMREMGenerator(renderer);
   const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environment = envTex;
+  scene.environmentIntensity = 0.35;
 
   const disposables: { dispose(): void }[] = [];
   const toGeom = (g: Group): THREE.BufferGeometry => {
@@ -174,8 +176,8 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
 
   // Lighting: soft hemispheric ambient + a headlight that follows the camera
   // (KiCad's key light tracks the viewer), so the visible side is always lit.
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x556, 1.1));
-  const headlight = new THREE.DirectionalLight(0xffffff, 2.2);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x556, 0.5));
+  const headlight = new THREE.DirectionalLight(0xffffff, 1.35);
   scene.add(headlight);
 
   // ---- camera + KiCad-style trackball --------------------------------------
