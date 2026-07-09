@@ -10,11 +10,14 @@
  */
 import earcut from 'earcut';
 import { tessellateArc, type Board } from '@ziroeda/core';
+import { layoutText } from '../../common/strokeFont.js';
 
 const MM = 10000;
+const ITALIC_TILT = 1 / 8;
 type Pt = { x: number; y: number };
 type Vec2 = { x: number; y: number };
 type Pad = Board['footprints'][number]['pads'][number];
+type Text = Board['texts'][number];
 
 export interface Mesh { verts: Pt[]; tris: number[] }
 export interface SideGeom { copper: Mesh; pads: Mesh; silk: Mesh }
@@ -85,6 +88,24 @@ function padPoly(pad: Pad): Pt[] {
   }
 }
 
+export interface Hole { x: number; y: number; r: number }
+
+/** Drilled holes (vias + through-hole pads) as centre+radius, centred 3D frame. */
+export function boardHoles(board: Board, box: Box): Hole[] {
+  const cx = (box.minX + box.maxX) / 2;
+  const cy = (box.minY + box.maxY) / 2;
+  const out: Hole[] = [];
+  for (const v of board.vias) out.push({ x: (v.at.x - cx) / MM, y: -(v.at.y - cy) / MM, r: v.drill / 2 / MM });
+  for (const fp of board.footprints) {
+    for (const pad of fp.pads) {
+      if (!pad.drill) continue;
+      const r = Math.min(pad.drill.w, pad.drill.h) / 2 / MM; // oblong → its narrow radius
+      out.push({ x: (pad.at.x - cx) / MM, y: -(pad.at.y - cy) / MM, r });
+    }
+  }
+  return out;
+}
+
 /** Build triangulated per-layer meshes (centred 3D frame, mm). */
 export function buildBoardGeom(board: Board, box: Box): BoardGeom {
   const cx = (box.minX + box.maxX) / 2;
@@ -121,7 +142,34 @@ export function buildBoardGeom(board: Board, box: Box): BoardGeom {
   }
   for (const sh of board.shapes) addSilk(sh, silkSide(sh.layer), poly3d);
 
+  // Silkscreen text (reference designators like R201, values, user text) as
+  // stroke geometry — mirrors renderBoard.addText's placement transform.
+  for (const t of board.texts) addSilkText(t, silkSide(t.layer), poly3d);
+  for (const fp of board.footprints) for (const t of fp.texts) addSilkText(t, silkSide(t.layer), poly3d);
+
   return { front, back };
+}
+
+// One silkscreen text item → stroke-font geometry (thin filled strokes).
+function addSilkText(t: Text, s: SideGeom | null, poly3d: (mesh: Mesh, loop: Pt[]) => void): void {
+  if (!s || t.hide || !t.text || t.size.y <= 0) return;
+  const size = t.size.y;
+  const { strokes, width } = layoutText(t.text, size);
+  const raw = t.thickness && t.thickness > 1 ? t.thickness : (t.bold ? size / 5 : size / 8);
+  const pen = Math.max(Math.min(raw, size * 0.2), size * 0.08); // visible stroke
+  const j = t.justify ?? [];
+  const offX = j.includes('left') ? 0 : j.includes('right') ? -width : -width / 2;
+  const offY = j.includes('top') ? size : j.includes('bottom') ? 0 : size / 2;
+  const rad = (-t.angle * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+  const mir = t.mirror ? -1 : 1, tilt = t.italic ? ITALIC_TILT : 0;
+  const world = (p: Vec2): Pt => {
+    const gx = (p.x - p.y * tilt + offX) * mir, gy = p.y + offY;
+    return { x: t.at.x + gx * cos - gy * sin, y: t.at.y + gx * sin + gy * cos };
+  };
+  for (const stroke of strokes) {
+    for (let i = 0; i + 1 < stroke.length; i++) poly3d(s.silk, stadium(world(stroke[i]!), world(stroke[i + 1]!), pen));
+    if (stroke.length === 1) { const w = world(stroke[0]!); poly3d(s.silk, stadium(w, { x: w.x + 1, y: w.y }, pen)); }
+  }
 }
 
 // One silkscreen graphic → thin filled geometry.

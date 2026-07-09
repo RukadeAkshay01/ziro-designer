@@ -12,7 +12,7 @@
 
 import { buildScene } from './renderBoard.js';
 import { buildBoardOutline } from './boardOutline.js';
-import { buildBoardGeom, type Mesh } from './boardGeom.js';
+import { buildBoardGeom, boardHoles, type Mesh } from './boardGeom.js';
 import type { Board } from '@ziroeda/core';
 
 const MM = 10000;
@@ -226,6 +226,29 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   addFlat(gSilk, geom.front.silk, zS, 1);
   addFlat(gSilk, geom.back.silk, -zS, -1);
 
+  // Drilled holes (vias + through-hole pads): a dark cap on each face plus a
+  // barrel through the board, so holes read as real drills at any angle.
+  const gHole = mkGroup([0.07, 0.07, 0.08]);
+  const zH = zP + 0.006; // just above the pads
+  for (const h of boardHoles(board, box)) {
+    const n = Math.max(10, Math.min(48, Math.round(h.r * 120)));
+    for (const s of [1, -1]) {                       // dark cap on each face
+      const cz = s > 0 ? zH : -zH;
+      const c = gHole.verts.length / 6;
+      gHole.verts.push(h.x, h.y, cz, 0, 0, s);
+      for (let i = 0; i <= n; i++) { const a = (2 * Math.PI * i) / n; gHole.verts.push(h.x + h.r * Math.cos(a), h.y + h.r * Math.sin(a), cz, 0, 0, s); }
+      for (let i = 1; i <= n; i++) { if (s > 0) gHole.idx.push(c, c + i, c + i + 1); else gHole.idx.push(c, c + i + 1, c + i); }
+    }
+    for (let i = 0; i < n; i++) {                     // barrel wall (inward normals)
+      const a0 = (2 * Math.PI * i) / n, a1 = (2 * Math.PI * (i + 1)) / n;
+      const x0 = h.x + h.r * Math.cos(a0), y0 = h.y + h.r * Math.sin(a0);
+      const x1 = h.x + h.r * Math.cos(a1), y1 = h.y + h.r * Math.sin(a1);
+      const b = gHole.verts.length / 6;
+      gHole.verts.push(x0, y0, zH, -Math.cos(a0), -Math.sin(a0), 0, x1, y1, zH, -Math.cos(a1), -Math.sin(a1), 0, x1, y1, -zH, -Math.cos(a1), -Math.sin(a1), 0, x0, y0, -zH, -Math.cos(a0), -Math.sin(a0), 0);
+      gHole.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+  }
+
   // Extruded FR4 walls along every outline loop (outer boundary + cutouts).
   for (const loop of outline.loops) {
     for (let i = 0; i < loop.length; i++) {
@@ -239,8 +262,8 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     }
   }
 
-  // Opaque layers first, then the translucent mask, then pads/silk on top.
-  const groups = [gWall, gBody, gCopper, gMask, gGold, gSilk];
+  // Opaque layers first, then the translucent mask, then pads/silk/holes on top.
+  const groups = [gWall, gBody, gCopper, gMask, gGold, gSilk, gHole];
 
   const aPos = gl.getAttribLocation(prog, 'aPos');
   const aNormal = gl.getAttribLocation(prog, 'aNormal');
