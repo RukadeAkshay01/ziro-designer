@@ -44,6 +44,8 @@ export interface FootprintCanvasProps {
   onPlace?: (pos: Vec2) => void;
   /** Double-click an item (open its properties). */
   onEditItem?: (id: string) => void;
+  /** Rubber-band preview for a 2-click graphic being drawn (from `start` to cursor). */
+  preview?: { tool: string; start: Vec2 } | null;
 }
 
 const EMPTY_SEL: ReadonlySet<string> = new Set();
@@ -51,7 +53,7 @@ const EMPTY_SEL: ReadonlySet<string> = new Set();
 export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCanvasProps>(
   function FootprintCanvas({
     footprint, visible, drawOpts = DEFAULT_DRAW_OPTIONS, selection = EMPTY_SEL, activeTool = 'select',
-    onCursorMove, onScaleChange, onSelect, onSelectBox, onMoveItems, onPlace, onEditItem,
+    onCursorMove, onScaleChange, onSelect, onSelectBox, onMoveItems, onPlace, onEditItem, preview = null,
   }, ref) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
@@ -68,6 +70,9 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
     fpForDrawRef.current = footprint;
     const selForDrawRef = useRef<ReadonlySet<string>>(selection);
     selForDrawRef.current = selection;
+    const previewRef = useRef(preview);
+    previewRef.current = preview;
+    const cursorWorldRef = useRef<Vec2 | null>(null);
 
     // Compile the footprint (wrapped as a board) into retained per-layer paths.
     const scene = useMemo(() => buildScene(footprintToBoard(footprint)), [footprint]);
@@ -175,6 +180,26 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
         const w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
         ctx.fillRect(x, y, w, h);
         ctx.strokeRect(x, y, w, h);
+      }
+      // Rubber-band preview for a graphic being drawn (start → cursor).
+      const pv = previewRef.current;
+      const cur = cursorWorldRef.current;
+      if (pv && cur) {
+        const a = toPx(pv.start), b = toPx(cur);
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = dpr;
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        ctx.beginPath();
+        if (pv.tool === 'drawCircle') {
+          const r = Math.hypot(b.x - a.x, b.y - a.y);
+          ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+        } else if (pv.tool === 'drawRectangle') {
+          ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+        } else {
+          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
 
       setScale(v.scale);
@@ -338,7 +363,12 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
     };
 
     const onPointerMove = (e: React.PointerEvent): void => {
-      if (canvasRef.current) onCursorMove?.(worldAt(e.clientX, e.clientY));
+      if (canvasRef.current) {
+        const w = worldAt(e.clientX, e.clientY);
+        cursorWorldRef.current = w;
+        onCursorMove?.(w);
+        if (previewRef.current) requestDraw(); // animate the rubber-band
+      }
       const g = gestureRef.current;
       if (!g) return;
       if (g.mode === 'pan') {

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   EMPTY_SOURCE, iuToMM, parse, readFootprintFile, mmToIU,
-  moveFootprintItems, rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, fpItemBBox, addPad,
+  moveFootprintItems, rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, fpItemBBox, addPad, addShape,
   setFootprintReference, setFootprintValue, setFootprintDescription, setFootprintKeywords,
   patchPad, replaceFootprintItem, parseFpItemId,
-  type PadEdit, type PcbFootprint, type PcbPad, type PcbTextItem, type Vec2,
+  type PadEdit, type PcbFootprint, type PcbPad, type PcbShape, type PcbTextItem, type Vec2,
 } from '@ziroeda/core';
 import { FootprintPropertiesDialog, PadPropertiesDialog } from './dialogs.js';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
@@ -101,6 +101,8 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
   const [activeLayer, setActiveLayer] = useState('F.Cu');
   const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [activeTool, setActiveTool] = useState('select');
+  // First anchor of a 2-click graphic (line/rect/circle) being drawn.
+  const [drawStart, setDrawStart] = useState<Vec2 | null>(null);
   const [cursor, setCursor] = useState<Vec2 | null>(null);
   const [scale, setScale] = useState(0);
   const [status, setStatus] = useState('');
@@ -281,10 +283,32 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     commit(addPad(workFp, pad), 'Add Pad');
   }, [workFp, curLib, curName, commit]);
 
+  // Build a graphic from its two click points, on the active layer.
+  const makeShape = useCallback((tool: string, a: Vec2, b: Vec2): PcbShape | null => {
+    const base = { width: mmToIU(0.1), fill: false, layer: activeLayer, source: EMPTY_SOURCE };
+    if (tool === 'drawLine') return { kind: 'line', start: a, end: b, ...base };
+    if (tool === 'drawRectangle') return { kind: 'rect', start: a, end: b, ...base };
+    if (tool === 'drawCircle') return { kind: 'circle', center: a, end: b, ...base };
+    return null;
+  }, [activeLayer]);
+
+  const DRAW_TOOLS = new Set(['drawLine', 'drawRectangle', 'drawCircle']);
+
   const onPlace = useCallback((pos: Vec2) => {
-    if (activeTool === 'placePad') placePadAt(pos);
-    // Other placement tools (graphics/text) are staged.
-  }, [activeTool, placePadAt]);
+    const p = { x: Math.round(pos.x), y: Math.round(pos.y) };
+    if (activeTool === 'placePad') { placePadAt(p); return; }
+    if (DRAW_TOOLS.has(activeTool)) {
+      // Two-click drawing: first click sets the anchor, second commits the shape.
+      if (!drawStart) { setDrawStart(p); return; }
+      const shape = makeShape(activeTool, drawStart, p);
+      setDrawStart(null);
+      if (shape && workFp) commit(addShape(workFp, shape), `Draw ${activeTool.replace('draw', '').toLowerCase()}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTool, drawStart, placePadAt, makeShape, workFp, commit]);
+
+  // Switching tools (or Escape) abandons an in-progress graphic.
+  const selectTool = useCallback((id: string) => { setActiveTool(id); setDrawStart(null); }, []);
 
   // Double-click an item to edit it (pads open the pad-properties dialog).
   const onEditItem = useCallback((id: string) => {
@@ -511,7 +535,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); save(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) redo(); else undo(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
-      else if (e.key === 'Escape') { if (activeTool !== 'select') setActiveTool('select'); else setSelection(new Set()); }
+      else if (e.key === 'Escape') { if (drawStart) setDrawStart(null); else if (activeTool !== 'select') selectTool('select'); else setSelection(new Set()); }
       else if (typing) { /* let inputs handle their own keys */ }
       else if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSel(); }
       else if (e.key === 'r' || e.key === 'R') { e.preventDefault(); rotateSel(!e.shiftKey); }
@@ -519,7 +543,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, undo, redo, deleteSel, rotateSel, activeTool, newLibName, newFpName, propsOpen, padDialogId]);
+  }, [save, undo, redo, deleteSel, rotateSel, selectTool, activeTool, drawStart, newLibName, newFpName, propsOpen, padDialogId]);
 
   // ----- menus (menubar_footprint_editor.cpp, working subset) -------------------
   const menus: Menu[] = useMemo(() => [
@@ -574,11 +598,11 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     {
       label: 'Place',
       items: [
-        { label: 'Pad', icon: 'placePad', action: () => setActiveTool('placePad'), disabled: !workFp },
-        { label: 'Line', icon: 'drawLine', disabled: true },
+        { label: 'Pad', icon: 'placePad', action: () => selectTool('placePad'), disabled: !workFp },
+        { label: 'Line', icon: 'drawLine', action: () => selectTool('drawLine'), disabled: !workFp },
         { label: 'Arc', icon: 'drawArc', disabled: true },
-        { label: 'Rectangle', icon: 'drawRectangle', disabled: true },
-        { label: 'Circle', icon: 'drawCircle', disabled: true },
+        { label: 'Rectangle', icon: 'drawRectangle', action: () => selectTool('drawRectangle'), disabled: !workFp },
+        { label: 'Circle', icon: 'drawCircle', action: () => selectTool('drawCircle'), disabled: !workFp },
         { label: 'Polygon', icon: 'drawPolygon', disabled: true },
         { label: 'Text', icon: 'placeText', disabled: true },
         { sep: true },
@@ -608,7 +632,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     },
     { label: 'Preferences', items: [{ label: 'Preferences…', disabled: true }] },
     { label: 'Help', items: [{ label: 'About ZiroEDA', action: () => {} }] },
-  ], [save, saveAll, undo, redo, deleteSel, selection, onExitToHome, targetLib, treeSel, curLib, curName, toggles, onLeftToggle, showDatasheet, workFp]);
+  ], [save, saveAll, undo, redo, deleteSel, selection, selectTool, onExitToHome, targetLib, treeSel, curLib, curName, toggles, onLeftToggle, showDatasheet, workFp]);
 
   // ----- title (UpdateTitle) ----------------------------------------------------
   const modified = curLib && curName ? manager.current.isFootprintModified(curLib, curName) : false;
@@ -732,6 +756,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
             onMoveItems={moveSel}
             onPlace={onPlace}
             onEditItem={onEditItem}
+            preview={drawStart ? { tool: activeTool, start: drawStart } : null}
           />
           {!workFp && (
             <div style={{
@@ -774,7 +799,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
           </div>
         )}
 
-        <Toolbar entries={FP_RIGHT_TOOLBAR} orientation="vertical" side="right" activeTool={activeTool} onActivate={setActiveTool} />
+        <Toolbar entries={FP_RIGHT_TOOLBAR} orientation="vertical" side="right" activeTool={activeTool} onActivate={selectTool} />
       </div>
 
       {/* pcbnew-style status bar. */}

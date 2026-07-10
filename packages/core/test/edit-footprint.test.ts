@@ -5,9 +5,11 @@ import { serializeFootprint } from '../src/pcb/write-footprint.js';
 import {
   fpItemId, hitTestFootprint, footprintBBox, moveFootprintItems,
   rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, itemsInBox,
-  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild, addPad, patchPad,
+  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild, addPad, patchPad, addShape,
 } from '../src/pcb/edit-footprint.js';
-import type { PcbPad } from '../src/pcb/types.js';
+import type { PcbPad, PcbShape } from '../src/pcb/types.js';
+
+const EMPTY = { kind: 'list' as const, items: [] };
 import { mmToIU, iuToMM } from '../src/units.js';
 
 // A two-pad footprint with a silk line and a reference, in local coords.
@@ -135,6 +137,17 @@ describe('footprint editing', () => {
     const out = serializeFootprint(fp2);
     expect(out).toContain('(pinfunction "A")');
     expect(out).toContain('(pintype "passive")');
+  });
+
+  it('adds silk graphics (line + circle) that round-trip on their layer', () => {
+    const line: PcbShape = { kind: 'line', start: { x: 0, y: 0 }, end: { x: mmToIU(1), y: 0 }, width: mmToIU(0.1), fill: false, layer: 'F.SilkS', source: EMPTY };
+    const circle: PcbShape = { kind: 'circle', center: { x: 0, y: 0 }, end: { x: mmToIU(0.5), y: 0 }, width: mmToIU(0.1), fill: false, layer: 'F.SilkS', source: EMPTY };
+    const fp = addShape(addShape(read(), line), circle);
+    const reread = readFootprintFile(parse(serializeFootprint(fp)))!;
+    expect(reread.shapes.filter((s) => s.kind === 'line')).toHaveLength(2); // the original + the new one
+    const c = reread.shapes.find((s) => s.kind === 'circle')!;
+    expect(c.layer).toBe('F.SilkS');
+    expect(iuToMM(Math.hypot(c.end!.x - c.center!.x, c.end!.y - c.center!.y))).toBeCloseTo(0.5, 4);
   });
 
   it('deletes selected items and reindexes', () => {
