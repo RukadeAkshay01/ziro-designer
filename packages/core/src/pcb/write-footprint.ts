@@ -17,7 +17,8 @@
  * as the typed model (unlike symbol libraries), so no Y inversion is applied.
  */
 
-import { atom, str, isList, type SList, type SNode } from '../sexpr/index.js';
+import { atom, str, isList, head, type SList, type SNode } from '../sexpr/index.js';
+import { arg } from '../sexpr/query.js';
 import { serialize } from '../sexpr/serializer.js';
 import { iuToMM } from '../units.js';
 import type { PcbFootprint, PcbPad, PcbShape, PcbTextItem } from './types.js';
@@ -114,24 +115,36 @@ const padNode = (p: PcbPad): SList => (p.source.items.length > 0 ? p.source : bu
 const shapeNode = (s: PcbShape): SList => (s.source.items.length > 0 ? s.source : buildShapeNode(s));
 const textNode = (t: PcbTextItem): SList => (t.source.items.length > 0 ? t.source : buildTextNode(t));
 
+const GRAPHIC_HEADS = new Set(['fp_line', 'fp_arc', 'fp_circle', 'fp_rect', 'fp_poly', 'fp_curve']);
+
+/** Whether a source child is one the model owns as a text (Reference/Value or fp_text). */
+function isTextSource(it: SList): boolean {
+  const h = head(it);
+  if (h === 'fp_text') return true;
+  if (h === 'property') { const k = arg(it, 0); return k === 'Reference' || k === 'Value'; }
+  return false;
+}
+
 /**
- * Rebuild the `(footprint …)` node from the typed model. Every child that was
- * read from a source node is emitted in place (keyed by node identity) so the
- * interleaving of `property`/`pad`/`fp_*`/`model`/… is preserved exactly and
- * unmodelled children pass through untouched; source-less (newly created) items
- * are appended in their canonical group at the end.
+ * Rebuild the `(footprint …)` node from the typed model. The modelled item
+ * classes (pads, graphics, Reference/Value + fp_text) are emitted from the model
+ * arrays — in model order — one per corresponding source child (so an edited
+ * item's PATCHED source is used, deletions drop trailing source nodes, and
+ * additions append after their group). Every unmodelled child (descr, tags,
+ * attr, models, other properties, …) passes through in place, byte-faithful.
  */
 export function writeFootprintNode(fp: PcbFootprint): SList {
-  const replace = new Map<SList, () => SList>();
-  for (const p of fp.pads) if (p.source.items.length > 0) replace.set(p.source, () => padNode(p));
-  for (const s of fp.shapes) if (s.source.items.length > 0) replace.set(s.source, () => shapeNode(s));
-  for (const t of fp.texts) if (t.source.items.length > 0) replace.set(t.source, () => textNode(t));
-
   const src = fp.source;
   const out: SNode[] = [];
+  let pi = 0, si = 0, ti = 0; // next model pad / shape / text to emit
+
   if (src.items.length > 0) {
     for (const it of src.items) {
-      if (isList(it) && replace.has(it)) out.push(replace.get(it)!());
+      if (!isList(it)) { out.push(it); continue; }
+      const h = head(it);
+      if (h === 'pad') { if (pi < fp.pads.length) out.push(padNode(fp.pads[pi]!)); pi++; }
+      else if (GRAPHIC_HEADS.has(h ?? '')) { if (si < fp.shapes.length) out.push(shapeNode(fp.shapes[si]!)); si++; }
+      else if (isTextSource(it)) { if (ti < fp.texts.length) out.push(textNode(fp.texts[ti]!)); ti++; }
       else out.push(it);
     }
   } else {
@@ -143,10 +156,10 @@ export function writeFootprintNode(fp: PcbFootprint): SList {
       list(atom('layer'), str(fp.layer || 'F.Cu')));
   }
 
-  // Append newly created (source-less) items in canonical order after the rest.
-  for (const t of fp.texts) if (t.source.items.length === 0) out.push(buildTextNode(t));
-  for (const s of fp.shapes) if (s.source.items.length === 0) out.push(buildShapeNode(s));
-  for (const p of fp.pads) if (p.source.items.length === 0) out.push(buildPadNode(p));
+  // Append newly added items (model has more than the source held), by group.
+  for (; ti < fp.texts.length; ti++) out.push(textNode(fp.texts[ti]!));
+  for (; si < fp.shapes.length; si++) out.push(shapeNode(fp.shapes[si]!));
+  for (; pi < fp.pads.length; pi++) out.push(padNode(fp.pads[pi]!));
 
   return { kind: 'list', items: out };
 }

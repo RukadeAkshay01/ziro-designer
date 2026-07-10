@@ -124,3 +124,9 @@ export { SCH_IU_PER_MM, mmToIU, iuToMM } from './units.js';
 export * from './pcb/types.js';
 export { readBoard, readFootprintFile, rotatePcb, tessellateArc, arcCenter } from './pcb/read-board.js';
 export { serializeFootprint, writeFootprintNode, buildPadNode, buildShapeNode, buildTextNode, FOOTPRINT_FILE_VERSION } from './pcb/write-footprint.js';
+export {
+  fpItemId, parseFpItemId, footprintBBox, hitTestFootprint, itemsInBox,
+  moveFootprintItems, rotateFootprintItems, mirrorFootprintItems,
+  deleteFootprintItems, addPad, addShape, addText, replaceFootprintItem,
+  type FpItemKind, type FpItemRef, type FpBBox,
+} from './pcb/edit-footprint.js';
