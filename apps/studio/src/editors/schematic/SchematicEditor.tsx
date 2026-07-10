@@ -10,6 +10,11 @@ import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from '../../ui/toolbars.js';
 import { MenuBar } from '../../ui/MenuBar.js';
 import { buildMenus, TOOL_HOTKEYS } from '../../ui/menus.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
+import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
+import { settings, gridSizeToIU } from '../../prefs/settings.js';
+import { useCommonSettings, useEeschemaSettings, useSchematicTheme } from '../../prefs/useSettings.js';
+import type { RenderOpts } from './render/renderer.js';
+import type { InputPrefs } from './components/SchematicCanvas.js';
 import '../../ui/shell.css';
 
 // What KiCad writes for File > New Schematic: an empty sheet on A4 paper.
@@ -21,7 +26,10 @@ const RADIO_GROUPS: string[][] = [
   ['crosshairSmall', 'crosshairFull'],
   ['lineModeFree', 'lineMode90', 'lineMode45'],
 ];
-const DEFAULT_TOGGLES = new Set(['toggleGrid', 'unitsMm', 'crosshairFull', 'lineMode90', 'showHierarchy', 'showProperties']);
+// Local view toggles; grid/crosshair/line-mode/hidden-pins live in the settings
+// store (Preferences) and are derived each render so the two stay in sync.
+const DEFAULT_TOGGLES = new Set(['unitsMm', 'showHierarchy', 'showProperties']);
+const SETTINGS_TOGGLES = new Set(['toggleGrid', 'toggleHiddenPins', 'crosshairSmall', 'crosshairFull', 'lineModeFree', 'lineMode90', 'lineMode45']);
 const PX_PER_MM_100 = 3.7795;
 
 // Right-toolbar tool ids that place a text label, mapped to the label kind.
@@ -92,7 +100,22 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   const [activeTool, setActiveTool] = useState('select');
   const [placeLib, setPlaceLib] = useState<LibSymbol | null>(null);
   const [pendingLabel, setPendingLabel] = useState<PendingLabel | null>(null);
-  const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
+  const [localToggles, setLocalToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const common = useCommonSettings();
+  const es = useEeschemaSettings();
+  const theme = useSchematicTheme();
+
+  // The displayed toggle set: local toggles plus the settings-derived ones
+  // (Preferences and the left toolbar drive the same EESCHEMA_SETTINGS keys).
+  const toggles = useMemo(() => {
+    const t = new Set(localToggles);
+    if (es.window.grid.show) t.add('toggleGrid');
+    if (es.appearance.show_hidden_pins) t.add('toggleHiddenPins');
+    t.add(es.window.cursor.fullscreen_cursor ? 'crosshairFull' : 'crosshairSmall');
+    t.add(es.drawing.line_mode === 0 ? 'lineModeFree' : es.drawing.line_mode === 2 ? 'lineMode45' : 'lineMode90');
+    return t;
+  }, [localToggles, es]);
   const [selFilter, setSelFilter] = useState<Set<string>>(new Set(FILTER_CATS.map((c) => c[0])));
   const [cursor, setCursor] = useState<Vec2 | null>(null);
   const [scale, setScale] = useState(1);
@@ -438,7 +461,42 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     setSelection(new Set(v.items));
   }, []);
 
-  const lineMode: LineMode = toggles.has('lineModeFree') ? 'free' : toggles.has('lineMode45') ? '45' : '90';
+  const lineMode: LineMode = es.drawing.line_mode === 0 ? 'free' : es.drawing.line_mode === 2 ? '45' : '90';
+
+  // Display + input options handed to the canvas, straight from the settings
+  // (Preferences > Display Options / Grids / Mouse and Touchpad).
+  const renderOpts = useMemo<RenderOpts>(() => ({
+    showHiddenPins: es.appearance.show_hidden_pins,
+    showHiddenFields: es.appearance.show_hidden_fields,
+    showPageLimits: es.appearance.show_page_limits,
+    selectionThicknessMils: es.selection.thickness,
+    highlightThicknessMils: es.selection.highlight_thickness,
+    grid: {
+      show: es.window.grid.show,
+      sizeIU: gridSizeToIU(es.window.grid.sizes[es.window.grid.last_size_idx] ?? '50 mil'),
+      style: es.window.grid.style,
+      lineWidthPx: es.window.grid.line_width,
+      minSpacingPx: es.window.grid.min_spacing,
+    },
+  }), [es]);
+
+  const inputPrefs = useMemo<InputPrefs>(() => ({
+    zoomSpeed: common.input.zoom_speed,
+    zoomSpeedAuto: common.input.zoom_speed_auto,
+    centerOnZoom: common.input.center_on_zoom,
+    reverseZoom: common.input.reverse_scroll_zoom,
+    scrollModZoom: common.input.scroll_modifier_zoom,
+    scrollModPanH: common.input.scroll_modifier_pan_h,
+    scrollModPanV: common.input.scroll_modifier_pan_v,
+    reverseScrollPanH: common.input.reverse_scroll_pan_h,
+    horizontalPan: common.input.horizontal_pan,
+    mouseLeft: common.input.mouse_left as InputPrefs['mouseLeft'],
+    mouseMiddle: common.input.mouse_middle as InputPrefs['mouseMiddle'],
+    mouseRight: common.input.mouse_right as InputPrefs['mouseRight'],
+    autoStartWires: es.drawing.auto_start_wires,
+    crosshair: es.window.cursor.fullscreen_cursor ? 'full' : 'small',
+    alwaysShowCrosshair: es.window.cursor.always_show_cursor,
+  }), [common, es]);
 
   // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
   const onToolSelect = useCallback((id: string) => {
@@ -460,13 +518,26 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     else if (id === 'erc') runErcNow();
     else if (id === 'showPcbNew') onShowPcb?.();
     else if (id === 'symbolEditor') onShowSymbolEditor?.();
+    else if (id === 'openPreferences') setPrefsOpen(true);
     else if (TX[id]) setSelection((sel) => { if (sel.size > 0) runCommand(transformItems(sel, TX[id]!)); return sel; });
   }, [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb, onShowSymbolEditor]);
 
   const menus = useMemo(() => buildMenus({ tool: onToolSelect, action: onTopAction }), [onToolSelect, onTopAction]);
 
   const onLeftToggle = useCallback((id: string) => {
-    setToggles((prev) => {
+    if (SETTINGS_TOGGLES.has(id)) {
+      settings.updateEeschema((s) => {
+        if (id === 'toggleGrid') s.window.grid.show = !s.window.grid.show;
+        else if (id === 'toggleHiddenPins') s.appearance.show_hidden_pins = !s.appearance.show_hidden_pins;
+        else if (id === 'crosshairSmall') s.window.cursor.fullscreen_cursor = false;
+        else if (id === 'crosshairFull') s.window.cursor.fullscreen_cursor = true;
+        else if (id === 'lineModeFree') s.drawing.line_mode = 0;
+        else if (id === 'lineMode90') s.drawing.line_mode = 1;
+        else if (id === 'lineMode45') s.drawing.line_mode = 2;
+      });
+      return;
+    }
+    setLocalToggles((prev) => {
       const next = new Set(prev);
       const group = RADIO_GROUPS.find((g) => g.includes(id));
       if (group) { for (const g of group) next.delete(g); next.add(id); }
@@ -480,7 +551,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     const onKey = (e: KeyboardEvent) => {
       // While a modal properties dialog is open, only Escape acts on the editor.
       if (propsTarget !== null && e.key !== 'Escape') return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        setPrefsOpen(true);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
         save();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
@@ -500,7 +574,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
         else if (pastePending) setPastePending(null);
         else if (pendingLabel) { setPendingLabel(null); setActiveTool('select'); }
         else if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
-        else setSelection(new Set());
+        else if (selection.size > 0) setSelection(new Set());
+        // "<ESC> clears net highlighting": with nothing else pending, the next
+        // Escape clears the highlighted net (eeschema input.esc_clears_net_highlight).
+        else if (settings.eeschema.input.esc_clears_net_highlight) setHighlightItem(null);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selection.size > 0) {
         e.preventDefault();
         runCommand(deleteByIds(selection));
@@ -637,6 +714,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
             placeLib={placeLib}
             pendingLabel={pendingLabel}
             highlight={highlightWires}
+            theme={theme}
+            renderOpts={renderOpts}
+            inputPrefs={inputPrefs}
             onSelect={onSelect}
             onHighlight={onHighlight}
             onRequestTool={onToolSelect}
@@ -644,7 +724,8 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
             onSelectBox={onSelectBox}
             pastePending={pastePending}
             onPasteDone={onPasteDone}
-            ercMarkers={ercResult}
+            ercMarkers={ercResult?.filter((v) =>
+              v.severity === 'error' ? es.appearance.show_erc_errors : es.appearance.show_erc_warnings)}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}
@@ -668,15 +749,26 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
         <span className="cell">
           dx {cursor ? fmt(cursor.x) : '—'}  dy {cursor ? fmt(cursor.y) : '—'}  dist {cursor ? fmt(Math.hypot(cursor.x, cursor.y)) : '—'}
         </span>
-        <span className="cell">grid {units === 'mm' ? '1.2700' : units === 'mils' ? '50' : '0.0500'}</span>
+        <span className="cell">grid {(() => {
+          const iu = renderOpts.grid.sizeIU;
+          const mm = iuToMM(iu);
+          return units === 'mm' ? mm.toFixed(4) : units === 'mils' ? (mm / 0.0254).toFixed(0) : (mm / 25.4).toFixed(4);
+        })()}</span>
         <span className="cell">{highlightName ? `Net: ${highlightName}` : ''}</span>
         <span className="cell grow">{units}</span>
         <span className="cell" title="build">{__BUILD_STAMP__}</span>
       </div>
 
       {(activeTool === 'placeSymbol' || activeTool === 'placePower') && !placeLib && (
-        <SymbolChooser onPick={setPlaceLib} onCancel={() => setActiveTool('select')} powerOnly={activeTool === 'placePower'} />
+        <SymbolChooser
+          onPick={setPlaceLib}
+          onCancel={() => setActiveTool('select')}
+          powerOnly={activeTool === 'placePower'}
+          showFootprintPreview={es.appearance.footprint_preview}
+        />
       )}
+
+      {prefsOpen && <PreferencesDialog onClose={() => setPrefsOpen(false)} />}
 
       {/* Double-click / E on a symbol: KiCad's Symbol Properties dialog. */}
       {propsSymbol && propsTarget !== null && (

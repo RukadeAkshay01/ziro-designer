@@ -96,8 +96,14 @@ export function buildMenus(h: MenuHandlers): Menu[] {
       act('Edit Symbol Fields…', 'fields', 'editSymbolFields'),
       act('Generate BOM…', 'bom', 'bom'),
     ] },
+    // KiCad eeschema's Preferences menu (menubar.cpp): Configure Paths and the
+    // library tables have no meaning without a local filesystem, so they stay
+    // visible-but-disabled; Preferences… opens the full paged dialog.
     { label: 'Preferences', items: [
-      { label: 'Preferences…', disabled: true },
+      { label: 'Configure Paths…', disabled: true },
+      { label: 'Manage Symbol Libraries…', disabled: true },
+      SEP,
+      act('Preferences…', 'preferences', 'openPreferences', 'Ctrl+,'),
     ] },
     { label: 'Help', items: [
       { label: 'About ZiroEDA', disabled: true },

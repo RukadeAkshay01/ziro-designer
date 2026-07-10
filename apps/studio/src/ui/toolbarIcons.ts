@@ -59,6 +59,7 @@ const BITMAP: Record<string, string> = {
   newLibrary: 'new_library', addLibrary: 'add_library', saveAs: 'save_as', revert: 'restore_from_file',
   importSymbol: 'import', exportSymbol: 'export_file', cut: 'cut', copy: 'copy', library: 'library',
   editWithLibEdit: 'edit_cmp_symb_links',
+  preferences: 'preference',
 };
 
 /** KiCad icon URL for a toolbar tool id, or undefined if none is mapped. */

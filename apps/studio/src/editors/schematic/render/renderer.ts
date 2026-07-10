@@ -52,9 +52,12 @@ interface FieldDraw {
   bold: boolean;
   italic: boolean;
   cssColor?: string;
+  /** Hidden field, drawn ghosted only when "Show hidden fields" is on. */
+  hidden?: boolean;
 }
 let g_fieldSch: Schematic | null = null;
 let g_fieldDraws: FieldDraw[][] = [];
+let g_fieldShowHidden = false;
 
 // Symbol body boxes are likewise cached per document: symbolBodyBBox walks every
 // graphic of every unit through the placement transform.
@@ -69,16 +72,18 @@ function bodyBoxesFor(sch: Schematic, libById: Map<string, LibSymbol>): BBox[] {
   return g_bboxes;
 }
 
-function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>): FieldDraw[][] {
-  if (sch === g_fieldSch) return g_fieldDraws;
+function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>, showHidden: boolean): FieldDraw[][] {
+  if (sch === g_fieldSch && showHidden === g_fieldShowHidden) return g_fieldDraws;
   g_fieldSch = sch;
+  g_fieldShowHidden = showHidden;
   g_fieldDraws = sch.symbols.map((sym) => {
     const lib = libById.get(sym.libId);
     // A multi-unit Reference gains its unit letter (GetRef(..., true)).
     const unitCount = lib ? lib.units.reduce((m, u) => Math.max(m, u.unit), 0) : 1;
     const out: FieldDraw[] = [];
     for (const f of sym.fields) {
-      if (!f.at || f.effects?.hidden) continue;
+      if (!f.at) continue;
+      if (f.effects?.hidden && !showHidden) continue;
       const shown = fieldShownText(f, sym, unitCount);
       if (shown === '') continue;
       const box = fieldBoundingBox(f, sym, shown, measureText);
@@ -92,6 +97,7 @@ function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>): FieldDr
         bold: !!f.effects?.bold,
         italic: !!f.effects?.italic,
       };
+      if (f.effects?.hidden) fd.hidden = true;
       if (f.effects?.color) fd.cssColor = cssColor(f.effects.color);
       out.push(fd);
     }
@@ -115,6 +121,37 @@ export interface Viewport {
   offsetX: number;
   offsetY: number;
 }
+
+/**
+ * Render options driven by the Preferences dialog (EESCHEMA_SETTINGS): the
+ * display-options toggles, the selection/highlight pen widths and the grid
+ * appearance (GAL_OPTIONS + window.grid).
+ */
+export interface RenderOpts {
+  showHiddenPins: boolean;
+  showHiddenFields: boolean;
+  showPageLimits: boolean;
+  /** selection.thickness (mils). */
+  selectionThicknessMils: number;
+  /** selection.highlight_thickness (mils). */
+  highlightThicknessMils: number;
+  grid: {
+    show: boolean;
+    sizeIU: number;
+    style: 'dots' | 'lines' | 'crosses';
+    lineWidthPx: number;
+    minSpacingPx: number;
+  };
+}
+
+export const DEFAULT_RENDER_OPTS: RenderOpts = {
+  showHiddenPins: false,
+  showHiddenFields: false,
+  showPageLimits: true,
+  selectionThicknessMils: 3,
+  highlightThicknessMils: 2,
+  grid: { show: true, sizeIU: 12700, style: 'dots', lineWidthPx: 1, minSpacingPx: 10 },
+};
 
 const MM = 10000; // IU per mm
 const DEFAULT_LINE_WIDTH = 0.1524 * MM; // ~6 mil, KiCad default
@@ -164,6 +201,7 @@ export function renderSchematic(
   canvasHeight: number,
   selection?: ReadonlySet<string>,
   highlight?: ReadonlySet<string>,
+  opts: RenderOpts = DEFAULT_RENDER_OPTS,
 ): void {
   const libById = new Map<string, LibSymbol>();
   for (const lib of sch.libSymbols) libById.set(lib.libId, lib);
@@ -187,7 +225,18 @@ export function renderSchematic(
   g_maxX = (canvasWidth - offsetX) / scale + cullMargin;
   g_maxY = (canvasHeight - offsetY) / scale + cullMargin;
 
-  drawGrid(ctx, viewport, theme, canvasWidth, canvasHeight);
+  if (opts.grid.show) drawGrid(ctx, viewport, theme, canvasWidth, canvasHeight, opts.grid);
+  // Page limits (LAYER_SCHEMATIC_PAGE_LIMITS): the paper-edge outline,
+  // toggled by "Show page limits" in the Display Options.
+  if (opts.showPageLimits) {
+    const page = paperSizeIU(sch.paper);
+    if (page) {
+      ctx.strokeStyle = theme.pageLimits;
+      ctx.lineWidth = 0.1 * MM;
+      ctx.setLineDash([]);
+      ctx.strokeRect(0, 0, page.w, page.h);
+    }
+  }
   drawDrawingSheet(ctx, sch, theme);
 
   const hl = (id: string): boolean => highlight !== undefined && highlight.has(id);
@@ -197,7 +246,7 @@ export function renderSchematic(
   // colour, drawn before the normal render so it reads as an underglow. Width is
   // getShadowWidth(false) = selection_thickness (3 mils) as a zoom-scaled screen
   // term plus a fixed world minimum. Net highlight (magenta) is a *separate* thing.
-  const SELECTION_THICKNESS_MILS = 3;
+  const SELECTION_THICKNESS_MILS = opts.selectionThicknessMils;
   const selShadowWidth = Math.abs(SELECTION_THICKNESS_MILS / scale) + SELECTION_THICKNESS_MILS * (0.0254 * MM);
   if (selection && selection.size > 0)
     drawSelectionShadows(ctx, sch, libById, selection, theme, theme.selectionShadow, selShadowWidth);
@@ -210,7 +259,7 @@ export function renderSchematic(
   // aDrawingShadows == false). getShadowWidth() adds highlight_thickness (2 mils,
   // eeschema_settings.cpp) both as a screen-space term (scaled by current zoom) and as
   // a fixed minimum in world units, so the halo doesn't vanish when zoomed out.
-  const HIGHLIGHT_THICKNESS_MILS = 2;
+  const HIGHLIGHT_THICKNESS_MILS = opts.highlightThicknessMils;
   const MIL = 0.0254 * MM; // 1 mil in IU
   const shadowWidth = Math.abs(HIGHLIGHT_THICKNESS_MILS / scale) + HIGHLIGHT_THICKNESS_MILS * MIL;
   const HALO_COLOR = 'rgba(255, 0, 255, 0.15)'; // LAYER_BRIGHTENED at 15% alpha
@@ -318,7 +367,7 @@ export function renderSchematic(
   }
 
   // Placed symbols (culled to the visible rect, including their fields).
-  const fieldDraws = fieldDrawsFor(sch, libById);
+  const fieldDraws = fieldDrawsFor(sch, libById, opts.showHiddenFields);
   const bodyBoxes = bodyBoxesFor(sch, libById);
   sch.symbols.forEach((sym, si) => {
     const lib = libById.get(sym.libId);
@@ -331,7 +380,7 @@ export function renderSchematic(
       let pinIndex = 0;
       for (const unit of lib.units) {
         if (libUnitMatches(unit, sym.unit, sym.bodyStyle))
-          pinIndex = drawLibUnit(ctx, unit, sym.at, t, theme, pins, symId, pinIndex, highlight, shadowWidth);
+          pinIndex = drawLibUnit(ctx, unit, sym.at, t, theme, pins, symId, pinIndex, highlight, shadowWidth, opts.showHiddenPins);
       }
     }
     // Fields are painted exactly as KiCad's SCH_PAINTER::draw(SCH_FIELD): the
@@ -341,7 +390,8 @@ export function renderSchematic(
     // centre with the draw rotation (GetDrawRotation).
     for (const fd of fieldDraws[si] ?? []) {
       if (!inView(fd.minX, fd.minY, fd.maxX, fd.maxY)) continue;
-      const color = fd.cssColor ?? (fd.key === 'Reference' ? theme.reference : fd.key === 'Value' ? theme.value : theme.label);
+      const color = fd.hidden ? theme.hidden
+        : fd.cssColor ?? (fd.key === 'Reference' ? theme.reference : fd.key === 'Value' ? theme.value : theme.fields);
       drawText(ctx, fd.shown, fd.centre, fd.h, color, undefined, fd.rot, fd.bold, fd.italic);
     }
   });
@@ -837,6 +887,7 @@ function drawLibUnit(
   pinIndexStart = 0,
   highlight?: ReadonlySet<string>,
   shadowWidth = 0,
+  showHiddenPins = false,
 ): number {
   for (const g of unit.graphics) {
     const lw = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
@@ -886,7 +937,10 @@ function drawLibUnit(
   let pinIndex = pinIndexStart;
   for (const pin of unit.pins) {
     const idx = pinIndex++;
-    if (pin.hidden) continue;
+    // Hidden pins are skipped unless "Show hidden pins" is on, which draws
+    // them ghosted in the LAYER_HIDDEN colour (SCH_PAINTER's force_show path).
+    if (pin.hidden && !showHiddenPins) continue;
+    const hiddenGhost = pin.hidden;
     // Per-pin text sizes; a stored size of 0 means "not drawn" (KiCad lays the text
     // out at zero height — Altium imports hide pin names this way and put graphic
     // text in the body instead).
@@ -921,7 +975,7 @@ function drawLibUnit(
       ctx.lineWidth = DEFAULT_LINE_WIDTH + shadowWidth;
       strokePinBody();
     }
-    ctx.strokeStyle = brightened ? '#ff00ff' : theme.pin;
+    ctx.strokeStyle = brightened ? '#ff00ff' : hiddenGhost ? theme.hidden : theme.pin;
     ctx.lineWidth = DEFAULT_LINE_WIDTH;
     strokePinBody();
 
@@ -933,7 +987,7 @@ function drawLibUnit(
       const mid = { x: (pin.at.x + endLocal.x) / 2, y: (pin.at.y + endLocal.y) / 2 };
       const off = NUM / 2 + MARGIN;
       const anchor = localToWorld(origin, t, horiz ? { x: mid.x, y: mid.y - off } : { x: mid.x - off, y: mid.y });
-      drawText(ctx, pin.number, anchor, NUM, theme.pinNumber);
+      drawText(ctx, pin.number, anchor, NUM, hiddenGhost ? theme.hidden : theme.pinNumber);
     }
 
     // Pin name: inside the body at the inner end (offset > 0), else just outside.
@@ -941,10 +995,10 @@ function drawLibUnit(
       if (pins.nameOffset > 0) {
         const anchor = localToWorld(origin, t, { x: endLocal.x + dir.x * pins.nameOffset, y: endLocal.y + dir.y * pins.nameOffset });
         const justify = horiz ? [dir.x > 0 ? 'left' : 'right'] : ['left'];
-        drawText(ctx, pin.name, anchor, NAME, theme.pinName, justify);
+        drawText(ctx, pin.name, anchor, NAME, hiddenGhost ? theme.hidden : theme.pinName, justify);
       } else {
         const anchor = localToWorld(origin, t, horiz ? { x: endLocal.x - dir.x * MARGIN, y: endLocal.y - NAME / 2 } : { x: endLocal.x, y: endLocal.y });
-        drawText(ctx, pin.name, anchor, NAME, theme.pinName, horiz ? [dir.x > 0 ? 'right' : 'left'] : undefined);
+        drawText(ctx, pin.name, anchor, NAME, hiddenGhost ? theme.hidden : theme.pinName, horiz ? [dir.x > 0 ? 'right' : 'left'] : undefined);
       }
     }
   }
@@ -1184,6 +1238,7 @@ function drawGrid(
   theme: Theme,
   canvasWidth: number,
   canvasHeight: number,
+  grid: RenderOpts['grid'],
 ): void {
   // Visible world bounds (inverse of the viewport transform).
   const left = (-viewport.offsetX) / viewport.scale;
@@ -1191,15 +1246,45 @@ function drawGrid(
   const right = (canvasWidth - viewport.offsetX) / viewport.scale;
   const bottom = (canvasHeight - viewport.offsetY) / viewport.scale;
 
-  // Skip when the grid would be denser than ~6px to avoid a wall of dots.
-  if (GRID * viewport.scale < 6) return;
+  // GAL grid density limit: double the drawn step until it clears the
+  // configured minimum on-screen spacing (gal options "Minimum grid spacing").
+  let step = grid.sizeIU;
+  const minPx = Math.max(2, grid.minSpacingPx);
+  while (step * viewport.scale < minPx) step *= 2;
 
-  const dot = Math.max(0.15 * MM, 0.5 / viewport.scale);
   ctx.fillStyle = theme.grid;
-  const x0 = Math.ceil(left / GRID) * GRID;
-  const y0 = Math.ceil(top / GRID) * GRID;
-  for (let x = x0; x <= right; x += GRID) {
-    for (let y = y0; y <= bottom; y += GRID) {
+  ctx.strokeStyle = theme.grid;
+  const px = Math.max(1, grid.lineWidthPx) / viewport.scale; // grid pen, in world units
+  const x0 = Math.ceil(left / step) * step;
+  const y0 = Math.ceil(top / step) * step;
+
+  if (grid.style === 'lines') {
+    ctx.lineWidth = px;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    for (let x = x0; x <= right; x += step) { ctx.moveTo(x, top); ctx.lineTo(x, bottom); }
+    for (let y = y0; y <= bottom; y += step) { ctx.moveTo(left, y); ctx.lineTo(right, y); }
+    ctx.stroke();
+    return;
+  }
+  if (grid.style === 'crosses') {
+    ctx.lineWidth = px;
+    ctx.setLineDash([]);
+    const arm = 3 / viewport.scale; // ~3 px arms
+    ctx.beginPath();
+    for (let x = x0; x <= right; x += step) {
+      for (let y = y0; y <= bottom; y += step) {
+        ctx.moveTo(x - arm, y); ctx.lineTo(x + arm, y);
+        ctx.moveTo(x, y - arm); ctx.lineTo(x, y + arm);
+      }
+    }
+    ctx.stroke();
+    return;
+  }
+  // Dots.
+  const dot = Math.max(0.15 * MM, px);
+  for (let x = x0; x <= right; x += step) {
+    for (let y = y0; y <= bottom; y += step) {
       ctx.fillRect(x - dot / 2, y - dot / 2, dot, dot);
     }
   }

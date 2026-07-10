@@ -6,11 +6,35 @@ import {
   type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
   type PastePayload, type ErcViolation,
 } from '@ziroeda/core';
-import { renderSchematic, drawErcMarkers, fitToContent, setRenderInvalidator, type Viewport } from '../render/renderer.js';
-import { KICAD_CLASSIC } from '../theme.js';
+import { renderSchematic, drawErcMarkers, fitToContent, setRenderInvalidator, DEFAULT_RENDER_OPTS, type RenderOpts, type Viewport } from '../render/renderer.js';
+import { KICAD_DEFAULT, type Theme } from '../theme.js';
 
-const GRID = 12700; // 1.27 mm (50 mil)
-const snap = (p: Vec2): Vec2 => ({ x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID });
+/** Mouse/input behaviour from the Preferences dialog (COMMON_SETTINGS m_Input + eeschema). */
+export interface InputPrefs {
+  zoomSpeed: number;          // 1..10 (input.zoom_speed)
+  zoomSpeedAuto: boolean;
+  centerOnZoom: boolean;
+  reverseZoom: boolean;
+  scrollModZoom: 'none' | 'ctrl' | 'shift' | 'alt';
+  scrollModPanH: 'none' | 'ctrl' | 'shift' | 'alt';
+  scrollModPanV: 'none' | 'ctrl' | 'shift' | 'alt';
+  reverseScrollPanH: boolean;
+  horizontalPan: boolean;
+  mouseLeft: 'select' | 'drag_selected' | 'drag_any';
+  mouseMiddle: 'pan' | 'zoom' | 'none';
+  mouseRight: 'pan' | 'zoom' | 'none';
+  autoStartWires: boolean;
+  crosshair: 'small' | 'full';
+  alwaysShowCrosshair: boolean;
+}
+
+export const DEFAULT_INPUT_PREFS: InputPrefs = {
+  zoomSpeed: 1, zoomSpeedAuto: true, centerOnZoom: true, reverseZoom: false,
+  scrollModZoom: 'none', scrollModPanH: 'ctrl', scrollModPanV: 'shift',
+  reverseScrollPanH: false, horizontalPan: false,
+  mouseLeft: 'drag_selected', mouseMiddle: 'pan', mouseRight: 'pan',
+  autoStartWires: true, crosshair: 'full', alwaysShowCrosshair: false,
+};
 
 // KiCad's LINE_WIRE cursor (resources/.../cursor-line-wire.xpm): a black crosshair
 // at the hotspot with a green diagonal "wire" running up-right from it. Rebuilt as
@@ -94,9 +118,15 @@ interface Props {
   onCommand: (cmd: EditCommand) => void;
   onCursorMove?: (world: Vec2 | null) => void;
   onScaleChange?: (scale: number) => void;
+  /** Active colour theme (Preferences > Colors). */
+  theme?: Theme;
+  /** Display options (Preferences > Display Options / Grids). */
+  renderOpts?: RenderOpts;
+  /** Mouse and editing behaviour (Preferences > Mouse and Touchpad / Editing Options). */
+  inputPrefs?: InputPrefs;
 }
 
-type Mode = 'idle' | 'pan' | 'move' | 'box';
+type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box';
 
 // KiCad's selection-rectangle colours for a bright background
 // (common/preview_items/selection_area.cpp, selectionColorScheme[1]).
@@ -107,9 +137,12 @@ const BOX_OUTLINE_L2R = 'rgb(179, 179, 0)'; // window select: dark yellow
 const BOX_OUTLINE_R2L = 'rgb(26, 26, 255)'; // greedy select: blue
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange, theme = KICAD_DEFAULT, renderOpts = DEFAULT_RENDER_OPTS, inputPrefs = DEFAULT_INPUT_PREFS },
   ref,
 ): JSX.Element {
+  // The active snap grid (Preferences > Grids); KiCad's canvases snap to it.
+  const GRID = renderOpts.grid.sizeIU;
+  const snap = (p: Vec2): Vec2 => ({ x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<Viewport | null>(null);
@@ -127,6 +160,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const moveAnchorsRef = useRef<Vec2[]>([]);
 
   // Box-selection drag (KiCad selectMultiple): origin/end in world coordinates.
+  const boxHitRef = useRef<string | null>(null);
   const boxOriginRef = useRef<Vec2 | null>(null);
   const boxEndRef = useRef<Vec2 | null>(null);
   const boxModifiersRef = useRef({ additive: false, subtractive: false });
@@ -201,10 +235,10 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const delta = { x: c.x - pastePending.refPoint.x, y: c.y - pastePending.refPoint.y };
       doc = pasteItems(translatePayload(pastePending, delta)).apply(doc);
     }
-    renderSchematic(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, selection, highlight);
+    renderSchematic(ctx, doc, vp, theme, canvas.width, canvas.height, selection, highlight, renderOpts);
 
     // ERC markers (KiCad's bent-arrow fault indicators).
-    if (ercMarkers && ercMarkers.length > 0) drawErcMarkers(ctx, ercMarkers, vp, KICAD_CLASSIC);
+    if (ercMarkers && ercMarkers.length > 0) drawErcMarkers(ctx, ercMarkers, vp, theme);
 
     // Box-selection rubber band, in KiCad's colours: the fill shows the mode
     // (normal/additive/subtractive) and the outline shows the direction —
@@ -230,15 +264,39 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if ((activeTool === 'drawWire' || activeTool === 'drawBus') && anchor && cur) {
       const end = wireEndPoint(anchor, cur);
       ctx.setTransform(vp.scale, 0, 0, vp.scale, vp.offsetX, vp.offsetY);
-      ctx.strokeStyle = activeTool === 'drawBus' ? KICAD_CLASSIC.bus : KICAD_CLASSIC.wire;
-      ctx.lineWidth = (activeTool === 'drawBus' ? 0.3048 : 0.1524) * GRID / 1.27; // bus ~12 mil, wire ~6 mil
+      ctx.strokeStyle = activeTool === 'drawBus' ? theme.bus : theme.wire;
+      ctx.lineWidth = (activeTool === 'drawBus' ? 0.3048 : 0.1524) * 10000; // bus 12 mil, wire 6 mil
       ctx.beginPath();
       ctx.moveTo(anchor.x, anchor.y);
       ctx.lineTo(end.x, end.y);
       ctx.stroke();
     }
+
+    // Crosshair cursor (GAL options): full-window lines or a small cross at
+    // the snapped cursor position, in the LAYER_SCHEMATIC_CURSOR colour.
+    if (cur) {
+      const c = snap(cur);
+      ctx.setTransform(vp.scale, 0, 0, vp.scale, vp.offsetX, vp.offsetY);
+      ctx.strokeStyle = theme.cursor;
+      ctx.lineWidth = 1 / vp.scale;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      if (inputPrefs.crosshair === 'full') {
+        const left = -vp.offsetX / vp.scale;
+        const top = -vp.offsetY / vp.scale;
+        const rightW = (canvas.width - vp.offsetX) / vp.scale;
+        const bottomW = (canvas.height - vp.offsetY) / vp.scale;
+        ctx.moveTo(left, c.y); ctx.lineTo(rightW, c.y);
+        ctx.moveTo(c.x, top); ctx.lineTo(c.x, bottomW);
+      } else {
+        const arm = 8 / vp.scale;
+        ctx.moveTo(c.x - arm, c.y); ctx.lineTo(c.x + arm, c.y);
+        ctx.moveTo(c.x, c.y - arm); ctx.lineTo(c.x, c.y + arm);
+      }
+      ctx.stroke();
+    }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange, theme, renderOpts, inputPrefs]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -332,12 +390,39 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     return { x: (px - vp.offsetX) / vp.scale, y: (py - vp.offsetY) / vp.scale };
   };
 
+  // Scroll gestures (PANEL_MOUSE_SETTINGS): the modifier held selects zoom /
+  // pan up-down / pan left-right; zoom speed and reverse flags apply.
   const onWheel = useCallback((e: React.WheelEvent) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const vp = viewportRef.current;
+    if (!canvas || !vp) return;
     const rect = canvas.getBoundingClientRect();
-    zoomAbout((e.clientX - rect.left) * dpr(), (e.clientY - rect.top) * dpr(), Math.exp(-e.deltaY * 0.001));
-  }, [zoomAbout]);
+    const mod: 'none' | 'ctrl' | 'shift' | 'alt' =
+      e.ctrlKey || e.metaKey ? 'ctrl' : e.shiftKey ? 'shift' : e.altKey ? 'alt' : 'none';
+    const delta = e.deltaY;
+
+    if (mod === inputPrefs.scrollModPanV && inputPrefs.scrollModPanV !== inputPrefs.scrollModZoom) {
+      viewportRef.current = { ...vp, offsetY: vp.offsetY - delta * dpr() };
+      draw();
+      return;
+    }
+    if (mod === inputPrefs.scrollModPanH && inputPrefs.scrollModPanH !== inputPrefs.scrollModZoom) {
+      const d = inputPrefs.reverseScrollPanH ? -delta : delta;
+      viewportRef.current = { ...vp, offsetX: vp.offsetX - d * dpr() };
+      draw();
+      return;
+    }
+    if (mod !== inputPrefs.scrollModZoom) return;
+    // Horizontal touchpad movement pans when enabled.
+    if (inputPrefs.horizontalPan && Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      viewportRef.current = { ...vp, offsetX: vp.offsetX - e.deltaX * dpr() };
+      draw();
+      return;
+    }
+    const speed = inputPrefs.zoomSpeedAuto ? 1 : inputPrefs.zoomSpeed / 5;
+    const dir = inputPrefs.reverseZoom ? 1 : -1;
+    zoomAbout((e.clientX - rect.left) * dpr(), (e.clientY - rect.top) * dpr(), Math.exp(dir * delta * 0.001 * speed));
+  }, [zoomAbout, draw, inputPrefs]);
 
   const commitWireSegment = useCallback((anchor: Vec2, end: Vec2, bus: boolean) => {
     const line = bus ? makeBus(anchor, end) : makeWire(anchor, end);
@@ -354,10 +439,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     if (!vp) return;
     const world = toWorld(e.clientX, e.clientY);
 
-    // Middle-button drag pans, whatever the active tool (KiCad's pan button).
-    if (e.button === 1) {
+    // Middle/right-button drag pans or zooms per the Drag Gestures settings.
+    if (e.button === 1 || e.button === 2) {
+      const action = e.button === 1 ? inputPrefs.mouseMiddle : inputPrefs.mouseRight;
+      if (action === 'none') return;
       (e.target as Element).setPointerCapture(e.pointerId);
-      modeRef.current = 'pan';
+      modeRef.current = action === 'zoom' ? 'dragzoom' : 'pan';
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
       e.preventDefault();
@@ -437,20 +524,25 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
     if (activeTool !== 'select') return; // other tools not yet implemented
 
-    // Auto-start a wire when clicking a dangling pin (KiCad's autostartEvent /
-    // auto_start_wires): switch to the wire tool with this pin as the first anchor.
-    const pin = danglingPinAt(world);
+    // Auto-start a wire when clicking a dangling pin (KiCad's autostartEvent),
+    // gated by the "Automatically start wires on unconnected pins" preference.
+    const pin = inputPrefs.autoStartWires ? danglingPinAt(world) : null;
     if (pin && !e.shiftKey) {
       pendingWireStartRef.current = pin;
       onRequestTool?.('drawWire');
       return;
     }
 
-    // select / move
+    // select / move — the left-drag semantics follow the "Left button drag"
+    // preference: SELECT always rubber-bands; DRAG_SELECTED moves only an
+    // already-selected item; DRAG_ANY moves whatever is under the cursor.
     (e.target as Element).setPointerCapture(e.pointerId);
     const hit = hitTest(schematic, libById, world, (6 * dpr()) / vp.scale);
     const additive = e.shiftKey;
-    if (hit) {
+    const canDrag = hit !== null
+      && inputPrefs.mouseLeft !== 'select'
+      && (inputPrefs.mouseLeft === 'drag_any' || selection.has(hit.id));
+    if (hit && canDrag) {
       const effSel: ReadonlySet<string> = additive
         ? new Set([...selection, hit.id])
         : selection.has(hit.id) ? selection : new Set([hit.id]);
@@ -467,10 +559,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const moving = new Set([...effSel, ...spec.wireStart, ...spec.wireEnd]);
       moveAnchorsRef.current = collectAnchors(schematic, libById, moving);
     } else {
-      // Empty canvas: start a KiCad drag-box selection (left-to-right = window
-      // select, right-to-left = greedy). A no-drag click clears the selection.
+      // Empty canvas (or SELECT-mode drag): start a KiCad drag-box selection
+      // (left-to-right = window select, right-to-left = greedy). A no-drag
+      // click selects the pressed item, or clears the selection.
       (e.target as Element).setPointerCapture(e.pointerId);
       modeRef.current = 'box';
+      boxHitRef.current = hit ? hit.id : null;
       boxOriginRef.current = world;
       boxEndRef.current = world;
       boxModifiersRef.current = {
@@ -478,7 +572,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         subtractive: e.ctrlKey && e.shiftKey && !e.altKey, // m_drag_subtractive
       };
     }
-  }, [activeTool, lineMode, placeLib, pendingLabel, pastePending, schematic, libById, selection, onSelect, onHighlight, onRequestTool, onPasteDone, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, pastePending, schematic, libById, selection, onSelect, onHighlight, onRequestTool, onPasteDone, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw, inputPrefs]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -537,12 +631,20 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       };
       panLastRef.current = { x: e.clientX, y: e.clientY };
       draw();
+    } else if (modeRef.current === 'dragzoom' && panLastRef.current) {
+      // Drag-zoom gesture: vertical travel zooms about the canvas centre.
+      panMovedRef.current = true;
+      const canvas = canvasRef.current;
+      if (canvas) zoomAbout(canvas.width / 2, canvas.height / 2, Math.exp((panLastRef.current.y - e.clientY) * 0.005));
+      panLastRef.current = { x: e.clientX, y: e.clientY };
+    } else if (cursorRef.current) {
+      draw(); // keep the crosshair tracking the cursor
     }
-  }, [activeTool, placeLib, pendingLabel, pastePending, danglingPinAt, draw, onCursorMove]);
+  }, [activeTool, placeLib, pendingLabel, pastePending, danglingPinAt, draw, onCursorMove, zoomAbout]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
-    // Middle-button pan ends regardless of the active tool.
-    if (modeRef.current === 'pan' && e.button === 1) {
+    // Middle/right-button pan or drag-zoom ends regardless of the active tool.
+    if ((modeRef.current === 'pan' || modeRef.current === 'dragzoom') && (e.button === 1 || e.button === 2)) {
       (e.target as Element).releasePointerCapture(e.pointerId);
       modeRef.current = 'idle';
       panLastRef.current = null;
@@ -565,8 +667,10 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         const { additive, subtractive } = boxModifiersRef.current;
         onSelectBox?.(boxSelect(schematic, libById, bo, be), additive, subtractive);
       } else {
-        onSelect(null, e.shiftKey);
+        // A plain click in SELECT mode selects the pressed item, else clears.
+        onSelect(boxHitRef.current, e.shiftKey);
       }
+      boxHitRef.current = null;
       boxOriginRef.current = null;
       boxEndRef.current = null;
     } else if (modeRef.current === 'pan' && !panMovedRef.current) {

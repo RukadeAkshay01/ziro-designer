@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { LibGraphic, LibPin, LibSymbol, Vec2 } from '@ziroeda/core';
 import { EMPTY_SOURCE } from '@ziroeda/core';
-import { KICAD_CLASSIC } from '../schematic/theme.js';
+import { KICAD_DEFAULT, type Theme } from '../schematic/theme.js';
 import {
   fitSymbol,
   renderSymbolScene,
@@ -44,6 +44,8 @@ interface DrawState {
 
 interface Props {
   symbol: LibSymbol | null;
+  /** Active colour theme (Preferences > Colors). */
+  theme?: Theme;
   opts: SymbolViewOptions;
   selection: ReadonlySet<string>;
   activeTool: string;
@@ -109,7 +111,7 @@ export function arcFromTwoPoints(start: Vec2, end: Vec2): { start: Vec2; mid: Ve
 
 export const SymbolCanvas = forwardRef<SymbolCanvasController, Props>(function SymbolCanvas(
   {
-    symbol, opts, selection, activeTool, pendingPin, pendingText,
+    symbol, theme = KICAD_DEFAULT, opts, selection, activeTool, pendingPin, pendingText,
     onSelect, onSelectBox, onCommit, onPinToolClick, onPlacePendingPin,
     onTextToolClick, onPlacePendingText, onPlaceShape, onEditItem, onCursorMove, onScaleChange,
   },
@@ -145,7 +147,7 @@ export const SymbolCanvas = forwardRef<SymbolCanvasController, Props>(function S
     if (doc && modeRef.current === 'move' && md && (md.x !== 0 || md.y !== 0)) {
       doc = moveSymbolItems(doc, selection, md);
     }
-    renderSymbolScene(ctx, doc, vp, KICAD_CLASSIC, canvas.width, canvas.height, opts, selection);
+    renderSymbolScene(ctx, doc, vp, theme, canvas.width, canvas.height, opts, selection);
 
     ctx.setTransform(vp.scale, 0, 0, vp.scale, vp.offsetX, vp.offsetY);
     ctx.lineCap = 'round';
@@ -159,21 +161,21 @@ export const SymbolCanvas = forwardRef<SymbolCanvasController, Props>(function S
         pinNamesHidden: doc.pinNamesHidden, pinNumbersHidden: doc.pinNumbersHidden,
         pinNameOffset: doc.pinNameOffset, showElectricalTypes: opts.showPinElectricalTypes,
         showHiddenPins: true,
-      }, KICAD_CLASSIC);
+      }, theme);
     }
 
     // Ghost: pending text.
     if (pendingText && cur) {
       const at = snap(cur);
       const g: LibGraphic = { kind: 'text', text: pendingText.text, at, angle: 0, source: EMPTY_SOURCE, ...(pendingText.fontSize ? { effects: { hidden: false, fontSize: [pendingText.fontSize, pendingText.fontSize] as [number, number] } } : {}) };
-      drawGraphic(ctx, g, KICAD_CLASSIC);
+      drawGraphic(ctx, g, theme);
     }
 
     // Preview: the shape being drawn.
     const ds = drawStateRef.current;
     if (ds) {
       const preview = shapePreview(ds);
-      if (preview) drawGraphic(ctx, preview, KICAD_CLASSIC);
+      if (preview) drawGraphic(ctx, preview, theme);
     }
 
     // Box-selection rubber band.
@@ -191,7 +193,7 @@ export const SymbolCanvas = forwardRef<SymbolCanvasController, Props>(function S
       ctx.strokeRect(x, y, w, h);
     }
     onScaleChange?.(vp.scale);
-  }, [symbol, opts, selection, pendingPin, pendingText, onScaleChange]);
+  }, [symbol, theme, opts, selection, pendingPin, pendingText, onScaleChange]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
