@@ -43,7 +43,7 @@ html, body { background: var(--chrome-bg2); }
 .ze-menubar .ze-menu:hover { background: var(--chrome-hover); }
 /* KiCad window-title info in the menu bar: "<project> — <Editor>", centred like
    a window title. Absolute + pointer-events:none so it doesn't block menus. */
-.ze-menubar-title { position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none; display: flex; align-items: center; gap: 6px; color: #c9cbce; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.ze-menubar-title { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; gap: 6px; color: #c9cbce; font-size: 12px; font-weight: 500; white-space: nowrap; }
 .ze-menubar-title b { color: #fff; font-weight: 600; }
 
 /* Toolbars */
