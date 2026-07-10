@@ -5,7 +5,7 @@ import { serializeFootprint } from '../src/pcb/write-footprint.js';
 import {
   fpItemId, hitTestFootprint, footprintBBox, moveFootprintItems,
   rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, itemsInBox,
-  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild, addPad,
+  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild, addPad, patchPad,
 } from '../src/pcb/edit-footprint.js';
 import type { PcbPad } from '../src/pcb/types.js';
 import { mmToIU, iuToMM } from '../src/units.js';
@@ -117,6 +117,24 @@ describe('footprint editing', () => {
     expect(p.layers).toEqual(['*.Cu', '*.Mask']);
     // The earlier pads (with pinfunction) are untouched.
     expect(serializeFootprint(fp)).toContain('(pinfunction "A")');
+  });
+
+  it('patches an existing pad, keeping unmodelled fields', () => {
+    const fp = read();
+    const edited = patchPad(fp.pads[0]!, {
+      number: '7', shape: 'rect', size: { x: mmToIU(1.2), y: mmToIU(1.4) },
+    });
+    const fp2 = { ...fp, pads: fp.pads.map((p, i) => (i === 0 ? edited : p)) };
+    const reread = readFootprintFile(parse(serializeFootprint(fp2)))!;
+    const p = reread.pads[0]!;
+    expect(p.number).toBe('7');
+    expect(p.shape).toBe('rect');
+    expect(iuToMM(p.size.x)).toBeCloseTo(1.2, 4);
+    expect(iuToMM(p.size.y)).toBeCloseTo(1.4, 4);
+    // pinfunction/pintype on pad 1 were not modelled but must survive the edit.
+    const out = serializeFootprint(fp2);
+    expect(out).toContain('(pinfunction "A")');
+    expect(out).toContain('(pintype "passive")');
   });
 
   it('deletes selected items and reindexes', () => {

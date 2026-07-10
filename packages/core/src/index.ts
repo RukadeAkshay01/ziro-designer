@@ -134,6 +134,6 @@ export {
   moveFootprintItems, rotateFootprintItems, mirrorFootprintItems,
   deleteFootprintItems, addPad, addShape, addText, replaceFootprintItem,
   setFootprintReference, setFootprintValue, setFootprintDescription, setFootprintKeywords,
-  footprintStringChild,
-  type FpItemKind, type FpItemRef, type FpBBox,
+  footprintStringChild, patchPad,
+  type FpItemKind, type FpItemRef, type FpBBox, type PadEdit,
 } from './pcb/edit-footprint.js';

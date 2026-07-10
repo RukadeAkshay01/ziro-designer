@@ -17,7 +17,7 @@
 import { atom, str, list, isList, head, type SList } from '../sexpr/index.js';
 import { iuToMM } from '../units.js';
 import { rotatePcb } from './read-board.js';
-import type { PcbFootprint, PcbPad, PcbShape, PcbTextItem } from './types.js';
+import type { PadShape, PadType, PcbFootprint, PcbPad, PcbShape, PcbTextItem } from './types.js';
 import type { Vec2 } from '../model/types.js';
 
 // ----- item ids ---------------------------------------------------------------
@@ -348,6 +348,72 @@ export function footprintStringChild(fp: PcbFootprint, name: string): string {
     }
   }
   return '';
+}
+
+// ----- pad properties ---------------------------------------------------------
+
+export interface PadEdit {
+  number?: string;
+  type?: PadType;
+  shape?: PadShape;
+  at?: Vec2;
+  angle?: number;
+  size?: Vec2;
+  /** A drill spec, or null to remove the drill (SMD pads). */
+  drill?: { oblong: boolean; w: number; h: number } | null;
+  layers?: string[];
+}
+
+const patchArgAtom = (src: SList, index: number, value: string): SList => {
+  if (src.items.length <= index) return src;
+  const items = src.items.slice();
+  items[index] = atom(value);
+  return { kind: 'list', items };
+};
+
+const removeChild = (src: SList, name: string): SList =>
+  ({ kind: 'list', items: src.items.filter((it) => !(isList(it) && head(it) === name)) });
+
+const drillNode = (d: { oblong: boolean; w: number; h: number }): SList => {
+  const items: SList['items'] = [atom('drill')];
+  if (d.oblong) items.push(atom('oval'));
+  if (d.w > 0) items.push(atom(mm(d.w)));
+  if (d.oblong && d.h > 0 && d.h !== d.w) items.push(atom(mm(d.h)));
+  return { kind: 'list', items };
+};
+
+/**
+ * Apply a pad-properties edit, patching the pad's source node field-by-field so
+ * every unmodelled property (pinfunction, custom primitives, margins…) survives
+ * (DIALOG_PAD_PROPERTIES::TransferDataFromWindow). A source-less (just-placed)
+ * pad is left for the canonical writer to build.
+ */
+export function patchPad(pad: PcbPad, e: PadEdit): PcbPad {
+  const next: PcbPad = { ...pad };
+  let src = pad.source;
+  const hasSrc = src.items.length > 0;
+  if (e.number !== undefined) { next.number = e.number; if (hasSrc) src = patchArg(src, 1, e.number); }
+  if (e.type !== undefined) { next.type = e.type; if (hasSrc) src = patchArgAtom(src, 2, e.type); }
+  if (e.shape !== undefined) { next.shape = e.shape; if (hasSrc) src = patchArgAtom(src, 3, e.shape); }
+  if (e.angle !== undefined) next.angle = e.angle;
+  if (e.at !== undefined || e.angle !== undefined) {
+    next.at = e.at ?? pad.at;
+    if (hasSrc) src = patchChild(src, 'at', atNode(next.at, next.angle));
+  }
+  if (e.size !== undefined) {
+    next.size = e.size;
+    if (hasSrc) src = patchChild(src, 'size', list(atom('size'), atom(mm(e.size.x)), atom(mm(e.size.y))));
+  }
+  if (e.drill !== undefined) {
+    next.drill = e.drill ?? undefined;
+    if (hasSrc) src = e.drill ? patchChild(src, 'drill', drillNode(e.drill)) : removeChild(src, 'drill');
+  }
+  if (e.layers !== undefined) {
+    next.layers = e.layers;
+    if (hasSrc) src = patchChild(src, 'layers', { kind: 'list', items: [atom('layers'), ...e.layers.map((l) => str(l))] });
+  }
+  next.source = src;
+  return next;
 }
 
 /** Replace one item wholesale (a dialog edit); caller supplies a source-consistent item. */

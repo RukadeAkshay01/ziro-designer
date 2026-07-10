@@ -3,9 +3,10 @@ import {
   EMPTY_SOURCE, iuToMM, parse, readFootprintFile, mmToIU,
   moveFootprintItems, rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, fpItemBBox, addPad,
   setFootprintReference, setFootprintValue, setFootprintDescription, setFootprintKeywords,
-  type PcbFootprint, type PcbPad, type PcbTextItem, type Vec2,
+  patchPad, replaceFootprintItem, parseFpItemId,
+  type PadEdit, type PcbFootprint, type PcbPad, type PcbTextItem, type Vec2,
 } from '@ziroeda/core';
-import { FootprintPropertiesDialog } from './dialogs.js';
+import { FootprintPropertiesDialog, PadPropertiesDialog } from './dialogs.js';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { LoadingOverlay } from '../../ui/LoadingOverlay.js';
@@ -113,6 +114,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
   const [newLibName, setNewLibName] = useState<string | null>(null);
   const [newFpName, setNewFpName] = useState<string | null>(null);
   const [propsOpen, setPropsOpen] = useState(false);
+  const [padDialogId, setPadDialogId] = useState<string | null>(null);
 
   const controller = useRef<FootprintCanvasController>(null);
   const addLibInputRef = useRef<HTMLInputElement>(null);
@@ -283,6 +285,29 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     if (activeTool === 'placePad') placePadAt(pos);
     // Other placement tools (graphics/text) are staged.
   }, [activeTool, placePadAt]);
+
+  // Double-click an item to edit it (pads open the pad-properties dialog).
+  const onEditItem = useCallback((id: string) => {
+    const ref = parseFpItemId(id);
+    if (ref?.kind === 'pad') setPadDialogId(id);
+    else if (workFp) setPropsOpen(true); // graphics/text → footprint properties for now
+  }, [workFp]);
+
+  const padForDialog = useMemo(() => {
+    if (!padDialogId || !workFp) return null;
+    const ref = parseFpItemId(padDialogId);
+    return ref?.kind === 'pad' ? workFp.pads[ref.index] ?? null : null;
+  }, [padDialogId, workFp]);
+
+  const applyPadEdit = useCallback((e: PadEdit) => {
+    const id = padDialogId;
+    setPadDialogId(null);
+    if (!id || !workFp) return;
+    const ref = parseFpItemId(id);
+    const pad = ref?.kind === 'pad' ? workFp.pads[ref.index] : undefined;
+    if (!pad) return;
+    commit(replaceFootprintItem(workFp, id, patchPad(pad, e)), 'Edit Pad');
+  }, [padDialogId, workFp, commit]);
 
   // Click / box selection from the canvas (PCB_SELECTION_TOOL semantics).
   const onSelect = useCallback((id: string | null, additive: boolean) => {
@@ -475,7 +500,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
 
   // ----- keyboard ---------------------------------------------------------------
   useEffect(() => {
-    const dialogOpen = newLibName !== null || newFpName !== null || propsOpen;
+    const dialogOpen = newLibName !== null || newFpName !== null || propsOpen || padDialogId !== null;
     const onKey = (e: KeyboardEvent): void => {
       const tgt = e.target as HTMLElement | null;
       const typing = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT');
@@ -494,7 +519,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, undo, redo, deleteSel, rotateSel, activeTool, newLibName, newFpName, propsOpen]);
+  }, [save, undo, redo, deleteSel, rotateSel, activeTool, newLibName, newFpName, propsOpen, padDialogId]);
 
   // ----- menus (menubar_footprint_editor.cpp, working subset) -------------------
   const menus: Menu[] = useMemo(() => [
@@ -706,6 +731,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
             onSelectBox={onSelectBox}
             onMoveItems={moveSel}
             onPlace={onPlace}
+            onEditItem={onEditItem}
           />
           {!workFp && (
             <div style={{
@@ -786,6 +812,9 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
 
       {propsOpen && workFp && (
         <FootprintPropertiesDialog footprint={workFp} onOk={applyProps} onCancel={() => setPropsOpen(false)} />
+      )}
+      {padForDialog && (
+        <PadPropertiesDialog pad={padForDialog} onOk={applyPadEdit} onCancel={() => setPadDialogId(null)} />
       )}
 
       <TreeSelActions treeSel={treeSel} onDelete={deleteFootprint} />
