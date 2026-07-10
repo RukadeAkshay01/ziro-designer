@@ -5,6 +5,7 @@ import { serializeFootprint } from '../src/pcb/write-footprint.js';
 import {
   fpItemId, hitTestFootprint, footprintBBox, moveFootprintItems,
   rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, itemsInBox,
+  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild,
 } from '../src/pcb/edit-footprint.js';
 import { mmToIU, iuToMM } from '../src/units.js';
 
@@ -13,6 +14,8 @@ const SRC = `(footprint "R"
 	(version 20241229) (generator "pcbnew") (generator_version "9.0")
 	(layer "F.Cu")
 	(property "Reference" "REF**" (at 0 -1.5 0) (layer "F.SilkS")
+		(effects (font (size 1 1) (thickness 0.15))))
+	(property "Value" "R" (at 0 1.5 0) (layer "F.Fab")
 		(effects (font (size 1 1) (thickness 0.15))))
 	(pad "1" smd roundrect (at -0.8 0) (size 0.9 0.95) (layers "F.Cu" "F.Paste" "F.Mask")
 		(roundrect_rratio 0.25) (pinfunction "A") (pintype "passive"))
@@ -74,6 +77,22 @@ describe('footprint editing', () => {
     const m = mirrorFootprintItems(read(), new Set([fpItemId('pad', 0), fpItemId('pad', 1)]), { x: 0, y: 0 });
     expect(iuToMM(m.pads[0]!.at.x)).toBeCloseTo(0.8, 6);
     expect(iuToMM(m.pads[1]!.at.x)).toBeCloseTo(-0.8, 6);
+  });
+
+  it('edits reference, value and description losslessly', () => {
+    let fp = read();
+    fp = setFootprintReference(fp, 'R1');
+    fp = setFootprintValue(fp, '10k');
+    fp = setFootprintDescription(fp, 'A 10k resistor');
+    expect(fp.reference).toBe('R1');
+    expect(fp.value).toBe('10k');
+    const reread = readFootprintFile(parse(serializeFootprint(fp)))!;
+    expect(reread.reference).toBe('R1');
+    expect(reread.value).toBe('10k');
+    expect(footprintStringChild(reread, 'descr')).toBe('A 10k resistor');
+    // Untouched geometry + unmodelled pad fields survive.
+    expect(reread.pads).toHaveLength(2);
+    expect(serializeFootprint(fp)).toContain('(pinfunction "A")');
   });
 
   it('deletes selected items and reindexes', () => {

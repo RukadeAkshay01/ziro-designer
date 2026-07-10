@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import {
   EMPTY_SOURCE, iuToMM, parse, readFootprintFile, mmToIU,
   moveFootprintItems, rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, fpItemBBox,
+  setFootprintReference, setFootprintValue, setFootprintDescription, setFootprintKeywords,
   type PcbFootprint, type PcbTextItem, type Vec2,
 } from '@ziroeda/core';
+import { FootprintPropertiesDialog } from './dialogs.js';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { LoadingOverlay } from '../../ui/LoadingOverlay.js';
@@ -110,6 +112,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
   const [panelWidth, setPanelWidth] = useState(260);
   const [newLibName, setNewLibName] = useState<string | null>(null);
   const [newFpName, setNewFpName] = useState<string | null>(null);
+  const [propsOpen, setPropsOpen] = useState(false);
 
   const controller = useRef<FootprintCanvasController>(null);
   const addLibInputRef = useRef<HTMLInputElement>(null);
@@ -243,6 +246,17 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     setSelection(new Set());
   }, [workFp, selection, commit]);
 
+  const applyProps = useCallback((r: { reference: string; value: string; description: string; keywords: string }) => {
+    setPropsOpen(false);
+    if (!workFp) return;
+    let next = workFp;
+    if (r.reference !== (workFp.reference ?? '')) next = setFootprintReference(next, r.reference);
+    if (r.value !== (workFp.value ?? '')) next = setFootprintValue(next, r.value);
+    next = setFootprintDescription(next, r.description);
+    next = setFootprintKeywords(next, r.keywords);
+    commit(next, 'Edit Footprint Properties');
+  }, [workFp, commit]);
+
   // Click / box selection from the canvas (PCB_SELECTION_TOOL semantics).
   const onSelect = useCallback((id: string | null, additive: boolean) => {
     setSelection((prev) => {
@@ -362,10 +376,11 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
       case 'rotateCCW': rotateSel(true); break;
       case 'rotateCW': rotateSel(false); break;
       case 'mirrorH': case 'mirrorV': mirrorSel(); break;
+      case 'footprintProperties': if (workFp) setPropsOpen(true); break;
       case 'showDatasheet': showDatasheet(); break;
       default: break; // remaining editing actions are staged
     }
-  }, [save, undo, redo, rotateSel, mirrorSel, showDatasheet]);
+  }, [save, undo, redo, rotateSel, mirrorSel, showDatasheet, workFp]);
 
   // ----- library tree (footprint_tree_pane / LIB_TREE) --------------------------
   const libNames = manager.current.libraryNames();
@@ -433,7 +448,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
 
   // ----- keyboard ---------------------------------------------------------------
   useEffect(() => {
-    const dialogOpen = newLibName !== null || newFpName !== null;
+    const dialogOpen = newLibName !== null || newFpName !== null || propsOpen;
     const onKey = (e: KeyboardEvent): void => {
       const tgt = e.target as HTMLElement | null;
       const typing = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT');
@@ -452,7 +467,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [save, undo, redo, deleteSel, rotateSel, activeTool, newLibName, newFpName]);
+  }, [save, undo, redo, deleteSel, rotateSel, activeTool, newLibName, newFpName, propsOpen]);
 
   // ----- menus (menubar_footprint_editor.cpp, working subset) -------------------
   const menus: Menu[] = useMemo(() => [
@@ -469,7 +484,7 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
         { label: 'Import Footprint…', icon: 'importSymbol', action: () => importInputRef.current?.click() },
         { label: 'Export Footprint…', icon: 'exportSymbol', action: () => { const l = treeSel?.lib ?? curLib, n = treeSel?.name ?? curName; if (l && n) { const t = manager.current.saveFootprintText(l, n); if (t) downloadText(`${n}.kicad_mod`, t); } }, disabled: !curName && !treeSel?.name },
         { sep: true },
-        { label: 'Footprint Properties…', icon: 'footprintProperties', disabled: true },
+        { label: 'Footprint Properties…', icon: 'footprintProperties', action: () => workFp && setPropsOpen(true), disabled: !workFp },
         { sep: true },
         { label: 'Close Footprint Editor', action: onExitToHome },
       ],
@@ -739,6 +754,10 @@ export function FootprintEditor({ onExitToHome, initialProject }: {
           onCancel={() => setNewFpName(null)}
           onOk={() => createFootprint(newFpName)}
         />
+      )}
+
+      {propsOpen && workFp && (
+        <FootprintPropertiesDialog footprint={workFp} onOk={applyProps} onCancel={() => setPropsOpen(false)} />
       )}
 
       <TreeSelActions treeSel={treeSel} onDelete={deleteFootprint} />

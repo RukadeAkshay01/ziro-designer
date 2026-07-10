@@ -14,7 +14,7 @@
  * Coordinates are internal units (+Y down), matching the reader/writer.
  */
 
-import { atom, list, isList, head, type SList } from '../sexpr/index.js';
+import { atom, str, list, isList, head, type SList } from '../sexpr/index.js';
 import { iuToMM } from '../units.js';
 import { rotatePcb } from './read-board.js';
 import type { PcbFootprint, PcbPad, PcbShape, PcbTextItem } from './types.js';
@@ -302,6 +302,53 @@ export function deleteFootprintItems(fp: PcbFootprint, ids: ReadonlySet<string>)
 export const addPad = (fp: PcbFootprint, pad: PcbPad): PcbFootprint => ({ ...fp, pads: [...fp.pads, pad] });
 export const addShape = (fp: PcbFootprint, shape: PcbShape): PcbFootprint => ({ ...fp, shapes: [...fp.shapes, shape] });
 export const addText = (fp: PcbFootprint, text: PcbTextItem): PcbFootprint => ({ ...fp, texts: [...fp.texts, text] });
+
+// ----- footprint properties (Reference / Value / Description / Keywords) ------
+
+/** Replace the index-th positional item of a source node with a string. */
+function patchArg(src: SList, index: number, value: string): SList {
+  if (src.items.length <= index) return src;
+  const items = src.items.slice();
+  items[index] = str(value);
+  return { kind: 'list', items };
+}
+
+/** Patch a Reference/Value text's stored string: `(property "Reference" VAL …)`
+ *  or `(fp_text reference VAL …)` — the value is the 3rd positional in both. */
+function patchTextValue(src: SList, value: string): SList {
+  if (src.items.length === 0) return src; // new item: buildTextNode uses .text
+  return patchArg(src, 2, value);
+}
+
+const setRefOrVal = (fp: PcbFootprint, kind: 'reference' | 'value', value: string): PcbFootprint => ({
+  ...fp,
+  ...(kind === 'reference' ? { reference: value } : { value }),
+  texts: fp.texts.map((t) => (t.kind === kind ? { ...t, text: value, source: patchTextValue(t.source, value) } : t)),
+});
+
+export const setFootprintReference = (fp: PcbFootprint, value: string): PcbFootprint => setRefOrVal(fp, 'reference', value);
+export const setFootprintValue = (fp: PcbFootprint, value: string): PcbFootprint => setRefOrVal(fp, 'value', value);
+
+/** Set a top-level single-string child of the footprint node (descr / tags). */
+function setFootprintStringChild(fp: PcbFootprint, name: string, value: string): PcbFootprint {
+  const src = fp.source;
+  if (src.items.length === 0) return fp; // built-from-scratch footprints carry no source yet
+  return { ...fp, source: patchChild(src, name, list(atom(name), str(value))) };
+}
+
+export const setFootprintDescription = (fp: PcbFootprint, value: string): PcbFootprint => setFootprintStringChild(fp, 'descr', value);
+export const setFootprintKeywords = (fp: PcbFootprint, value: string): PcbFootprint => setFootprintStringChild(fp, 'tags', value);
+
+/** Read the footprint's `(descr …)` / `(tags …)` text for the properties dialog. */
+export function footprintStringChild(fp: PcbFootprint, name: string): string {
+  for (const it of fp.source.items) {
+    if (isList(it) && head(it) === name) {
+      const v = it.items[1];
+      return v && v.kind === 'string' ? v.value : v && v.kind === 'atom' ? v.value : '';
+    }
+  }
+  return '';
+}
 
 /** Replace one item wholesale (a dialog edit); caller supplies a source-consistent item. */
 export function replaceFootprintItem(fp: PcbFootprint, id: string, item: PcbPad | PcbShape | PcbTextItem): PcbFootprint {
