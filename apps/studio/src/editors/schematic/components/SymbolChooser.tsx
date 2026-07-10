@@ -9,12 +9,14 @@ interface Props {
   onCancel: () => void;
   /** Restrict to power-port libraries (KiCad's "Add Power" filters to power symbols). */
   powerOnly?: boolean;
+  /** "Show footprint previews in Symbol Chooser" (Preferences > Editing Options). */
+  showFootprintPreview?: boolean;
 }
 
 const MAX_RESULTS = 500;
 
 /** KiCad-style "Choose Symbol" modal: search/browse on the left, live preview on the right. */
-export function SymbolChooser({ onPick, onCancel, powerOnly = false }: Props): JSX.Element {
+export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootprintPreview = true }: Props): JSX.Element {
   const [rawIndex, setRawIndex] = useState<LibIndexEntry[]>([]);
   const index = useMemo(() => (powerOnly ? rawIndex.filter((l) => /power/i.test(l.name)) : rawIndex), [rawIndex, powerOnly]);
   const [query, setQuery] = useState('');
@@ -152,21 +154,26 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false }: Props): J
             <canvas ref={canvasRef} className="ze-preview-canvas" />
 
             {/* Footprint selector strip + preview (bottom) — mirrors the FOOTPRINT_SELECT/
-                PREVIEW widgets. Footprint geometry needs the footprint libraries (not bundled),
-                so the pane shows the symbol's assigned footprint by name. */}
-            <div className="ze-fp-bar">{previewSym ? (footprint || '— no default footprint —') : ''}</div>
-            <div className="ze-fp-preview">
-              {previewSym ? (
-                footprint ? (
-                  <div className="ze-fp-note">
-                    <div className="fp-name">{footprint}</div>
-                    <div className="ze-muted">Footprint preview needs the footprint libraries (not loaded).</div>
-                  </div>
-                ) : (
-                  <div className="ze-muted">No footprint assigned to this symbol.</div>
-                )
-              ) : null}
-            </div>
+                PREVIEW widgets, gated by "Show footprint previews in Symbol Chooser".
+                Footprint geometry needs the footprint libraries (not bundled), so the
+                pane shows the symbol's assigned footprint by name. */}
+            {showFootprintPreview && (
+              <>
+                <div className="ze-fp-bar">{previewSym ? (footprint || '— no default footprint —') : ''}</div>
+                <div className="ze-fp-preview">
+                  {previewSym ? (
+                    footprint ? (
+                      <div className="ze-fp-note">
+                        <div className="fp-name">{footprint}</div>
+                        <div className="ze-muted">Footprint preview needs the footprint libraries (not loaded).</div>
+                      </div>
+                    ) : (
+                      <div className="ze-muted">No footprint assigned to this symbol.</div>
+                    )
+                  ) : null}
+                </div>
+              </>
+            )}
 
             <div className="ze-preview-info">
               {previewSym ? (

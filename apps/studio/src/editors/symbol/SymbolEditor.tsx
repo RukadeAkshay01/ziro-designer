@@ -11,6 +11,7 @@ import { SYM_TOP_TOOLBAR, SYM_LEFT_TOOLBAR, SYM_RIGHT_TOOLBAR } from './symbolTo
 import { SymbolCanvas, type SymbolCanvasController } from './SymbolCanvas.js';
 import { SymbolLibraryManager, type ManagedLibrary } from './libraryManager.js';
 import { loadIndex } from '../schematic/symbols/index.js';
+import { useSchematicTheme } from '../../prefs/useSettings.js';
 import {
   addGraphicToSymbol, addPinToSymbol, allPins, createImagePins, deleteSymbolItems,
   ensureUnitEntry, hasAlternateBodyStyle, mirrorSymbolItems, parseItemId, renameSymbol,
@@ -94,6 +95,7 @@ export function SymbolEditor({ onExitToHome, initialProject, onAddSymbolToSchema
   onAddSymbolToSchematic?: (sym: LibSymbol) => void;
 }): JSX.Element {
   const manager = useRef(new SymbolLibraryManager());
+  const theme = useSchematicTheme();
   const [revision, setRevision] = useState(0);
   const bump = useCallback(() => setRevision(manager.current.revision + Math.random()), []);
 
@@ -1082,6 +1084,7 @@ export function SymbolEditor({ onExitToHome, initialProject, onAddSymbolToSchema
           <SymbolCanvas
             ref={controller}
             symbol={workSymbol}
+            theme={theme}
             opts={opts}
             selection={selection}
             activeTool={activeTool}
