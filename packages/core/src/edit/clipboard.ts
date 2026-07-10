@@ -157,7 +157,7 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
 
   // Not schematic data: paste as a text object (KiCad's IO_ERROR fallback).
   const asTextItem = (): PastePayload => ({
-    batch: { symbols: [], lines: [], junctions: [], noConnects: [], labels: [makeLabel('text', text, { x: 0, y: 0 })], sheets: [] },
+    batch: { symbols: [], lines: [], junctions: [], noConnects: [], labels: [makeLabel('text', text, { x: 0, y: 0 })], sheets: [], busEntries: [], images: [], graphics: [] },
     libs: [],
     refPoint: { x: 0, y: 0 },
   });
@@ -217,7 +217,7 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
   for (const l of labels) consider(l.at);
 
   return {
-    batch: { symbols, lines, junctions, noConnects, labels, sheets: [] },
+    batch: { symbols, lines, junctions, noConnects, labels, sheets: [], busEntries: [], images: [], graphics: [] },
     libs,
     refPoint: refPoint ?? { x: 0, y: 0 },
   };
@@ -245,6 +245,9 @@ export function translatePayload(p: PastePayload, delta: Vec2): PastePayload {
       noConnects: p.batch.noConnects.map((nc) => ({ ...nc, at: mv(nc.at) })),
       labels: p.batch.labels.map((l) => ({ ...l, at: mv(l.at) })),
       sheets: [],
+      busEntries: [],
+      images: [],
+      graphics: [],
     },
   };
 }

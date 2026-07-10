@@ -7,7 +7,7 @@
  * tee or a 3+-way meeting, not where two wires merely cross or simply continue.
  */
 
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchNoConnect, SchLabel, SchSheet, LibSymbol, Vec2 } from '../model/types.js';
+import type { Schematic, SchSymbol, SchLine, SchJunction, SchNoConnect, SchLabel, SchSheet, SchBusEntry, SchImage, LibGraphic, LibSymbol, Vec2 } from '../model/types.js';
 import type { Orientation } from '../geom/transform.js';
 import { refId } from './hittest.js';
 import { makeSymbol } from './build.js';
@@ -21,6 +21,10 @@ export interface ItemsBatch {
   noConnects?: SchNoConnect[];
   labels?: SchLabel[];
   sheets?: SchSheet[];
+  busEntries?: SchBusEntry[];
+  images?: SchImage[];
+  /** Sheet-level graphic shapes (rectangle/circle/arc/polyline on the notes layer). */
+  graphics?: LibGraphic[];
 }
 
 function batchIds(b: ItemsBatch): Set<string> {
@@ -31,6 +35,9 @@ function batchIds(b: ItemsBatch): Set<string> {
   b.noConnects?.forEach((nc, i) => ids.add(refId('noconnect', nc.uuid, i)));
   b.labels?.forEach((l, i) => ids.add(refId('label', l.uuid, i)));
   b.sheets?.forEach((s, i) => ids.add(refId('sheet', s.uuid, i)));
+  b.busEntries?.forEach((be, i) => ids.add(refId('busentry', be.uuid, i)));
+  b.images?.forEach((im, i) => ids.add(refId('image', im.uuid, i)));
+  b.graphics?.forEach((_, i) => ids.add(refId('graphic', undefined, i)));
   return ids;
 }
 
@@ -42,6 +49,9 @@ function collectByIds(doc: Schematic, ids: ReadonlySet<string>): ItemsBatch {
     noConnects: doc.noConnects.filter((nc, i) => ids.has(refId('noconnect', nc.uuid, i))),
     labels: doc.labels.filter((l, i) => ids.has(refId('label', l.uuid, i))),
     sheets: doc.sheets.filter((s, i) => ids.has(refId('sheet', s.uuid, i))),
+    busEntries: doc.busEntries.filter((be, i) => ids.has(refId('busentry', be.uuid, i))),
+    images: doc.images.filter((im, i) => ids.has(refId('image', im.uuid, i))),
+    graphics: doc.graphics.filter((_, i) => ids.has(refId('graphic', undefined, i))),
   };
 }
 
@@ -58,6 +68,9 @@ export function addItems(batch: ItemsBatch): EditCommand {
         noConnects: batch.noConnects?.length ? [...doc.noConnects, ...batch.noConnects] : doc.noConnects,
         labels: batch.labels?.length ? [...doc.labels, ...batch.labels] : doc.labels,
         sheets: batch.sheets?.length ? [...doc.sheets, ...batch.sheets] : doc.sheets,
+        busEntries: batch.busEntries?.length ? [...doc.busEntries, ...batch.busEntries] : doc.busEntries,
+        images: batch.images?.length ? [...doc.images, ...batch.images] : doc.images,
+        graphics: batch.graphics?.length ? [...doc.graphics, ...batch.graphics] : doc.graphics,
       };
     },
     invert(): EditCommand {
@@ -80,6 +93,9 @@ export function deleteByIds(ids: ReadonlySet<string>): EditCommand {
         noConnects: doc.noConnects.filter((nc, i) => !ids.has(refId('noconnect', nc.uuid, i))),
         labels: doc.labels.filter((l, i) => !ids.has(refId('label', l.uuid, i))),
         sheets: doc.sheets.filter((s, i) => !ids.has(refId('sheet', s.uuid, i))),
+        busEntries: doc.busEntries.filter((be, i) => !ids.has(refId('busentry', be.uuid, i))),
+        images: doc.images.filter((im, i) => !ids.has(refId('image', im.uuid, i))),
+        graphics: doc.graphics.filter((_, i) => !ids.has(refId('graphic', undefined, i))),
       };
     },
     invert(before: Schematic): EditCommand {
@@ -128,6 +144,19 @@ function removeSymbolCmd(lib: LibSymbol, sym: SchSymbol, keepLib: boolean): Edit
     },
     invert(): EditCommand {
       return placeCmd(lib, sym);
+    },
+  };
+}
+
+/** Replace the sheet at `index` with `next` (e.g. after adding a sheet pin). */
+export function replaceSheet(index: number, next: SchSheet): EditCommand {
+  return {
+    label: 'Edit Sheet',
+    apply(doc: Schematic): Schematic {
+      return { ...doc, sheets: doc.sheets.map((s, i) => (i === index ? next : s)) };
+    },
+    invert(before: Schematic): EditCommand {
+      return replaceSheet(index, before.sheets[index]!);
     },
   };
 }

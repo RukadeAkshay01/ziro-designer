@@ -2,8 +2,9 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallba
 import {
   hitTest, planMove, moveWithConnections, orthoMove, addItems, deleteByIds, placeSymbol,
   makeWire, makeBus, makeJunction, makeNoConnect, makeLabel, needsJunction, rotateOrientation, mirrorOrientation, transformItems,
+  makeRectangle, makeCircle, makeArc, makePolyline, makeBusEntry, makeImage, DEFAULT_ENTRY_SIZE,
   collectAnchors, selectionAnchors, nearestAnchor, danglingPinPositions, boxSelect, pasteItems, translatePayload,
-  type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
+  type MoveSpec, type EditCommand, type Schematic, type LibSymbol, type LibGraphic, type Vec2, type Orientation, type TransformOp, type LabelKind, type LabelShape,
   type PastePayload, type ErcViolation,
 } from '@ziroeda/core';
 import { renderSchematic, drawErcMarkers, fitToContent, setRenderInvalidator, DEFAULT_RENDER_OPTS, type RenderOpts, type Viewport } from '../render/renderer.js';
@@ -59,6 +60,91 @@ const LABEL_TOOLS: Record<string, LabelKind> = {
   placeText: 'text',
 };
 
+/** Right-toolbar shape/sheet drawing tools and their in-progress shape kind. */
+type ShapeKind = 'rectangle' | 'circle' | 'arc' | 'lines' | 'bezier' | 'sheet';
+const SHAPE_TOOL: Record<string, ShapeKind> = {
+  rectangle: 'rectangle', circle: 'circle', arc: 'arc', lines: 'lines', bezier: 'bezier', drawSheet: 'sheet',
+};
+
+interface DrawState { tool: ShapeKind; start: Vec2; points: Vec2[]; cursor: Vec2 }
+
+/** KiCad's 2-click arc (EDA_SHAPE::calcEdit state 1): quarter-circle through start/end. */
+function arcFrom2(start: Vec2, end: Vec2): { start: Vec2; mid: Vec2; end: Vec2 } | null {
+  const l = Math.hypot(end.x - start.x, end.y - start.y);
+  if (l === 0) return null;
+  const radius = l * Math.SQRT1_2;
+  const m = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  const f = Math.sqrt(Math.max(0, radius * radius - (l * l) / 4)) / l;
+  const d = { x: f * (start.y - end.y), y: f * (end.x - start.x) };
+  const c = { x: m.x + d.x, y: m.y + d.y };
+  const a0 = Math.atan2(start.y - c.y, start.x - c.x);
+  const a1 = Math.atan2(end.y - c.y, end.x - c.x);
+  let sweep = a1 - a0;
+  while (sweep <= -Math.PI) sweep += 2 * Math.PI;
+  while (sweep > Math.PI) sweep -= 2 * Math.PI;
+  const am = a0 + sweep / 2;
+  return { start, mid: { x: c.x + radius * Math.cos(am), y: c.y + radius * Math.sin(am) }, end };
+}
+
+/** Flatten a quadratic bezier (start, control, end) to a polyline (bezier tool). */
+function quadPolyline(a: Vec2, ctrl: Vec2, b: Vec2, n = 24): Vec2[] {
+  const pts: Vec2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    pts.push({
+      x: u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
+      y: u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y,
+    });
+  }
+  return pts;
+}
+
+const clampN = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, v));
+
+/** Nearest sheet border to a world point (for placing sheet pins). */
+function nearestSheetEdge(
+  sch: Schematic, p: Vec2, tol: number, snap: (v: Vec2) => Vec2,
+): { index: number; at: Vec2; side: 0 | 90 | 180 | 270 } | null {
+  let best: { index: number; at: Vec2; side: 0 | 90 | 180 | 270 } | null = null;
+  let bestD = tol;
+  sch.sheets.forEach((sh, index) => {
+    const x0 = sh.at.x, y0 = sh.at.y, x1 = x0 + sh.size.w, y1 = y0 + sh.size.h;
+    if (p.x < x0 - tol || p.x > x1 + tol || p.y < y0 - tol || p.y > y1 + tol) return;
+    const edges: { side: 0 | 90 | 180 | 270; at: Vec2; d: number }[] = [
+      { side: 180, at: { x: x0, y: clampN(p.y, y0, y1) }, d: Math.abs(p.x - x0) },
+      { side: 0, at: { x: x1, y: clampN(p.y, y0, y1) }, d: Math.abs(p.x - x1) },
+      { side: 90, at: { x: clampN(p.x, x0, x1), y: y0 }, d: Math.abs(p.y - y0) },
+      { side: 270, at: { x: clampN(p.x, x0, x1), y: y1 }, d: Math.abs(p.y - y1) },
+    ];
+    for (const ed of edges) {
+      if (ed.d < bestD) { bestD = ed.d; best = { index, at: snap(ed.at), side: ed.side }; }
+    }
+  });
+  return best;
+}
+
+/** The in-progress shape as a graphic, for live preview (built through the model). */
+function previewGraphic(ds: DrawState): LibGraphic | null {
+  const c = ds.cursor;
+  switch (ds.tool) {
+    case 'rectangle':
+    case 'sheet':
+      return makeRectangle(ds.start, c);
+    case 'circle':
+      return makeCircle(ds.start, Math.hypot(c.x - ds.start.x, c.y - ds.start.y));
+    case 'arc': {
+      const a = arcFrom2(ds.start, c);
+      return a ? makeArc(a.start, a.mid, a.end) : null;
+    }
+    case 'lines':
+      return makePolyline([...ds.points, c]);
+    case 'bezier':
+      return ds.points.length < 2
+        ? makePolyline([ds.points[0]!, c])
+        : makePolyline(quadPolyline(ds.points[0]!, c, ds.points[1]!));
+  }
+}
+
 /** A label whose name/shape are chosen and which now follows the cursor for placement. */
 export interface PendingLabel {
   kind: LabelKind;
@@ -106,7 +192,7 @@ interface Props {
   /** Switch the active tool (used to auto-start a wire from a dangling pin). */
   onRequestTool?: (id: string) => void;
   /** Double-clicked item (KiCad's Properties action, sch_edit_tool.cpp). */
-  onEditItem?: (id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet') => void;
+  onEditItem?: (id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet' | 'busentry' | 'image' | 'graphic') => void;
   /** Box-selection result (KiCad SelectMultiple): replace/add/subtract the ids. */
   onSelectBox?: (ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => void;
   /** Items being pasted: they follow the cursor until clicked to drop (KiCad's paste-then-move). */
@@ -124,6 +210,14 @@ interface Props {
   renderOpts?: RenderOpts;
   /** Mouse and editing behaviour (Preferences > Mouse and Touchpad / Editing Options). */
   inputPrefs?: InputPrefs;
+  /** A hierarchical sheet rectangle was drawn: prompt for name/file and commit. */
+  onSheetDrawn?: (at: Vec2, size: { w: number; h: number }) => void;
+  /** A sheet-pin click landed on a sheet edge: prompt for the pin name and add it. */
+  onSheetPinClick?: (sheetIndex: number, at: Vec2, side: 0 | 90 | 180 | 270) => void;
+  /** An image chosen in the editor, following the cursor until clicked to place. */
+  pendingImage?: { data: string } | null;
+  /** The pending image was dropped at `at`. */
+  onImagePlaced?: (at: Vec2) => void;
 }
 
 type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box';
@@ -137,7 +231,7 @@ const BOX_OUTLINE_L2R = 'rgb(179, 179, 0)'; // window select: dark yellow
 const BOX_OUTLINE_R2L = 'rgb(26, 26, 255)'; // greedy select: blue
 
 export const SchematicCanvas = forwardRef<CanvasController, Props>(function SchematicCanvas(
-  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange, theme = KICAD_DEFAULT, renderOpts = DEFAULT_RENDER_OPTS, inputPrefs = DEFAULT_INPUT_PREFS },
+  { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange, theme = KICAD_DEFAULT, renderOpts = DEFAULT_RENDER_OPTS, inputPrefs = DEFAULT_INPUT_PREFS, onSheetDrawn, onSheetPinClick, pendingImage, onImagePlaced },
   ref,
 ): JSX.Element {
   // The active snap grid (Preferences > Grids). With grid overrides enabled
@@ -183,6 +277,10 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const pendingWireStartRef = useRef<Vec2 | null>(null);
   // Orientation applied to the symbol currently being placed (R/X/Y before dropping).
   const placeOrientRef = useRef<Orientation>({ angle: 0 });
+  // In-progress shape/sheet drawing (rectangle/circle/arc/lines/bezier/sheet).
+  const drawStateRef = useRef<DrawState | null>(null);
+  // Bus-entry size vector (R rotates it through the four 45° orientations).
+  const entrySizeRef = useRef<Vec2>({ x: DEFAULT_ENTRY_SIZE, y: DEFAULT_ENTRY_SIZE });
 
   const dpr = () => window.devicePixelRatio || 1;
 
@@ -245,6 +343,21 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const c = snap(cursorRef.current);
       const delta = { x: c.x - pastePending.refPoint.x, y: c.y - pastePending.refPoint.y };
       doc = pasteItems(translatePayload(pastePending, delta)).apply(doc);
+    }
+    // Ghost: an image chosen in the editor follows the cursor until clicked.
+    if (pendingImage && cursorRef.current) {
+      doc = addItems({ images: [makeImage(snap(cursorRef.current), pendingImage.data)] }).apply(doc);
+    }
+    // Ghost: the bus-entry stub follows the cursor (R rotates its size vector).
+    if (activeTool === 'busEntry' && cursorRef.current) {
+      doc = addItems({ busEntries: [makeBusEntry(snap(cursorRef.current), entrySizeRef.current)] }).apply(doc);
+    }
+    // Preview: the shape/sheet being drawn (rendered through the model so it
+    // matches the final item exactly).
+    const ds = drawStateRef.current;
+    if (ds) {
+      const g = previewGraphic(ds);
+      if (g) doc = addItems({ graphics: [g] }).apply(doc);
     }
     renderSchematic(ctx, doc, vp, theme, canvas.width, canvas.height, selection, highlight, renderOpts);
 
@@ -319,7 +432,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.restore();
     }
     onScaleChange?.(vp.scale);
-  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange, theme, renderOpts, inputPrefs]);
+  }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, pendingImage, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange, theme, renderOpts, inputPrefs]);
 
   const zoomAbout = useCallback((px: number, py: number, factor: number) => {
     const vp = viewportRef.current;
@@ -399,6 +512,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       wireAnchorRef.current = null;
     }
     placeOrientRef.current = { angle: 0 };
+    // Switching tools abandons any in-progress shape and resets the entry stub.
+    drawStateRef.current = null;
+    entrySizeRef.current = { x: DEFAULT_ENTRY_SIZE, y: DEFAULT_ENTRY_SIZE };
     // The wire/bus tools use KiCad's green wire cursor; everything else resets.
     const canvas = canvasRef.current;
     if (canvas) canvas.style.cursor = (activeTool === 'drawWire' || activeTool === 'drawBus') ? WIRE_CURSOR : 'default';
@@ -457,6 +573,35 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     onCommand(addItems({ lines: [line], junctions }));
   }, [schematic, onCommand]);
 
+  // Finish a rectangle/circle/arc (2nd click), a bezier (control click), or a
+  // sheet rectangle (which hands off to the editor for its name/file dialog).
+  const finalizeShape = useCallback((ds: DrawState, p: Vec2) => {
+    drawStateRef.current = null;
+    let g: LibGraphic | null = null;
+    if (ds.tool === 'rectangle') g = makeRectangle(ds.start, p);
+    else if (ds.tool === 'circle') g = makeCircle(ds.start, Math.hypot(p.x - ds.start.x, p.y - ds.start.y));
+    else if (ds.tool === 'arc') { const a = arcFrom2(ds.start, p); if (a) g = makeArc(a.start, a.mid, a.end); }
+    else if (ds.tool === 'bezier') g = makePolyline(quadPolyline(ds.points[0]!, p, ds.points[1]!));
+    else if (ds.tool === 'sheet') {
+      const at = { x: Math.min(ds.start.x, p.x), y: Math.min(ds.start.y, p.y) };
+      const size = { w: Math.abs(p.x - ds.start.x), h: Math.abs(p.y - ds.start.y) };
+      if (size.w > 0 && size.h > 0) onSheetDrawn?.(at, size);
+      draw();
+      return;
+    }
+    if (g) onCommand(addItems({ graphics: [g] }));
+    draw();
+  }, [onCommand, onSheetDrawn, draw]);
+
+  // Finish an open polyline (lines tool): double-click / Enter / right-click.
+  const finishPoly = useCallback(() => {
+    const ds = drawStateRef.current;
+    if (!ds || ds.tool !== 'lines') return;
+    drawStateRef.current = null;
+    if (ds.points.length >= 2) onCommand(addItems({ graphics: [makePolyline(ds.points)] }));
+    draw();
+  }, [onCommand, draw]);
+
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
     if (!vp) return;
@@ -471,6 +616,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = { x: e.clientX, y: e.clientY };
       panMovedRef.current = false;
       e.preventDefault();
+      return;
+    }
+
+    // A pending image follows the cursor; a left click drops it.
+    if (pendingImage) {
+      if (e.button !== 0) return;
+      onImagePlaced?.(snap(world));
       return;
     }
 
@@ -523,6 +675,40 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       if (pendingLabel) {
         onCommand(addItems({ labels: [makeLabel(pendingLabel.kind, pendingLabel.text, snap(world), { shape: pendingLabel.shape })] }));
       }
+      return;
+    }
+
+    // Wire-to-bus entry: click drops a 45° stub (R rotates it; stays active).
+    if (activeTool === 'busEntry') {
+      onCommand(addItems({ busEntries: [makeBusEntry(snap(world), entrySizeRef.current)] }));
+      return;
+    }
+
+    // Sheet-pin: click a sheet border to add a pin there (editor prompts for the name).
+    if (activeTool === 'sheetPin') {
+      const found = nearestSheetEdge(schematic, world, (10 * dpr()) / vp.scale, snap);
+      if (found) onSheetPinClick?.(found.index, found.at, found.side);
+      return;
+    }
+
+    // Shape / sheet drawing tools (SCH_ACTIONS::draw*): 2-click for rectangle /
+    // circle / arc / sheet, multi-click for lines, 3-click for bezier.
+    const shapeKind = SHAPE_TOOL[activeTool];
+    if (shapeKind) {
+      const p = snap(world);
+      const ds = drawStateRef.current;
+      if (!ds) {
+        drawStateRef.current = { tool: shapeKind, start: p, points: [p], cursor: p };
+      } else if (shapeKind === 'lines') {
+        const last = ds.points[ds.points.length - 1]!;
+        if (last.x !== p.x || last.y !== p.y) ds.points.push(p);
+      } else if (shapeKind === 'bezier') {
+        if (ds.points.length < 2) ds.points.push(p);
+        else finalizeShape(ds, p);
+      } else {
+        finalizeShape(ds, p);
+      }
+      draw();
       return;
     }
 
@@ -595,7 +781,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         subtractive: e.ctrlKey && e.shiftKey && !e.altKey, // m_drag_subtractive
       };
     }
-  }, [activeTool, lineMode, placeLib, pendingLabel, pastePending, schematic, libById, selection, onSelect, onHighlight, onRequestTool, onPasteDone, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, draw, inputPrefs]);
+  }, [activeTool, lineMode, placeLib, pendingLabel, pastePending, pendingImage, schematic, libById, selection, onSelect, onHighlight, onRequestTool, onPasteDone, onImagePlaced, onSheetPinClick, danglingPinAt, onCommand, commitWireSegment, wireEndPoint, snapConn, finalizeShape, draw, inputPrefs]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const vp = viewportRef.current;
@@ -609,6 +795,10 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     const canvas = canvasRef.current;
     if (canvas && activeTool === 'select' && modeRef.current === 'idle')
       canvas.style.cursor = danglingPinAt(world) ? WIRE_CURSOR : 'default';
+
+    // Shape/sheet drawing preview + bus-entry / image ghosts track the cursor.
+    if (drawStateRef.current) { drawStateRef.current.cursor = snap(world); draw(); return; }
+    if (activeTool === 'busEntry' || pendingImage) { draw(); return; }
 
     if (pendingLabel) { draw(); return; } // update the attached label ghost
     if (pastePending && modeRef.current !== 'pan') { draw(); return; } // pasted items track the cursor
@@ -663,7 +853,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     } else if (cursorRef.current) {
       draw(); // keep the crosshair tracking the cursor
     }
-  }, [activeTool, placeLib, pendingLabel, pastePending, danglingPinAt, draw, onCursorMove, zoomAbout]);
+  }, [activeTool, placeLib, pendingLabel, pastePending, pendingImage, danglingPinAt, draw, onCursorMove, zoomAbout]);
 
   const onPointerUp = useCallback((e: React.PointerEvent) => {
     // Middle/right-button pan or drag-zoom ends regardless of the active tool.
@@ -709,6 +899,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
   const onDoubleClick = useCallback((e: React.MouseEvent) => {
     if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); return; }
+    // Lines tool: a double-click ends the open polyline.
+    if (drawStateRef.current?.tool === 'lines') { finishPoly(); return; }
     // Select tool: double-click opens the item's properties (KiCad binds mouse
     // double-click to SCH_ACTIONS::properties -> SCH_EDIT_TOOL::EditProperties).
     if (activeTool === 'select') {
@@ -717,13 +909,15 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const hit = hitTest(schematic, libById, toWorld(e.clientX, e.clientY), (6 * dpr()) / vp.scale);
       if (hit) onEditItem?.(hit.id, hit.kind);
     }
-  }, [activeTool, draw, schematic, libById, onEditItem]);
+  }, [activeTool, draw, schematic, libById, onEditItem, finishPoly]);
 
   // Escape ends an in-progress wire; R/X/Y rotate/mirror (KiCad hotkeys): the
   // attached symbol while placing, otherwise the current selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && wireAnchorRef.current) { wireAnchorRef.current = null; draw(); return; }
+      if (e.key === 'Escape' && drawStateRef.current) { drawStateRef.current = null; draw(); return; }
+      if (e.key === 'Enter' && drawStateRef.current?.tool === 'lines') { finishPoly(); return; }
 
       const tgt = e.target as HTMLElement | null;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable)) return;
@@ -732,6 +926,15 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       const k = e.key.toLowerCase();
       const op: TransformOp | null = k === 'r' ? 'rotateCCW' : k === 'x' ? 'mirrorX' : k === 'y' ? 'mirrorY' : null;
       if (!op) return;
+
+      // Bus-entry tool: R cycles the stub through its four 45° orientations.
+      if (activeTool === 'busEntry' && op === 'rotateCCW') {
+        const sz = entrySizeRef.current;
+        entrySizeRef.current = { x: sz.y, y: -sz.x };
+        e.preventDefault();
+        draw();
+        return;
+      }
 
       if ((activeTool === 'placeSymbol' || activeTool === 'placePower') && placeLib) {
         // Advance the attached symbol's orientation in place.
@@ -747,7 +950,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draw, activeTool, placeLib, selection, onCommand]);
+  }, [draw, activeTool, placeLib, selection, onCommand, finishPoly]);
 
   const cursor = activeTool === 'select' ? 'default' : 'crosshair';
 
@@ -761,7 +964,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onDoubleClick={onDoubleClick}
-        onContextMenu={(e) => { e.preventDefault(); if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); } }}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (activeTool === 'drawWire' || activeTool === 'drawBus') { wireAnchorRef.current = null; draw(); }
+          else if (drawStateRef.current?.tool === 'lines') finishPoly();
+          else if (drawStateRef.current) { drawStateRef.current = null; draw(); }
+        }}
         onPointerLeave={() => { cursorRef.current = null; onCursorMove?.(null); }}
       />
       {/* Label placement uses a properties dialog (in App) and a cursor-attached ghost. */}

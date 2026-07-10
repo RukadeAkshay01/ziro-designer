@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, runErc, buildSheetTree, sheetFile, findRootFile, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload, type ErcViolation, type SheetTreeNode } from '@ziroeda/core';
+import { parse, readSchematic, serializeSchematic, iuToMM, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, runErc, buildSheetTree, sheetFile, findRootFile, addItems, makeSheet, addSheetPin, replaceSheet, makeImage, History, type Schematic, type LibSymbol, type EditCommand, type Vec2, type SheetSide, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload, type ErcViolation, type SheetTreeNode } from '@ziroeda/core';
 import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
 import { LabelDialog } from './components/LabelDialog.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
@@ -104,6 +104,12 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   const [activeTool, setActiveTool] = useState('select');
   const [placeLib, setPlaceLib] = useState<LibSymbol | null>(null);
   const [pendingLabel, setPendingLabel] = useState<PendingLabel | null>(null);
+  // Right-toolbar drawing state: a drawn sheet awaiting its name/file, a sheet-pin
+  // click awaiting its name, an image chosen and following the cursor.
+  const [sheetDraw, setSheetDraw] = useState<{ at: Vec2; size: { w: number; h: number }; name: string; file: string } | null>(null);
+  const [sheetPinDraw, setSheetPinDraw] = useState<{ index: number; at: Vec2; side: SheetSide; name: string } | null>(null);
+  const [pendingImage, setPendingImage] = useState<{ data: string } | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [localToggles, setLocalToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [prefsOpen, setPrefsOpen] = useState(false);
   const common = useCommonSettings();
@@ -365,7 +371,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   }, [doc, currentFile, resetTransient]);
 
   // KiCad's Properties action: only symbols have a properties dialog so far.
-  const onEditItem = useCallback((id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet') => {
+  const onEditItem = useCallback((id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet' | 'busentry' | 'image' | 'graphic') => {
     if (kind === 'symbol') setPropsTarget(id);
     // Double-clicking a sheet enters it (KiCad's Enter Sheet).
     if (kind === 'sheet' && doc) {
@@ -531,9 +537,46 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
 
   // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
   const onToolSelect = useCallback((id: string) => {
+    // The Image tool opens a file picker; the image then follows the cursor
+    // (SCH_ACTIONS::placeImage). Table has no model type yet.
+    if (id === 'image') { imageInputRef.current?.click(); return; }
+    // Text boxes and tables need model types (SCH_TEXTBOX / SCH_TABLE) that
+    // ZiroEDA does not represent yet; surface that instead of doing nothing.
+    if (id === 'textBox') { setError('Text boxes are not supported yet — use the Text tool for now.'); return; }
+    if (id === 'table') { setError('Tables are not supported yet.'); return; }
     setActiveTool(id);
-    if (id === 'placeSymbol' || id === 'placePower') setPlaceLib(null);
-    if (LABEL_TOOL_KINDS[id]) setPendingLabel(null);
+    setPlaceLib(null);
+    setPendingLabel(null);
+    setPendingImage(null);
+  }, []);
+
+  // ----- right-toolbar drawing callbacks ---------------------------------------
+  const onSheetDrawn = useCallback((at: Vec2, size: { w: number; h: number }) => {
+    setSheetDraw({ at, size, name: 'Sheet', file: 'sheet.kicad_sch' });
+  }, []);
+
+  const onSheetPinClick = useCallback((index: number, at: Vec2, side: SheetSide) => {
+    setSheetPinDraw({ index, at, side, name: '' });
+  }, []);
+
+  const onImagePlaced = useCallback((at: Vec2) => {
+    setPendingImage((img) => {
+      if (img) runCommand(addItems({ images: [makeImage(at, img.data)] }));
+      return null;
+    });
+    setActiveTool('select');
+  }, [runCommand]);
+
+  // The image file picker: read the chosen bitmap as base64 and attach it to the cursor.
+  const onImageFile = useCallback((file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = String(reader.result);
+      const comma = res.indexOf(',');
+      setPendingImage({ data: comma >= 0 ? res.slice(comma + 1) : res });
+      setActiveTool('image');
+    };
+    reader.readAsDataURL(file);
   }, []);
 
   const onTopAction = useCallback((id: string) => {
@@ -606,6 +649,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       } else if (e.key === 'Escape') {
         if (propsTarget !== null) setPropsTarget(null);
         else if (pastePending) setPastePending(null);
+        else if (pendingImage) { setPendingImage(null); setActiveTool('select'); }
         else if (pendingLabel) { setPendingLabel(null); setActiveTool('select'); }
         else if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
         else if (selection.size > 0) setSelection(new Set());
@@ -682,9 +726,16 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
         style={{ display: 'none' }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }}
       />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onImageFile(f); e.target.value = ''; }}
+      />
       {error && (
         <div className="ze-error-banner" onClick={() => setError(null)} title="Dismiss">
-          Couldn’t open file: {error} — click to dismiss
+          {error} — click to dismiss
         </div>
       )}
       <MenuBar
@@ -760,6 +811,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
             theme={theme}
             renderOpts={renderOpts}
             inputPrefs={inputPrefs}
+            onSheetDrawn={onSheetDrawn}
+            onSheetPinClick={onSheetPinClick}
+            pendingImage={pendingImage}
+            onImagePlaced={onImagePlaced}
             onSelect={onSelect}
             onHighlight={onHighlight}
             onRequestTool={onToolSelect}
@@ -833,6 +888,71 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           onOk={(text: string, shape: LabelShape) => setPendingLabel({ kind: LABEL_TOOL_KINDS[activeTool]!, text, shape })}
           onCancel={() => setActiveTool('select')}
         />
+      )}
+
+      {/* Hierarchical sheet: after drawing the rectangle, name it and its file. */}
+      {sheetDraw && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setSheetDraw(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              Sheet Properties
+              <span className="x" title="Cancel" onClick={() => setSheetDraw(null)}>✕</span>
+            </div>
+            <div className="ze-label-dialog-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label className="row"><span>Sheet name</span>
+                <input className="ze-search" autoFocus value={sheetDraw.name}
+                  onChange={(e) => setSheetDraw({ ...sheetDraw, name: e.target.value })}
+                  onKeyDown={(e) => e.stopPropagation()} /></label>
+              <label className="row"><span>File name</span>
+                <input className="ze-search" value={sheetDraw.file}
+                  onChange={(e) => setSheetDraw({ ...sheetDraw, file: e.target.value })}
+                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { runCommand(addItems({ sheets: [makeSheet(sheetDraw.at, sheetDraw.size, sheetDraw.name, sheetDraw.file)] })); setSheetDraw(null); } }} /></label>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setSheetDraw(null)}>Cancel</button>
+              <button className="ze-btn primary" disabled={!sheetDraw.name.trim()}
+                onClick={() => { runCommand(addItems({ sheets: [makeSheet(sheetDraw.at, sheetDraw.size, sheetDraw.name.trim(), sheetDraw.file.trim())] })); setSheetDraw(null); }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Sheet pin: name the pin clicked onto a sheet border. */}
+      {sheetPinDraw && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setSheetPinDraw(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              Sheet Pin
+              <span className="x" title="Cancel" onClick={() => setSheetPinDraw(null)}>✕</span>
+            </div>
+            <div className="ze-label-dialog-body">
+              <label className="row"><span>Pin name</span>
+                <input className="ze-search" autoFocus value={sheetPinDraw.name}
+                  onChange={(e) => setSheetPinDraw({ ...sheetPinDraw, name: e.target.value })}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter' && sheetPinDraw.name.trim() && doc) {
+                      const sh = doc.sheets[sheetPinDraw.index];
+                      if (sh) runCommand(replaceSheet(sheetPinDraw.index, addSheetPin(sh, sheetPinDraw.name.trim(), sheetPinDraw.at, sheetPinDraw.side)));
+                      setSheetPinDraw(null);
+                    }
+                  }} /></label>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setSheetPinDraw(null)}>Cancel</button>
+              <button className="ze-btn primary" disabled={!sheetPinDraw.name.trim()}
+                onClick={() => {
+                  const sh = doc.sheets[sheetPinDraw.index];
+                  if (sh) runCommand(replaceSheet(sheetPinDraw.index, addSheetPin(sh, sheetPinDraw.name.trim(), sheetPinDraw.at, sheetPinDraw.side)));
+                  setSheetPinDraw(null);
+                }}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <LoadingOverlay label={loading} />
