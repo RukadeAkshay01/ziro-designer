@@ -24,7 +24,7 @@ export interface InputPrefs {
   mouseMiddle: 'pan' | 'zoom' | 'none';
   mouseRight: 'pan' | 'zoom' | 'none';
   autoStartWires: boolean;
-  crosshair: 'small' | 'full';
+  crosshair: 'small' | 'full' | '45';
   alwaysShowCrosshair: boolean;
 }
 
@@ -140,8 +140,19 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   { schematic, libById, selection, activeTool, lineMode, placeLib, pendingLabel, highlight, onSelect, onHighlight, onRequestTool, onEditItem, onSelectBox, pastePending, onPasteDone, ercMarkers, onCommand, onCursorMove, onScaleChange, theme = KICAD_DEFAULT, renderOpts = DEFAULT_RENDER_OPTS, inputPrefs = DEFAULT_INPUT_PREFS },
   ref,
 ): JSX.Element {
-  // The active snap grid (Preferences > Grids); KiCad's canvases snap to it.
-  const GRID = renderOpts.grid.sizeIU;
+  // The active snap grid (Preferences > Grids). With grid overrides enabled
+  // (ACTIONS::toggleGridOverrides), the grid depends on what's being drawn:
+  // wires, text, graphics and connectable items each get their own override.
+  const o = renderOpts.grid.overrides;
+  const GRID = (() => {
+    const base = renderOpts.grid.sizeIU;
+    if (!o || !o.enabled) return base;
+    if ((activeTool === 'drawWire' || activeTool === 'drawBus' || activeTool === 'busEntry') && o.wires) return o.wires;
+    if ((activeTool === 'placeText' || activeTool === 'textBox') && o.text) return o.text;
+    if (['rectangle', 'circle', 'arc', 'lines', 'bezier'].includes(activeTool) && o.graphics) return o.graphics;
+    if (['placeSymbol', 'placePower', 'junction', 'noConnect', 'placeLabel', 'placeGlobalLabel', 'placeHierLabel', 'select'].includes(activeTool) && o.connected) return o.connected;
+    return base;
+  })();
   const snap = (p: Vec2): Vec2 => ({ x: Math.round(p.x / GRID) * GRID, y: Math.round(p.y / GRID) * GRID });
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -280,20 +291,32 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.strokeStyle = theme.cursor;
       ctx.lineWidth = 1 / vp.scale;
       ctx.setLineDash([]);
+      const left = -vp.offsetX / vp.scale;
+      const top = -vp.offsetY / vp.scale;
+      const rightW = (canvas.width - vp.offsetX) / vp.scale;
+      const bottomW = (canvas.height - vp.offsetY) / vp.scale;
+      // Clip to the visible rect so the full-window / 45° lines never overrun.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left, top, rightW - left, bottomW - top);
+      ctx.clip();
       ctx.beginPath();
       if (inputPrefs.crosshair === 'full') {
-        const left = -vp.offsetX / vp.scale;
-        const top = -vp.offsetY / vp.scale;
-        const rightW = (canvas.width - vp.offsetX) / vp.scale;
-        const bottomW = (canvas.height - vp.offsetY) / vp.scale;
         ctx.moveTo(left, c.y); ctx.lineTo(rightW, c.y);
         ctx.moveTo(c.x, top); ctx.lineTo(c.x, bottomW);
+      } else if (inputPrefs.crosshair === '45') {
+        // 45° full-window crosshair (cursor45Crosshairs): two diagonals through
+        // the cursor spanning the whole visible rect.
+        const span = Math.max(rightW - left, bottomW - top);
+        ctx.moveTo(c.x - span, c.y - span); ctx.lineTo(c.x + span, c.y + span);
+        ctx.moveTo(c.x - span, c.y + span); ctx.lineTo(c.x + span, c.y - span);
       } else {
         const arm = 8 / vp.scale;
         ctx.moveTo(c.x - arm, c.y); ctx.lineTo(c.x + arm, c.y);
         ctx.moveTo(c.x, c.y - arm); ctx.lineTo(c.x, c.y + arm);
       }
       ctx.stroke();
+      ctx.restore();
     }
     onScaleChange?.(vp.scale);
   }, [schematic, selection, activeTool, lineMode, placeLib, pendingLabel, pastePending, highlight, ercMarkers, wireEndPoint, buildMove, onScaleChange, theme, renderOpts, inputPrefs]);

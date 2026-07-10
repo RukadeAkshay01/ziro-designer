@@ -141,6 +141,15 @@ export interface RenderOpts {
     style: 'dots' | 'lines' | 'crosses';
     lineWidthPx: number;
     minSpacingPx: number;
+    /** Per-item grid overrides (ACTIONS::toggleGridOverrides): IU sizes, only
+     * present when enabled + that item's override is on. */
+    overrides?: {
+      enabled: boolean;
+      connected?: number;
+      wires?: number;
+      text?: number;
+      graphics?: number;
+    };
   };
 }
 

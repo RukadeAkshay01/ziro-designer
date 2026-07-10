@@ -185,6 +185,8 @@ export interface EeschemaSettings {
       min_spacing: number;            // px
       snap: 0 | 1 | 2;                // always | when shown | never
       show: boolean;
+      /** Whether the per-item grid overrides apply (ACTIONS::toggleGridOverrides). */
+      overrides_enabled: boolean;
       overrides: {
         connected: GridOverride;
         wires: GridOverride;
@@ -193,7 +195,8 @@ export interface EeschemaSettings {
       };
     };
     cursor: {
-      fullscreen_cursor: boolean;
+      /** Crosshair mode (cursorSmall/Full/45Crosshairs): small cross, full-window, or 45°. */
+      crosshair: 'small' | 'full' | '45';
       always_show_cursor: boolean;
     };
   };
@@ -264,6 +267,7 @@ export const EESCHEMA_DEFAULTS: EeschemaSettings = {
       min_spacing: 10,
       snap: 0,
       show: true,
+      overrides_enabled: false,
       overrides: {
         connected: { enabled: false, size: '50 mil' },
         wires: { enabled: false, size: '50 mil' },
@@ -272,7 +276,7 @@ export const EESCHEMA_DEFAULTS: EeschemaSettings = {
       },
     },
     cursor: {
-      fullscreen_cursor: true,
+      crosshair: 'full',
       always_show_cursor: false,
     },
   },

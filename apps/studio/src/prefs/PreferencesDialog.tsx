@@ -408,8 +408,9 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }): JSX.Ele
                   onChange={(v) => upE((s) => { s.window.grid.snap = v as 0 | 1 | 2; })} />
               </Group>
               <Group title="Cursor">
-                <Check label="Full window crosshairs" checked={eeschema.window.cursor.fullscreen_cursor}
-                  onChange={(v) => upE((s) => { s.window.cursor.fullscreen_cursor = v; })} />
+                <Sel label="Crosshair:" value={eeschema.window.cursor.crosshair}
+                  options={[['small', 'Small crosshairs'], ['full', 'Full window crosshairs'], ['45', '45° full window crosshairs']]}
+                  onChange={(v) => upE((s) => { s.window.cursor.crosshair = v; })} />
                 <Check label="Always show crosshairs" checked={eeschema.window.cursor.always_show_cursor}
                   onChange={(v) => upE((s) => { s.window.cursor.always_show_cursor = v; })} />
               </Group>
@@ -503,12 +504,14 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }): JSX.Ele
                 onChange={(v) => upE((s) => { s.window.grid.fast_grid_2 = v; })} />
             </Group>
             <Group title="Grid Overrides">
+              <Check label="Enable grid overrides" checked={grid.overrides_enabled}
+                onChange={(v) => upE((s) => { s.window.grid.overrides_enabled = v; })} />
               {([['connected', 'Connected items:'], ['wires', 'Wires:'], ['text', 'Text:'], ['graphics', 'Graphics:']] as const).map(([key, label]) => (
                 <div key={key} className="ze-pref-row">
-                  <Check label={label} checked={grid.overrides[key].enabled}
+                  <Check label={label} checked={grid.overrides[key].enabled} disabled={!grid.overrides_enabled}
                     onChange={(v) => upE((s) => { s.window.grid.overrides[key].enabled = v; })} />
                   <input className="ze-search" value={grid.overrides[key].size} style={{ width: 100 }}
-                    disabled={!grid.overrides[key].enabled}
+                    disabled={!grid.overrides_enabled || !grid.overrides[key].enabled}
                     onChange={(e) => upE((s) => { s.window.grid.overrides[key].size = e.target.value; })}
                     onKeyDown={(e) => e.stopPropagation()} />
                 </div>

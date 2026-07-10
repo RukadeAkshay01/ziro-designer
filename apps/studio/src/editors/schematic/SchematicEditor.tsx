@@ -23,13 +23,13 @@ const EMPTY_SCH = '(kicad_sch (version 20231120) (generator "ziroeda") (paper "A
 
 const RADIO_GROUPS: string[][] = [
   ['unitsInches', 'unitsMils', 'unitsMm'],
-  ['crosshairSmall', 'crosshairFull'],
+  ['crosshairSmall', 'crosshairFull', 'crosshair45'],
   ['lineModeFree', 'lineMode90', 'lineMode45'],
 ];
 // Local view toggles; grid/crosshair/line-mode/hidden-pins live in the settings
 // store (Preferences) and are derived each render so the two stay in sync.
 const DEFAULT_TOGGLES = new Set(['unitsMm', 'showHierarchy', 'showProperties']);
-const SETTINGS_TOGGLES = new Set(['toggleGrid', 'toggleHiddenPins', 'crosshairSmall', 'crosshairFull', 'lineModeFree', 'lineMode90', 'lineMode45']);
+const SETTINGS_TOGGLES = new Set(['toggleGrid', 'toggleGridOverrides', 'toggleHiddenPins', 'crosshairSmall', 'crosshairFull', 'crosshair45', 'lineModeFree', 'lineMode90', 'lineMode45', 'annotateAuto']);
 const PX_PER_MM_100 = 3.7795;
 
 // Right-toolbar tool ids that place a text label, mapped to the label kind.
@@ -115,9 +115,12 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   const toggles = useMemo(() => {
     const t = new Set(localToggles);
     if (es.window.grid.show) t.add('toggleGrid');
+    if (es.window.grid.overrides_enabled) t.add('toggleGridOverrides');
     if (es.appearance.show_hidden_pins) t.add('toggleHiddenPins');
-    t.add(es.window.cursor.fullscreen_cursor ? 'crosshairFull' : 'crosshairSmall');
+    t.add(es.window.cursor.crosshair === '45' ? 'crosshair45'
+      : es.window.cursor.crosshair === 'small' ? 'crosshairSmall' : 'crosshairFull');
     t.add(es.drawing.line_mode === 0 ? 'lineModeFree' : es.drawing.line_mode === 2 ? 'lineMode45' : 'lineMode90');
+    if (es.annotation.automatic) t.add('annotateAuto');
     return t;
   }, [localToggles, es]);
   const [selFilter, setSelFilter] = useState<Set<string>>(new Set(FILTER_CATS.map((c) => c[0])));
@@ -498,6 +501,13 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       style: es.window.grid.style,
       lineWidthPx: es.window.grid.line_width,
       minSpacingPx: es.window.grid.min_spacing,
+      overrides: {
+        enabled: es.window.grid.overrides_enabled,
+        ...(es.window.grid.overrides.connected.enabled ? { connected: gridSizeToIU(es.window.grid.overrides.connected.size) } : {}),
+        ...(es.window.grid.overrides.wires.enabled ? { wires: gridSizeToIU(es.window.grid.overrides.wires.size) } : {}),
+        ...(es.window.grid.overrides.text.enabled ? { text: gridSizeToIU(es.window.grid.overrides.text.size) } : {}),
+        ...(es.window.grid.overrides.graphics.enabled ? { graphics: gridSizeToIU(es.window.grid.overrides.graphics.size) } : {}),
+      },
     },
   }), [es]);
 
@@ -515,7 +525,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     mouseMiddle: common.input.mouse_middle as InputPrefs['mouseMiddle'],
     mouseRight: common.input.mouse_right as InputPrefs['mouseRight'],
     autoStartWires: es.drawing.auto_start_wires,
-    crosshair: es.window.cursor.fullscreen_cursor ? 'full' : 'small',
+    crosshair: es.window.cursor.crosshair,
     alwaysShowCrosshair: es.window.cursor.always_show_cursor,
   }), [common, es]);
 
@@ -549,12 +559,15 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     if (SETTINGS_TOGGLES.has(id)) {
       settings.updateEeschema((s) => {
         if (id === 'toggleGrid') s.window.grid.show = !s.window.grid.show;
+        else if (id === 'toggleGridOverrides') s.window.grid.overrides_enabled = !s.window.grid.overrides_enabled;
         else if (id === 'toggleHiddenPins') s.appearance.show_hidden_pins = !s.appearance.show_hidden_pins;
-        else if (id === 'crosshairSmall') s.window.cursor.fullscreen_cursor = false;
-        else if (id === 'crosshairFull') s.window.cursor.fullscreen_cursor = true;
+        else if (id === 'crosshairSmall') s.window.cursor.crosshair = 'small';
+        else if (id === 'crosshairFull') s.window.cursor.crosshair = 'full';
+        else if (id === 'crosshair45') s.window.cursor.crosshair = '45';
         else if (id === 'lineModeFree') s.drawing.line_mode = 0;
         else if (id === 'lineMode90') s.drawing.line_mode = 1;
         else if (id === 'lineMode45') s.drawing.line_mode = 2;
+        else if (id === 'annotateAuto') s.annotation.automatic = !s.annotation.automatic;
       });
       return;
     }
@@ -683,19 +696,25 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       <Toolbar entries={TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       <div className="ze-body">
+        {(toggles.has('showProperties') || toggles.has('showHierarchy')) && (
         <div className="ze-leftdock">
+          {toggles.has('showProperties') && (
           <div className="ze-panel grow">
             <div className="ze-panel-header">Properties</div>
             <div className="ze-panel-body">
               <div className="ze-muted">{selection.size === 0 ? 'No objects selected' : `${selection.size} item(s) selected`}</div>
             </div>
           </div>
+          )}
+          {toggles.has('showHierarchy') && (
           <div className="ze-panel grow">
             <div className="ze-panel-header">Schematic Hierarchy</div>
             <div className="ze-panel-body">
               {sheetTree && renderSheetNode(sheetTree, 0, currentPath, switchSheet)}
             </div>
           </div>
+          )}
+          {toggles.has('showProperties') && (
           <div className="ze-panel">
             <div className="ze-panel-header">Selection Filter</div>
             <div className="ze-panel-body">
@@ -721,7 +740,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
               </div>
             </div>
           </div>
+          )}
         </div>
+        )}
 
         <Toolbar entries={LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
 

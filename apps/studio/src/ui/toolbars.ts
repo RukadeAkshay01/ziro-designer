@@ -68,17 +68,22 @@ export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'showPcbNew', icon: 'showPcbNew', title: 'Open PCB in board editor' },
 ];
 
-/** Left vertical toolbar (display / edit options — mostly toggles). */
+/**
+ * Left vertical toolbar (display / edit options — all toggles), transcribed
+ * from KiCad 10's `toolbars_sch_editor.cpp` TOOLBAR_LOC::LEFT: grid + grid
+ * overrides, the Units group, the Crosshair-modes group (small / full / 45°),
+ * hidden pins, the Line-modes group, annotate-automatically, then the
+ * hierarchy + properties panel toggles.
+ */
 export const LEFT_TOOLBAR: ToolEntry[] = [
-  { id: 'toggleGrid', icon: 'grid', title: 'Toggle grid', toggle: true },
-  { id: 'toggleGridOverrides', icon: 'gridOverride', title: 'Toggle grid overrides', toggle: true },
-  sep,
+  { id: 'toggleGrid', icon: 'grid', title: 'Show grid', toggle: true },
+  { id: 'toggleGridOverrides', icon: 'gridOverride', title: 'Enable grid overrides', toggle: true },
   { id: 'unitsInches', icon: 'unitIn', title: 'Inches', toggle: true },
   { id: 'unitsMils', icon: 'unitMils', title: 'Mils', toggle: true },
   { id: 'unitsMm', icon: 'unitMm', title: 'Millimeters', toggle: true },
-  sep,
   { id: 'crosshairSmall', icon: 'crosshairSmall', title: 'Small crosshair', toggle: true },
   { id: 'crosshairFull', icon: 'crosshairFull', title: 'Full-window crosshair', toggle: true },
+  { id: 'crosshair45', icon: 'crosshair45', title: '45° full-window crosshair', toggle: true },
   sep,
   { id: 'toggleHiddenPins', icon: 'hiddenPins', title: 'Show hidden pins', toggle: true },
   sep,
@@ -88,7 +93,7 @@ export const LEFT_TOOLBAR: ToolEntry[] = [
   sep,
   { id: 'annotateAuto', icon: 'annotateAuto', title: 'Annotate automatically', toggle: true },
   sep,
-  { id: 'showHierarchy', icon: 'hierarchy', title: 'Show hierarchy navigator', toggle: true },
+  { id: 'showHierarchy', icon: 'hierarchy', title: 'Show schematic hierarchy', toggle: true },
   { id: 'showProperties', icon: 'properties', title: 'Show properties manager', toggle: true },
 ];
 
