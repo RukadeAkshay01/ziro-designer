@@ -8,7 +8,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { parse, readBoard, iuToMM, hitTestBoard, boardItemBBox, parseBoardItemId, type Board } from '@ziroeda/core';
+import {
+  parse, readBoard, iuToMM, boardHitCandidates, boardItemsInBox, boardItemBBox, parseBoardItemId,
+  type Board, type BoardItemKind,
+} from '@ziroeda/core';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions, type SheetInfo } from './renderBoard.js';
@@ -121,6 +124,8 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   // Live selection read by draw()'s overlay pass without re-creating the callback.
   const selForDrawRef = useRef<ReadonlySet<string>>(selection);
   selForDrawRef.current = selection;
+  // The in-progress rubber-band marquee (world coords), read by the overlay pass.
+  const boxRef = useRef<{ a: { x: number; y: number }; b: { x: number; y: number } } | null>(null);
   const sceneRef = useRef<BoardScene | null>(null);
   const rafRef = useRef(0);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -277,6 +282,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
       }
       ctx.setLineDash([]);
     }
+    // Rubber-band marquee: KiCad tints it blue for a left→right window
+    // (contained) select, green for a right→left crossing select.
+    const box = boxRef.current;
+    if (box) {
+      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({ x: p.x * v.scale + v.tx, y: p.y * v.scale + v.ty });
+      const p0 = toPx(box.a), p1 = toPx(box.b);
+      const rightward = box.b.x >= box.a.x;
+      ctx.strokeStyle = rightward ? 'rgba(120,170,255,0.9)' : 'rgba(120,255,150,0.9)';
+      ctx.fillStyle = rightward ? 'rgba(120,170,255,0.12)' : 'rgba(120,255,150,0.12)';
+      ctx.lineWidth = dpr;
+      const x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y);
+      const w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+    }
     setScale(v.scale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startCrispRender]);
@@ -390,30 +410,55 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     return { x: ((clientX - rect.left) * dpr - v.tx) / v.scale, y: ((clientY - rect.top) * dpr - v.ty) / v.scale };
   }, [dpr]);
 
-  const dragRef = useRef<{ x: number; y: number } | null>(null);
-  // The press that may become a click-select: its origin + whether it moved
-  // (a moved left press is a pan, a still one is a click — PCB_SELECTION_TOOL).
-  const downRef = useRef<{ x: number; y: number; button: number; moved: boolean } | null>(null);
+  // Middle-button pan (KiCad reserves the left button for select/move).
+  const panRef = useRef<{ x: number; y: number } | null>(null);
+  // The left press in progress: origin, world origin, whether it began on an
+  // item, and whether it has moved (still = click; moved on empty = box-select).
+  const downRef = useRef<{ x: number; y: number; world: { x: number; y: number } | null; onItem: boolean; moved: boolean; shift: boolean } | null>(null);
 
-  // PCB_SELECTION_TOOL::selectPoint: hit-test under the cursor and update the
-  // selection. Shift adds/toggles (m_additive); a plain click on empty clears.
-  const clickSelect = useCallback((clientX: number, clientY: number, additive: boolean): void => {
+  // Does an item of this kind pass the Selection Filter panel? (KiCad's
+  // SELECTION_FILTER_OPTIONS — track/arc→Tracks, shape→Graphics, etc.)
+  const filterKeyOf = (kind: BoardItemKind): string | null =>
+    kind === 'track' || kind === 'arc' ? 'tracks'
+    : kind === 'via' ? 'vias'
+    : kind === 'footprint' ? 'footprints'
+    : kind === 'zone' ? 'zones'
+    : kind === 'shape' ? 'graphics'
+    : kind === 'text' ? 'text'
+    : null;
+  const passesFilter = (id: string): boolean => {
+    const r = parseBoardItemId(id);
+    if (!r) return false;
+    const key = filterKeyOf(r.kind);
+    return key ? selFilter.has(key) : true;
+  };
+  const tolOf = (): number => (5 * dpr) / viewRef.current.scale; // ~5px, like COLLECTORS_GUIDE
+
+  // PCB_SELECTION_TOOL::selectPoint: pick the best filtered candidate under the
+  // cursor and update the selection. Shift adds/toggles; a plain click clears.
+  const clickSelect = (clientX: number, clientY: number, additive: boolean): void => {
     const w = worldAt(clientX, clientY);
     const brd = boardRef.current;
     if (!w || !brd) return;
-    const tol = (5 * dpr) / viewRef.current.scale; // ~5px accuracy, like COLLECTORS_GUIDE
-    const id = hitTestBoard(brd, w, tol);
+    const id = boardHitCandidates(brd, w, tolOf()).filter(passesFilter)[0] ?? null;
     setSelection((prev) => {
       const next = new Set(additive ? prev : []);
       if (id) { if (additive && next.has(id)) next.delete(id); else next.add(id); }
       return next;
     });
-  }, [worldAt, dpr]);
+  };
 
   const onPointerDown = (e: React.PointerEvent): void => {
-    if (e.button === 0 || e.button === 1) {
-      dragRef.current = { x: e.clientX, y: e.clientY };
-      downRef.current = { x: e.clientX, y: e.clientY, button: e.button, moved: false };
+    if (e.button === 1) {
+      panRef.current = { x: e.clientX, y: e.clientY };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+    if (e.button === 0) {
+      const w = worldAt(e.clientX, e.clientY);
+      const brd = boardRef.current;
+      const onItem = !!(w && brd && boardHitCandidates(brd, w, tolOf()).some(passesFilter));
+      downRef.current = { x: e.clientX, y: e.clientY, world: w, onItem, moved: false, shift: e.shiftKey };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
   };
@@ -426,23 +471,45 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
       const wy = ((e.clientY - rect.top) * dpr - v.ty) / v.scale;
       setCursor({ x: wx, y: wy });
     }
-    // Past a few pixels the press is a drag (pan), not a click-select.
-    const d = downRef.current;
-    if (d && !d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3 * dpr) d.moved = true;
-    if (dragRef.current) {
+    if (panRef.current) {
       const v = viewRef.current;
-      v.tx += (e.clientX - dragRef.current.x) * dpr;
-      v.ty += (e.clientY - dragRef.current.y) * dpr;
-      dragRef.current = { x: e.clientX, y: e.clientY };
+      v.tx += (e.clientX - panRef.current.x) * dpr;
+      v.ty += (e.clientY - panRef.current.y) * dpr;
+      panRef.current = { x: e.clientX, y: e.clientY };
       requestDraw();
+      return;
+    }
+    const d = downRef.current;
+    if (d) {
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3 * dpr) d.moved = true;
+      // Dragging from empty space rubber-bands a selection box.
+      if (d.moved && !d.onItem && d.world) {
+        const cur = worldAt(e.clientX, e.clientY);
+        if (cur) { boxRef.current = { a: d.world, b: cur }; requestDraw(); }
+      }
     }
   };
   const onPointerUp = (e: React.PointerEvent): void => {
     const d = downRef.current;
-    dragRef.current = null;
+    const box = boxRef.current;
+    panRef.current = null;
     downRef.current = null;
-    // A still left-press is a click: select the item under the cursor.
-    if (d && d.button === 0 && !d.moved) clickSelect(e.clientX, e.clientY, e.shiftKey);
+    boxRef.current = null;
+    if (d) {
+      if (!d.moved) {
+        clickSelect(e.clientX, e.clientY, d.shift);
+      } else if (box && boardRef.current) {
+        // Left→right = window (contained); right→left = crossing (touching).
+        const contained = box.b.x >= box.a.x;
+        const ids = boardItemsInBox(boardRef.current, box.a.x, box.a.y, box.b.x, box.b.y, contained).filter(passesFilter);
+        setSelection((prev) => {
+          const next = new Set(d.shift ? prev : []);
+          for (const id of ids) next.add(id);
+          return next;
+        });
+      }
+    }
+    requestDraw();
   };
 
   useEffect(() => {
