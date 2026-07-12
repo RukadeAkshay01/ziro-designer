@@ -142,3 +142,4 @@ export {
   hitTestBoard, boardHitCandidates, boardItemsInBox,
   type BoardItemKind, type BoardItemRef, type BoardBBox,
 } from './pcb/edit-board.js';
+export { serializeBoard, writeBoardNode } from './pcb/write-board.js';
