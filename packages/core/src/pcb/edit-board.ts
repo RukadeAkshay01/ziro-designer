@@ -23,9 +23,11 @@
  * (KiCad selects the FOOTPRINT, not its pad, unless you alt/nested-select).
  */
 
+import { atom, isList, head, type SList, type SNode } from '../sexpr/index.js';
+import { iuToMM } from '../units.js';
 import { arcCenter } from './read-board.js';
 import { footprintBBox } from './edit-footprint.js';
-import type { Board, PcbShape, PcbTextItem, PcbZone } from './types.js';
+import type { Board, PcbFootprint, PcbTrack, PcbArcTrack, PcbVia, PcbShape, PcbTextItem, PcbZone } from './types.js';
 import type { Vec2 } from '../model/types.js';
 
 // ----- item ids ---------------------------------------------------------------
@@ -351,4 +353,124 @@ export function boardItemsInBox(
     if (z.fills.some((f) => f.polys.some((p) => polyInRect(rect, p)))) push('zone', i);
   });
   return out;
+}
+
+// ----- move (PCB_MOVE_TOOL / EDIT_TOOL::Move) ---------------------------------
+//
+// Source-patched exactly like edit-footprint.ts: an edited item keeps its
+// `source` node and only the changed coordinate child (`(start …)`, `(at …)`,
+// `(pts …)`) is rewritten, so serializeBoard round-trips every unmodelled field.
+
+const list = (...items: SNode[]): SList => ({ kind: 'list', items });
+
+/** Internal units -> trimmed millimetre string (KiCad formatInternalUnits). */
+const mm = (iu: number): string => {
+  let s = iuToMM(iu).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+  if (s === '' || s === '-0') s = '0';
+  return s;
+};
+
+/** Replace (or append) the first `name` child of a source node. */
+function patchChild(src: SList, name: string, node: SList): SList {
+  let replaced = false;
+  const items = src.items.map((it) => {
+    if (!replaced && isList(it) && head(it) === name) { replaced = true; return node; }
+    return it;
+  });
+  if (!replaced) items.push(node);
+  return { kind: 'list', items };
+}
+
+const atNode = (p: Vec2, angle = 0): SList =>
+  angle ? list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(angle)))
+        : list(atom('at'), atom(mm(p.x)), atom(mm(p.y)));
+const xyNode = (name: string, p: Vec2): SList => list(atom(name), atom(mm(p.x)), atom(mm(p.y)));
+const ptsNode = (pts: Vec2[]): SList => ({
+  kind: 'list', items: [atom('pts'), ...pts.map((p) => list(atom('xy'), atom(mm(p.x)), atom(mm(p.y))))],
+});
+
+const add = (p: Vec2, d: Vec2): Vec2 => ({ x: p.x + d.x, y: p.y + d.y });
+
+const moveTrack = (t: PcbTrack, d: Vec2): PcbTrack => {
+  const start = add(t.start, d), end = add(t.end, d);
+  let src = patchChild(t.source, 'start', xyNode('start', start));
+  src = patchChild(src, 'end', xyNode('end', end));
+  return { ...t, start, end, source: src };
+};
+
+const moveArc = (a: PcbArcTrack, d: Vec2): PcbArcTrack => {
+  const start = add(a.start, d), mid = add(a.mid, d), end = add(a.end, d);
+  let src = patchChild(a.source, 'start', xyNode('start', start));
+  src = patchChild(src, 'mid', xyNode('mid', mid));
+  src = patchChild(src, 'end', xyNode('end', end));
+  return { ...a, start, mid, end, source: src };
+};
+
+const moveVia = (v: PcbVia, d: Vec2): PcbVia => {
+  const at = add(v.at, d);
+  return { ...v, at, source: patchChild(v.source, 'at', atNode(at)) };
+};
+
+const moveText = (t: PcbTextItem, d: Vec2): PcbTextItem => {
+  const at = add(t.at, d);
+  return { ...t, at, source: patchChild(t.source, 'at', atNode(at, t.angle)) };
+};
+
+/** Shift every coordinate of a board graphic and patch its source in place. */
+const moveShape = (s: PcbShape, d: Vec2): PcbShape => {
+  let src = s.source;
+  const next: PcbShape = { ...s };
+  if (s.center) { next.center = add(s.center, d); src = patchChild(src, 'center', xyNode('center', next.center)); }
+  if (s.start) { next.start = add(s.start, d); src = patchChild(src, 'start', xyNode('start', next.start)); }
+  if (s.end) { next.end = add(s.end, d); src = patchChild(src, 'end', xyNode('end', next.end)); }
+  if (s.mid) { next.mid = add(s.mid, d); src = patchChild(src, 'mid', xyNode('mid', next.mid)); }
+  if (s.pts) { next.pts = s.pts.map((p) => add(p, d)); src = patchChild(src, 'pts', ptsNode(next.pts)); }
+  next.source = src;
+  return next;
+};
+
+/**
+ * Move a whole footprint: only its anchor `(at …)` is patched in the source
+ * (children stay in the footprint's local frame, exactly as the writer emits
+ * them). The model's board-absolute child coordinates are shifted too, so
+ * hit-testing and rendering follow the footprint to its new spot.
+ */
+const moveFootprint = (fp: PcbFootprint, d: Vec2): PcbFootprint => ({
+  ...fp,
+  at: add(fp.at, d),
+  pads: fp.pads.map((p) => ({ ...p, at: add(p.at, d) })),
+  texts: fp.texts.map((t) => ({ ...t, at: add(t.at, d) })),
+  shapes: fp.shapes.map((s) => {
+    const n: PcbShape = { ...s };
+    if (s.center) n.center = add(s.center, d);
+    if (s.start) n.start = add(s.start, d);
+    if (s.end) n.end = add(s.end, d);
+    if (s.mid) n.mid = add(s.mid, d);
+    if (s.pts) n.pts = s.pts.map((p) => add(p, d));
+    return n;
+  }),
+  source: patchChild(fp.source, 'at', atNode(add(fp.at, d), fp.angle)),
+});
+
+/**
+ * Move the selected board items by `delta` (internal units). Mirrors
+ * PCB_MOVE_TOOL committing a drag. Zones are not moved yet (their outline lives
+ * in the source polygon; that lands with zone editing) — their ids are ignored.
+ */
+export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Vec2): Board {
+  if ((delta.x === 0 && delta.y === 0) || ids.size === 0) return board;
+  const idx: Record<BoardItemKind, Set<number>> = {
+    track: new Set(), arc: new Set(), via: new Set(), footprint: new Set(),
+    zone: new Set(), shape: new Set(), text: new Set(),
+  };
+  for (const id of ids) { const r = parseBoardItemId(id); if (r) idx[r.kind].add(r.index); }
+  return {
+    ...board,
+    tracks: board.tracks.map((t, i) => (idx.track.has(i) ? moveTrack(t, delta) : t)),
+    arcs: board.arcs.map((a, i) => (idx.arc.has(i) ? moveArc(a, delta) : a)),
+    vias: board.vias.map((v, i) => (idx.via.has(i) ? moveVia(v, delta) : v)),
+    shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? moveShape(s, delta) : s)),
+    texts: board.texts.map((t, i) => (idx.text.has(i) ? moveText(t, delta) : t)),
+    footprints: board.footprints.map((f, i) => (idx.footprint.has(i) ? moveFootprint(f, delta) : f)),
+  };
 }

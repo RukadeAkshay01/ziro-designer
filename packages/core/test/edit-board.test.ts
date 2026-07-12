@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
   boardItemId, parseBoardItemId, boardItemBBox,
-  hitTestBoard, boardHitCandidates, boardItemsInBox,
+  hitTestBoard, boardHitCandidates, boardItemsInBox, moveBoardItems,
 } from '../src/pcb/edit-board.js';
+import { parse } from '../src/sexpr/index.js';
+import { readBoard } from '../src/pcb/read-board.js';
+import { serializeBoard } from '../src/pcb/write-board.js';
+import { mmToIU } from '../src/units.js';
 import type { Board, PcbTrack, PcbArcTrack, PcbVia, PcbFootprint, PcbShape, PcbTextItem, PcbZone, PcbPad } from '../src/pcb/types.js';
 
 const EMPTY = { kind: 'list' as const, items: [] };
@@ -173,5 +177,50 @@ describe('boardItemBBox', () => {
     const b = board({});
     expect(boardItemBBox(b, 'track:0')).toBeNull();
     expect(boardItemBBox(b, 'nope:0')).toBeNull();
+  });
+});
+
+describe('moveBoardItems', () => {
+  it('moves only the selected items by the delta', () => {
+    const b = board({
+      tracks: [track({ x: 0, y: 0 }, { x: 100, y: 0 })],
+      vias: [via({ x: 500, y: 500 })],
+    });
+    const moved = moveBoardItems(b, new Set(['track:0']), { x: 10, y: 20 });
+    expect(moved.tracks[0]!.start).toEqual({ x: 10, y: 20 });
+    expect(moved.tracks[0]!.end).toEqual({ x: 110, y: 20 });
+    expect(moved.vias[0]!.at).toEqual({ x: 500, y: 500 }); // untouched
+  });
+
+  it('moves a footprint anchor and its board-absolute children together', () => {
+    const b = board({ footprints: [footprint([pad({ x: 5000, y: 5000 }, 400, 400)])] });
+    const moved = moveBoardItems(b, new Set(['footprint:0']), { x: 100, y: -100 });
+    expect(moved.footprints[0]!.at).toEqual({ x: 100, y: -100 });
+    expect(moved.footprints[0]!.pads[0]!.at).toEqual({ x: 5100, y: 4900 });
+  });
+
+  it('no-ops for an empty selection or a zero delta', () => {
+    const b = board({ tracks: [track({ x: 0, y: 0 }, { x: 100, y: 0 })] });
+    expect(moveBoardItems(b, new Set(), { x: 10, y: 10 })).toBe(b);
+    expect(moveBoardItems(b, new Set(['track:0']), { x: 0, y: 0 })).toBe(b);
+  });
+
+  it('patched sources survive a serialize round-trip at the new coordinates', () => {
+    const TEXT = `(kicad_pcb (version 20241229) (generator "pcbnew")
+	(layers (0 "F.Cu" signal) (2 "B.Cu" signal))
+	(net 0 "") (net 1 "GND")
+	(segment (start 10 10) (end 30 10) (width 0.25) (layer "F.Cu") (net 1))
+	(via (at 40 10) (size 0.8) (drill 0.4) (layers "F.Cu" "B.Cu") (net 1))
+)
+`;
+    const b = readBoard(parse(TEXT));
+    const moved = moveBoardItems(b, new Set(['track:0', 'via:0']), { x: mmToIU(5), y: mmToIU(0) });
+    const reread = readBoard(parse(serializeBoard(moved)));
+    expect(reread.tracks[0]!.start.x).toBe(mmToIU(15));
+    expect(reread.tracks[0]!.end.x).toBe(mmToIU(35));
+    expect(reread.vias[0]!.at.x).toBe(mmToIU(45));
+    // The track kept its net/width (only coords were patched).
+    expect(reread.tracks[0]!.net).toBe(1);
+    expect(reread.tracks[0]!.width).toBe(mmToIU(0.25));
   });
 });
