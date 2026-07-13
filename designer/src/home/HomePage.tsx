@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { zipSync, unzipSync } from 'fflate';
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
 import {
   storageAvailable,
@@ -30,6 +29,9 @@ import {
 } from './projectTree.js';
 
 export type { PickedHomeFile } from './files.js';
+import { archiveEntries, zipArchive, expandArchive } from './archive.js';
+import { NewProjectDialog } from './components/NewProjectDialog.js';
+import { TemplateDialog } from './components/TemplateDialog.js';
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();
@@ -430,32 +432,17 @@ export function HomePage({
     await ingest(files);
   };
 
-  // Path relative to the project's own folder ("proj/proj.kicad_sch" ->
-  // "proj.kicad_sch", "proj/sub/a.kicad_sch" -> "sub/a.kicad_sch").
-  const relPath = (name: string): string => {
-    const p = name.replace(/\\/g, '/');
-    return p.includes('/') ? p.slice(p.indexOf('/') + 1) : p;
-  };
-
-  // Archive Project: KiCad zips the whole project folder, reading each file as a
-  // raw byte stream (PROJECT_ARCHIVER::Archive). We do the same — zip every
-  // file's bytes byte-exact (so binaries survive), re-nested under a folder
-  // named for the project (so it unzips the way KiCad expects).
+  // Archive Project: KiCad zips the whole project folder byte-exact under a
+  // folder named for the project (see archive.ts). Here: collect, zip, download.
   const archiveProject = async (): Promise<void> => {
     if (!picked) return;
-    // KiCad archives only its allow-listed file types (gerbers/backups/images
-    // and other stray files are skipped), reading each as raw bytes.
-    const withBytes = picked.filter(
-      (f) => f.bytes && f.bytes.length > 0 && inArchiveAllowList(f.name),
-    );
-    if (withBytes.length === 0) return;
-    setLoading('Archiving project…');
+    const name = projectNameOf(picked);
+    const entries = archiveEntries(picked, name);
+    if (!entries) return;
+    setLoading('Archiving project\u2026');
     await nextPaint(); // paint the overlay before zipSync blocks the main thread
     try {
-      const name = projectNameOf(picked);
-      const entries: Record<string, Uint8Array> = {};
-      for (const f of withBytes) entries[`${name}/${relPath(f.name)}`] = f.bytes!;
-      const blob = new Blob([zipSync(entries, { level: 6 })], { type: 'application/zip' });
+      const blob = new Blob([zipArchive(entries)], { type: 'application/zip' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -470,19 +457,14 @@ export function HomePage({
   // Unarchive Project: read a .zip, expand it in memory, and feed its files
   // through the same ingest path as a folder open (so it lands in the tree and
   // persists). Entries are raw bytes — byte-exact, like KiCad's Unarchive.
+  // Unarchive Project: expand a .zip in memory and feed its files through the
+  // same ingest path as a folder open (so it lands in the tree and persists).
   const onUnarchive = async (list: FileList | null): Promise<void> => {
     const file = list?.[0];
     if (!file) return;
-    let entries: Record<string, Uint8Array>;
-    try {
-      entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
-    } catch {
-      return; /* not a valid zip */
-    }
-    const files = Object.entries(entries)
-      .filter(([name, data]) => !name.endsWith('/') && data.length > 0)
-      .map(([name, data]) => ({ name, bytesOf: async () => data }));
-    await ingest(files);
+    const expanded = expandArchive(new Uint8Array(await file.arrayBuffer()));
+    if (!expanded) return; /* not a valid zip */
+    await ingest(expanded.map(({ name, data }) => ({ name, bytesOf: async () => data })));
   };
 
   const runMgrAction = (action: MgrAction): void => {
@@ -910,120 +892,24 @@ export function HomePage({
       </div>
 
       {newName !== null && (
-        <div className="ze-modal-backdrop" onMouseDown={() => setNewName(null)}>
-          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="ze-modal-header">
-              New Project
-              <span className="x" title="Cancel" onClick={() => setNewName(null)}>
-                ✕
-              </span>
-            </div>
-            <div className="ze-label-dialog-body">
-              <div className="row">
-                <span>Name</span>
-                <input
-                  className="ze-search"
-                  autoFocus
-                  placeholder="untitled"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void createNewProject();
-                    else if (e.key === 'Escape') setNewName(null);
-                  }}
-                />
-              </div>
-              <div style={{ opacity: 0.6, fontSize: 12, paddingLeft: 66 }}>
-                Creates {sanitizeProjectName(newName) || 'untitled'}.kicad_pro, .kicad_sch and
-                .kicad_pcb.
-              </div>
-            </div>
-            <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setNewName(null)}>
-                Cancel
-              </button>
-              <button
-                className="ze-btn primary"
-                disabled={!sanitizeProjectName(newName)}
-                onClick={() => void createNewProject()}
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
+        <NewProjectDialog
+          name={newName}
+          onChange={setNewName}
+          onCancel={() => setNewName(null)}
+          onCreate={() => void createNewProject()}
+        />
       )}
 
-      {/* New Project from Template (KiCad's DIALOG_TEMPLATE_SELECTOR): pick a
-          template on the left, read its description, name it, and create. */}
       {tplOpen && (
-        <div className="ze-modal-backdrop" onMouseDown={() => setTplOpen(false)}>
-          <div className="ze-modal ze-template-dialog" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="ze-modal-header">
-              New Project from Template
-              <span className="x" title="Cancel" onClick={() => setTplOpen(false)}>
-                ✕
-              </span>
-            </div>
-            <div className="ze-modal-body">
-              <div className="ze-tpl-list">
-                {templates.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`ze-tpl-card${tplSel?.id === t.id ? ' active' : ''}`}
-                    onClick={() => setTplSel(t)}
-                    onDoubleClick={() => {
-                      setTplSel(t);
-                      if (sanitizeProjectName(tplName)) void createFromTpl();
-                    }}
-                    title={t.title}
-                  >
-                    {t.icon ? <img src={t.icon} alt="" /> : <span className="ze-tpl-noicon" />}
-                    <span>{t.title}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="ze-tpl-detail">
-                {tplSel ? (
-                  <>
-                    <h3>{tplSel.title}</h3>
-                    <p className="ze-tpl-desc">{tplSel.description}</p>
-                  </>
-                ) : (
-                  <p style={{ opacity: 0.6 }}>Select a template.</p>
-                )}
-              </div>
-            </div>
-            <div className="ze-modal-footer" style={{ justifyContent: 'space-between' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>Project name</span>
-                <input
-                  className="ze-search"
-                  autoFocus
-                  placeholder="untitled"
-                  value={tplName}
-                  onChange={(e) => setTplName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void createFromTpl();
-                    else if (e.key === 'Escape') setTplOpen(false);
-                  }}
-                />
-              </label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="ze-btn" onClick={() => setTplOpen(false)}>
-                  Cancel
-                </button>
-                <button
-                  className="ze-btn primary"
-                  disabled={!tplSel || !sanitizeProjectName(tplName)}
-                  onClick={() => void createFromTpl()}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <TemplateDialog
+          templates={templates}
+          selected={tplSel}
+          name={tplName}
+          onSelect={setTplSel}
+          onName={setTplName}
+          onCancel={() => setTplOpen(false)}
+          onCreate={() => void createFromTpl()}
+        />
       )}
 
       {/* KiCad's "Load Schematic" progress dialog, web-style. */}
