@@ -17,6 +17,7 @@ format-compatibility.
 | `libs/core/`     | `libs/core/`         | Small shared utilities (`mirror`, flip directions)                        |
 | `libs/sexpr/`    | `libs/sexpr/`        | Lossless S-expression tokenizer/parser/serializer                         |
 | `qa/`            | `qa/`                | Unit tests (`qa/unittests/<module>/`) and test fixtures (`qa/data/`)      |
+| `tools/`         | *(ours)*             | Offline build pipelines (not workspace packages): `models3d/` converts the upstream STEP 3D library to the hosted `.glb` set |
 
 Each directory is a workspace package (`@ziroeda/<dir>`); `qa/` holds the
 Vitest suites for all of them, arranged by the module under test.

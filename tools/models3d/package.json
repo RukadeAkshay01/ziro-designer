@@ -1,0 +1,11 @@
+{
+  "name": "ziro-models3d-pipeline",
+  "private": true,
+  "type": "module",
+  "description": "Builds the hosted 3D-model library: KiCad packages3D STEP -> glTF (.glb).",
+  "dependencies": {
+    "@gltf-transform/core": "^4.4.1",
+    "@gltf-transform/functions": "^4.4.1",
+    "occt-import-js": "^0.0.23"
+  }
+}

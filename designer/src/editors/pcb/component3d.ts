@@ -7,12 +7,17 @@
  *   per model: translate(offset) · rotateZ(-rz)·rotateY(-ry)·rotateX(-rx)
  *              · scale(scale)
  *
- * KiCad `.wrl` models are authored in 0.1-inch units (2.54 mm) with the mounting
- * plane at Z=0 — three's VRMLLoader reads them raw, and our board frame is the
- * same mm/Z-up frame, so the matrix carries over. Models load async and are
- * cached per URL; a part used many times is fetched once and cloned.
+ * KiCad's model space is 0.1-inch units (2.54 mm) with the mounting plane at
+ * Z=0. Legacy `.wrl` models are authored directly in that space (VRMLLoader
+ * reads them raw). Our hosted library is the KiCad 10 STEP set pre-converted
+ * to `.glb` in native millimetres, so — exactly like KiCad's own STEP loader
+ * (3d_cache OCC plugin) — glTF geometry is pre-scaled by 1/2.54 into model
+ * space and the shared placement matrix carries over unchanged. Models load
+ * async and are cached per URL; a part used many times is fetched once and
+ * cloned.
  */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLLoader } from 'three/addons/loaders/VRMLLoader.js';
 import type { Board } from '@ziroeda/pcbnew';
 import { resolveModel } from './model3d.js';
@@ -71,24 +76,39 @@ export function mountComponents(
   libBase: string,
   onChange?: () => void,
 ): () => void {
-  const loader = new VRMLLoader();
+  const vrmlLoader = new VRMLLoader();
+  const gltfLoader = new GLTFLoader();
   const cache = new Map<string, Promise<THREE.Object3D | null>>();
   const added: THREE.Object3D[] = [];
   let cancelled = false;
 
+  // glTF geometry is in mm; bring it into KiCad model space (1 unit = 2.54 mm)
+  // so the placement matrix treats every format identically.
+  const intoModelSpace = (o: THREE.Object3D): THREE.Object3D => {
+    o.scale.setScalar(1 / MODEL_UNIT_MM);
+    const wrapper = new THREE.Group();
+    wrapper.add(o);
+    return wrapper;
+  };
+
   for (const fp of board.footprints) {
     for (const model of fp.models) {
       if (model.hide || !model.path) continue;
-      const res = resolveModel(model.path, { libBase });
+      const res = resolveModel(model.path, { libBase, libExt: 'glb' });
       if (res.kind !== 'url') continue; // project-local models: later
       const url = res.url;
 
       let p = cache.get(url);
       if (!p) {
-        p = loader
-          .loadAsync(url)
-          .then((o) => o as THREE.Object3D)
-          .catch(() => null);
+        p = /\.glb$/i.test(url)
+          ? gltfLoader
+              .loadAsync(url)
+              .then((g) => intoModelSpace(g.scene))
+              .catch(() => null)
+          : vrmlLoader
+              .loadAsync(url)
+              .then((o) => o as THREE.Object3D)
+              .catch(() => null);
         cache.set(url, p);
       }
       const matrix = modelMatrix(fp, model, box, hz);
