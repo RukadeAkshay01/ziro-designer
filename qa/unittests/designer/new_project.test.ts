@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr';
 import { readSchematic } from '@ziroeda/eeschema';
 import { readBoard } from '@ziroeda/pcbnew';
-import { newProjectFiles, sanitizeProjectName } from '@ziroeda/designer/src/home/newProject.js';
+import { newProjectFiles, sanitizeProjectName } from '@ziroeda/designer/src/home/new_project.js';
 
 describe('newProjectFiles', () => {
   const files = newProjectFiles('MyBoard');

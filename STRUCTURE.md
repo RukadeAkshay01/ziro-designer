@@ -23,6 +23,12 @@ Vitest suites for all of them, arranged by the module under test.
 
 ## Conventions
 
+- **Modules are named after their upstream counterpart files** (snake_case,
+  as upstream): `home/project_tree.ts` ↔ `kicad/project_tree.cpp`,
+  `home/project_archiver.ts` ↔ `common/project/project_archiver.cpp`,
+  `home/dialogs/dialog_template_selector.tsx` ↔
+  `kicad/dialogs/dialog_template_selector.cpp`. New modules should name their
+  counterpart in the header comment.
 - **Product names, not tool names, for our own code.** The app lives in
   `designer/` and file/folder names avoid third-party product names; data
   fixtures keep their native file extensions (`.kicad_sch`, `.kicad_pcb`, …)

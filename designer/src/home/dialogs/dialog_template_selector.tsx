@@ -2,7 +2,7 @@
  * template on the left, read its description, name it, and create. */
 
 import type { JSX } from 'react';
-import { sanitizeProjectName } from '../newProject.js';
+import { sanitizeProjectName } from '../new_project.js';
 import type { TemplateMeta } from '../templates.js';
 
 export function TemplateDialog({

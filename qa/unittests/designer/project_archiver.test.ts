@@ -9,7 +9,7 @@ import {
   zipArchive,
   expandArchive,
   relPath,
-} from '@ziroeda/designer/src/home/archive.js';
+} from '@ziroeda/designer/src/home/project_archiver.js';
 import type { PickedHomeFile } from '@ziroeda/designer/src/home/files.js';
 
 const enc = new TextEncoder();

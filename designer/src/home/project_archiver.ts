@@ -8,7 +8,7 @@
 
 import { unzipSync, zipSync } from 'fflate';
 import type { PickedHomeFile } from './files.js';
-import { inArchiveAllowList } from './projectTree.js';
+import { inArchiveAllowList } from './project_tree.js';
 
 /** Path relative to the project's own folder ("proj/proj.kicad_sch" ->
  * "proj.kicad_sch", "proj/sub/a.kicad_sch" -> "sub/a.kicad_sch"). */

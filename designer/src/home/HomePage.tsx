@@ -15,7 +15,7 @@ import { LoadingOverlay, nextPaint } from '../ui/LoadingOverlay.js';
 import { loadTemplates, createFromTemplate, type TemplateMeta } from './templates.js';
 import '../ui/shell.css';
 import type { PickedHomeFile } from './files.js';
-import { EMPTY_PCB, newProjectFiles, sanitizeProjectName } from './newProject.js';
+import { EMPTY_PCB, newProjectFiles, sanitizeProjectName } from './new_project.js';
 import {
   buildDirTree,
   treeIconFor,
@@ -26,12 +26,12 @@ import {
   fmtBytes,
   fmtWhen,
   type DirNode,
-} from './projectTree.js';
+} from './project_tree.js';
 
 export type { PickedHomeFile } from './files.js';
-import { archiveEntries, zipArchive, expandArchive } from './archive.js';
-import { NewProjectDialog } from './components/NewProjectDialog.js';
-import { TemplateDialog } from './components/TemplateDialog.js';
+import { archiveEntries, zipArchive, expandArchive } from './project_archiver.js';
+import { NewProjectDialog } from './dialogs/dialog_new_project.js';
+import { TemplateDialog } from './dialogs/dialog_template_selector.js';
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();

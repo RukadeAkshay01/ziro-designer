@@ -1,7 +1,7 @@
 /** New Project name prompt (KiCad's File > New Project dialog). */
 
 import type { JSX } from 'react';
-import { sanitizeProjectName } from '../newProject.js';
+import { sanitizeProjectName } from '../new_project.js';
 
 export function NewProjectDialog({
   name,

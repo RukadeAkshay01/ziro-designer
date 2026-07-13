@@ -10,7 +10,7 @@ import {
   isHiddenFile,
   isRootFileName,
   fmtBytes,
-} from '@ziroeda/designer/src/home/projectTree.js';
+} from '@ziroeda/designer/src/home/project_tree.js';
 import type { PickedHomeFile } from '@ziroeda/designer/src/home/files.js';
 
 const f = (name: string): PickedHomeFile => ({ name, text: '' });
