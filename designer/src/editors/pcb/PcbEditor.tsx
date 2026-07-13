@@ -10,20 +10,50 @@
 import { iuToMM } from '@ziroeda/common';
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { parse } from '@ziroeda/sexpr';
-import { readBoard, boardHitCandidates, boardItemsInBox, boardItemBBox, parseBoardItemId, moveBoardItems, deleteBoardItems, rotateBoardItems, duplicateBoardItems, serializeBoard, type Board, type BoardItemKind } from '@ziroeda/pcbnew';
+import {
+  readBoard,
+  boardHitCandidates,
+  boardItemsInBox,
+  boardItemBBox,
+  parseBoardItemId,
+  moveBoardItems,
+  deleteBoardItems,
+  rotateBoardItems,
+  duplicateBoardItems,
+  serializeBoard,
+  type Board,
+  type BoardItemKind,
+} from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
-import { buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions, type SheetInfo } from './renderBoard.js';
+import {
+  buildScene,
+  buildDrawSteps,
+  DEFAULT_DRAW_OPTIONS,
+  type BoardScene,
+  type PcbDrawOptions,
+  type SheetInfo,
+} from './renderBoard.js';
 import type { Viewer3D } from './pcb3d.js';
 import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
-import { PCB_TOP_TOOLBAR, PCB_LEFT_TOOLBAR, PCB_RIGHT_TOOLBAR, PCB_FILTER_CATS } from './pcbToolbars.js';
+import {
+  PCB_TOP_TOOLBAR,
+  PCB_LEFT_TOOLBAR,
+  PCB_RIGHT_TOOLBAR,
+  PCB_FILTER_CATS,
+} from './pcbToolbars.js';
 import '../../ui/shell.css';
 
 const MM = 10000;
 
 // KiCad's own visibility (eye) icons, vendored under assets/.
-const EYE_ICONS = import.meta.glob('../assets/toolbar/visibility*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const eyeUrl = (on: boolean): string | undefined => EYE_ICONS[`../assets/toolbar/visibility${on ? '' : '_off'}.svg`];
+const EYE_ICONS = import.meta.glob('../assets/toolbar/visibility*.svg', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const eyeUrl = (on: boolean): string | undefined =>
+  EYE_ICONS[`../assets/toolbar/visibility${on ? '' : '_off'}.svg`];
 
 // Left-toolbar radio groups (same convention as the schematic editor).
 const RADIO_GROUPS: string[][] = [
@@ -33,8 +63,15 @@ const RADIO_GROUPS: string[][] = [
   ['zoneDisplayFilled', 'zoneDisplayOutline'],
 ];
 const DEFAULT_TOGGLES = new Set([
-  'toggleGrid', 'unitsMm', 'crosshairSmall', 'lineMode90',
-  'showRatsnest', 'ratsnestLineMode', 'zoneDisplayFilled', 'showLayersManager', 'showProperties',
+  'toggleGrid',
+  'unitsMm',
+  'crosshairSmall',
+  'lineMode90',
+  'showRatsnest',
+  'ratsnestLineMode',
+  'zoneDisplayFilled',
+  'showLayersManager',
+  'showProperties',
 ]);
 
 // Objects tab rows, exactly appearance_controls.cpp s_objectSettings.
@@ -60,18 +97,42 @@ const OBJECT_ROWS: [keyof ObjectState | string, string, boolean][] = [
 ];
 
 interface ObjectState {
-  tracks: boolean; vias: boolean; pads: boolean; zones: boolean; images: boolean;
-  footprintsFront: boolean; footprintsBack: boolean;
-  fpValues: boolean; fpReferences: boolean; fpText: boolean;
-  ratsnest: boolean; drcWarnings: boolean; drcErrors: boolean; drcExclusions: boolean;
-  anchors: boolean; drawingSheet: boolean; grid: boolean;
+  tracks: boolean;
+  vias: boolean;
+  pads: boolean;
+  zones: boolean;
+  images: boolean;
+  footprintsFront: boolean;
+  footprintsBack: boolean;
+  fpValues: boolean;
+  fpReferences: boolean;
+  fpText: boolean;
+  ratsnest: boolean;
+  drcWarnings: boolean;
+  drcErrors: boolean;
+  drcExclusions: boolean;
+  anchors: boolean;
+  drawingSheet: boolean;
+  grid: boolean;
 }
 const DEFAULT_OBJECTS: ObjectState = {
-  tracks: true, vias: true, pads: true, zones: true, images: true,
-  footprintsFront: true, footprintsBack: true,
-  fpValues: true, fpReferences: true, fpText: true,
-  ratsnest: true, drcWarnings: true, drcErrors: true, drcExclusions: true,
-  anchors: true, drawingSheet: true, grid: true,
+  tracks: true,
+  vias: true,
+  pads: true,
+  zones: true,
+  images: true,
+  footprintsFront: true,
+  footprintsBack: true,
+  fpValues: true,
+  fpReferences: true,
+  fpText: true,
+  ratsnest: true,
+  drcWarnings: true,
+  drcErrors: true,
+  drcExclusions: true,
+  anchors: true,
+  drawingSheet: true,
+  grid: true,
 };
 // project_local_settings.cpp defaults.
 const DEFAULT_OPACITY = { tracks: 1.0, vias: 1.0, pads: 1.0, zones: 0.6, images: 0.6 };
@@ -83,14 +144,29 @@ const PRESETS: { name: string; layers: (all: string[], copper: string[]) => stri
   { name: 'All Layers', layers: (all) => all },
   { name: 'No Layers', layers: () => [] },
   { name: 'All Copper Layers', layers: (_a, cu) => [...cu, 'Edge.Cuts'] },
-  { name: 'Inner Copper Layers', layers: (_a, cu) => [...cu.filter((c) => /^In/.test(c)), 'Edge.Cuts'] },
+  {
+    name: 'Inner Copper Layers',
+    layers: (_a, cu) => [...cu.filter((c) => /^In/.test(c)), 'Edge.Cuts'],
+  },
   { name: 'Front Layers', layers: () => ['F.Cu', ...FRONT_TECH, 'Edge.Cuts'] },
-  { name: 'Front Assembly View', layers: () => ['F.SilkS', 'F.Mask', 'F.Fab', 'F.CrtYd', 'Edge.Cuts'] },
+  {
+    name: 'Front Assembly View',
+    layers: () => ['F.SilkS', 'F.Mask', 'F.Fab', 'F.CrtYd', 'Edge.Cuts'],
+  },
   { name: 'Back Layers', layers: () => ['B.Cu', ...BACK_TECH, 'Edge.Cuts'] },
-  { name: 'Back Assembly View', layers: () => ['B.SilkS', 'B.Mask', 'B.Fab', 'B.CrtYd', 'Edge.Cuts'] },
+  {
+    name: 'Back Assembly View',
+    layers: () => ['B.SilkS', 'B.Mask', 'B.Fab', 'B.CrtYd', 'Edge.Cuts'],
+  },
 ];
 
-export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName }: {
+export function PcbEditor({
+  fileName,
+  text,
+  onExit,
+  onShowSchematic,
+  projectName,
+}: {
   fileName: string;
   text: string;
   onExit: () => void;
@@ -107,14 +183,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [objects, setObjects] = useState<ObjectState>(DEFAULT_OBJECTS);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
-  const [selFilter, setSelFilter] = useState<Set<string>>(new Set(PCB_FILTER_CATS.map((c) => c[0])));
+  const [selFilter, setSelFilter] = useState<Set<string>>(
+    new Set(PCB_FILTER_CATS.map((c) => c[0])),
+  );
   const [netQuery, setNetQuery] = useState('');
   const [activeTool, setActiveTool] = useState('select');
   // Selected board items (PCB_SELECTION_TOOL's selection), by `${kind}:${index}` id.
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
   // Disambiguation menu (PCB_SELECTION_TOOL::doSelectionMenu): shown at a click
   // that hits several equally-plausible items so the user can pick one.
-  const [disambig, setDisambig] = useState<{ x: number; y: number; ids: string[]; additive: boolean } | null>(null);
+  const [disambig, setDisambig] = useState<{
+    x: number;
+    y: number;
+    ids: string[];
+    additive: boolean;
+  } | null>(null);
   const [show3D, setShow3D] = useState(false);
   const viewer3dRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
@@ -148,22 +231,25 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   const showProperties = toggles.has('showProperties');
 
   // Draw options derived from the Objects tab + zone display mode.
-  const drawOpts = useMemo<PcbDrawOptions>(() => ({
-    ...DEFAULT_DRAW_OPTIONS,
-    tracks: objects.tracks,
-    vias: objects.vias,
-    pads: objects.pads,
-    zones: objects.zones,
-    fpValues: objects.fpValues,
-    fpReferences: objects.fpReferences,
-    fpText: objects.fpText,
-    drawingSheet: objects.drawingSheet,
-    trackOpacity: opacity.tracks,
-    viaOpacity: opacity.vias,
-    padOpacity: opacity.pads,
-    zoneOpacity: opacity.zones,
-    zoneOutline: toggles.has('zoneDisplayOutline'),
-  }), [objects, opacity, toggles]);
+  const drawOpts = useMemo<PcbDrawOptions>(
+    () => ({
+      ...DEFAULT_DRAW_OPTIONS,
+      tracks: objects.tracks,
+      vias: objects.vias,
+      pads: objects.pads,
+      zones: objects.zones,
+      fpValues: objects.fpValues,
+      fpReferences: objects.fpReferences,
+      fpText: objects.fpText,
+      drawingSheet: objects.drawingSheet,
+      trackOpacity: opacity.tracks,
+      viaOpacity: opacity.vias,
+      padOpacity: opacity.pads,
+      zoneOpacity: opacity.zones,
+      zoneOutline: toggles.has('zoneDisplayOutline'),
+    }),
+    [objects, opacity, toggles],
+  );
 
   // Parse after the first paint so "Loading…" is visible for big boards.
   useEffect(() => {
@@ -180,7 +266,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
     }, 30);
-    return () => { cancelled = true; clearTimeout(id); };
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
   }, [text, fileName]);
 
   // "Footprints Front/Back" hide whole footprints: rebuild the scene.
@@ -202,7 +291,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   // interacting: it runs to completion, promotes itself, and — if the view has
   // moved on — immediately starts another. So the picture continuously
   // re-sharpens *during* a zoom/pan instead of only after it stops.
-  const cacheRef = useRef<{ canvas: HTMLCanvasElement; view: { scale: number; tx: number; ty: number } } | null>(null);
+  const cacheRef = useRef<{
+    canvas: HTMLCanvasElement;
+    view: { scale: number; tx: number; ty: number };
+  } | null>(null);
   const renderingRef = useRef(false);
   const viewChangedRef = useRef(true);
 
@@ -210,8 +302,15 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     const c = cacheRef.current;
     const v = viewRef.current;
     const canvas = canvasRef.current;
-    return !!c && !!canvas && c.view.scale === v.scale && c.view.tx === v.tx && c.view.ty === v.ty
-      && c.canvas.width === canvas.width && c.canvas.height === canvas.height;
+    return (
+      !!c &&
+      !!canvas &&
+      c.view.scale === v.scale &&
+      c.view.tx === v.tx &&
+      c.view.ty === v.ty &&
+      c.canvas.width === canvas.width &&
+      c.canvas.height === canvas.height
+    );
   };
 
   const startCrispRender = useCallback(() => {
@@ -219,19 +318,34 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
     if (!canvas || !scene || canvas.width < 2) return;
-    if (viewMatchesCache()) { viewChangedRef.current = false; return; }
+    if (viewMatchesCache()) {
+      viewChangedRef.current = false;
+      return;
+    }
     renderingRef.current = true;
     viewChangedRef.current = false;
     const work = document.createElement('canvas');
     work.width = canvas.width;
     work.height = canvas.height;
     const cctx = work.getContext('2d');
-    if (!cctx) { renderingRef.current = false; return; }
+    if (!cctx) {
+      renderingRef.current = false;
+      return;
+    }
     const jobView = { ...viewRef.current };
     const sheet: SheetInfo | undefined = boardRef.current
       ? { paper: boardRef.current.paper, titleBlock: boardRef.current.titleBlock, fileName }
       : undefined;
-    const steps = buildDrawSteps(cctx, scene, jobView, visible, work.width, work.height, drawOpts, sheet);
+    const steps = buildDrawSteps(
+      cctx,
+      scene,
+      jobView,
+      visible,
+      work.width,
+      work.height,
+      drawOpts,
+      sheet,
+    );
     let i = 0;
     const run = (): void => {
       const t0 = performance.now();
@@ -281,9 +395,13 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     const sel = selForDrawRef.current;
     const brd = boardRef.current;
     if (brd && sel.size > 0) {
-      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({ x: p.x * v.scale + v.tx, y: p.y * v.scale + v.ty });
+      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
+        x: p.x * v.scale + v.tx,
+        y: p.y * v.scale + v.ty,
+      });
       const md = moveDeltaRef.current;
-      const ox = md ? md.x : 0, oy = md ? md.y : 0;
+      const ox = md ? md.x : 0,
+        oy = md ? md.y : 0;
       ctx.strokeStyle = 'rgba(255,255,255,0.95)';
       ctx.lineWidth = Math.max(1, dpr);
       ctx.setLineDash([4 * dpr, 3 * dpr]);
@@ -293,8 +411,12 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
         const p0 = toPx({ x: b.minX + ox, y: b.minY + oy });
         const p1 = toPx({ x: b.maxX + ox, y: b.maxY + oy });
         const pad = 2 * dpr;
-        ctx.strokeRect(Math.min(p0.x, p1.x) - pad, Math.min(p0.y, p1.y) - pad,
-          Math.abs(p1.x - p0.x) + 2 * pad, Math.abs(p1.y - p0.y) + 2 * pad);
+        ctx.strokeRect(
+          Math.min(p0.x, p1.x) - pad,
+          Math.min(p0.y, p1.y) - pad,
+          Math.abs(p1.x - p0.x) + 2 * pad,
+          Math.abs(p1.y - p0.y) + 2 * pad,
+        );
       }
       ctx.setLineDash([]);
     }
@@ -302,14 +424,20 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     // (contained) select, green for a right→left crossing select.
     const box = boxRef.current;
     if (box) {
-      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({ x: p.x * v.scale + v.tx, y: p.y * v.scale + v.ty });
-      const p0 = toPx(box.a), p1 = toPx(box.b);
+      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
+        x: p.x * v.scale + v.tx,
+        y: p.y * v.scale + v.ty,
+      });
+      const p0 = toPx(box.a),
+        p1 = toPx(box.b);
       const rightward = box.b.x >= box.a.x;
       ctx.strokeStyle = rightward ? 'rgba(120,170,255,0.9)' : 'rgba(120,255,150,0.9)';
       ctx.fillStyle = rightward ? 'rgba(120,170,255,0.12)' : 'rgba(120,255,150,0.12)';
       ctx.lineWidth = dpr;
-      const x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y);
-      const w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
+      const x = Math.min(p0.x, p1.x),
+        y = Math.min(p0.y, p1.y);
+      const w = Math.abs(p1.x - p0.x),
+        h = Math.abs(p1.y - p0.y);
       ctx.fillRect(x, y, w, h);
       ctx.strokeRect(x, y, w, h);
     }
@@ -318,13 +446,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     if (brd && hover) {
       const hb = boardItemBBox(brd, hover);
       if (hb) {
-        const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({ x: p.x * v.scale + v.tx, y: p.y * v.scale + v.ty });
-        const q0 = toPx({ x: hb.minX, y: hb.minY }), q1 = toPx({ x: hb.maxX, y: hb.maxY });
+        const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
+          x: p.x * v.scale + v.tx,
+          y: p.y * v.scale + v.ty,
+        });
+        const q0 = toPx({ x: hb.minX, y: hb.minY }),
+          q1 = toPx({ x: hb.maxX, y: hb.maxY });
         const pad = 2 * dpr;
         ctx.strokeStyle = 'rgba(120,230,255,1)';
         ctx.lineWidth = Math.max(1.5, 1.5 * dpr);
-        ctx.strokeRect(Math.min(q0.x, q1.x) - pad, Math.min(q0.y, q1.y) - pad,
-          Math.abs(q1.x - q0.x) + 2 * pad, Math.abs(q1.y - q0.y) + 2 * pad);
+        ctx.strokeRect(
+          Math.min(q0.x, q1.x) - pad,
+          Math.min(q0.y, q1.y) - pad,
+          Math.abs(q1.x - q0.x) + 2 * pad,
+          Math.abs(q1.y - q0.y) + 2 * pad,
+        );
       }
     }
     setScale(v.scale);
@@ -343,30 +479,44 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   }, [visible, drawOpts, requestDraw]);
 
   // The selection / disambiguation hover live only in the overlay — just repaint.
-  useEffect(() => { requestDraw(); }, [selection, disambig, requestDraw]);
+  useEffect(() => {
+    requestDraw();
+  }, [selection, disambig, requestDraw]);
 
   // ----- board model mutation (edits + undo/redo) -----------------------------
 
   // Recompile the render scene for a new board and repaint (edits change geometry).
-  const rebuildScene = useCallback((b: Board) => {
-    sceneRef.current = buildScene(b, { hideFrontFootprints: !objects.footprintsFront, hideBackFootprints: !objects.footprintsBack });
-    cacheRef.current = null;
-    requestDraw();
-  }, [objects.footprintsFront, objects.footprintsBack, requestDraw]);
+  const rebuildScene = useCallback(
+    (b: Board) => {
+      sceneRef.current = buildScene(b, {
+        hideFrontFootprints: !objects.footprintsFront,
+        hideBackFootprints: !objects.footprintsBack,
+      });
+      cacheRef.current = null;
+      requestDraw();
+    },
+    [objects.footprintsFront, objects.footprintsBack, requestDraw],
+  );
 
-  const setBoardModel = useCallback((b: Board) => {
-    boardRef.current = b;
-    setBoard(b);
-    rebuildScene(b);
-  }, [rebuildScene]);
+  const setBoardModel = useCallback(
+    (b: Board) => {
+      boardRef.current = b;
+      setBoard(b);
+      rebuildScene(b);
+    },
+    [rebuildScene],
+  );
 
   // Commit an edit: snapshot the current board for undo, then swap in the next.
-  const commitBoard = useCallback((next: Board) => {
-    const prev = boardRef.current;
-    if (prev) undoRef.current.push(prev);
-    redoRef.current = [];
-    setBoardModel(next);
-  }, [setBoardModel]);
+  const commitBoard = useCallback(
+    (next: Board) => {
+      const prev = boardRef.current;
+      if (prev) undoRef.current.push(prev);
+      redoRef.current = [];
+      setBoardModel(next);
+    },
+    [setBoardModel],
+  );
 
   const undo = useCallback(() => {
     const prev = undoRef.current.pop();
@@ -396,12 +546,15 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
 
   // Rotate the selection ±90° about its centre (EDIT_TOOL::Rotate). Keeps the
   // selection so it can be rotated repeatedly.
-  const rotateSel = useCallback((ccw: boolean) => {
-    const brd = boardRef.current;
-    const sel = selForDrawRef.current;
-    if (!brd || sel.size === 0) return;
-    commitBoard(rotateBoardItems(brd, sel, ccw));
-  }, [commitBoard]);
+  const rotateSel = useCallback(
+    (ccw: boolean) => {
+      const brd = boardRef.current;
+      const sel = selForDrawRef.current;
+      if (!brd || sel.size === 0) return;
+      commitBoard(rotateBoardItems(brd, sel, ccw));
+    },
+    [commitBoard],
+  );
 
   // Duplicate the selection 1 mm off (EDIT_TOOL::Duplicate) and select the copies.
   const duplicateSel = useCallback(() => {
@@ -420,11 +573,20 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     let { minX, minY, maxX, maxY } = scene.bbox;
     // Include the drawing sheet (page origin at 0,0) so the frame fits on screen.
     const paper = boardRef.current?.paper?.split(/\s+/)[0];
-    const PAGE: Record<string, [number, number]> = { A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] };
+    const PAGE: Record<string, [number, number]> = {
+      A5: [210, 148],
+      A4: [297, 210],
+      A3: [420, 297],
+      A2: [594, 420],
+      A1: [841, 594],
+      A0: [1189, 841],
+    };
     if (paper && PAGE[paper] && objects.drawingSheet) {
       const [pw, ph] = PAGE[paper]!;
-      minX = Math.min(minX, 0); minY = Math.min(minY, 0);
-      maxX = Math.max(maxX, pw * MM); maxY = Math.max(maxY, ph * MM);
+      minX = Math.min(minX, 0);
+      minY = Math.min(minY, 0);
+      maxX = Math.max(maxX, pw * MM);
+      maxY = Math.max(maxY, ph * MM);
     }
     const margin = 5 * MM;
     const s = Math.min(
@@ -439,19 +601,22 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     requestDraw();
   }, [requestDraw]);
 
-  const zoomStep = useCallback((factor: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const v = viewRef.current;
-    const px = canvas.width / 2;
-    const py = canvas.height / 2;
-    const wx = (px - v.tx) / v.scale;
-    const wy = (py - v.ty) / v.scale;
-    v.scale *= factor;
-    v.tx = px - wx * v.scale;
-    v.ty = py - wy * v.scale;
-    requestDraw();
-  }, [requestDraw]);
+  const zoomStep = useCallback(
+    (factor: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const v = viewRef.current;
+      const px = canvas.width / 2;
+      const py = canvas.height / 2;
+      const wx = (px - v.tx) / v.scale;
+      const wy = (py - v.ty) / v.scale;
+      v.scale *= factor;
+      v.tx = px - wx * v.scale;
+      v.ty = py - wy * v.scale;
+      requestDraw();
+    },
+    [requestDraw],
+  );
 
   // Size the canvas to its container (device pixels) and fit on first layout.
   const fittedRef = useRef(false);
@@ -500,31 +665,51 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   }, [dpr, requestDraw]);
 
   // World coordinate under a pointer event (device pixels → board units).
-  const worldAt = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    const v = viewRef.current;
-    return { x: ((clientX - rect.left) * dpr - v.tx) / v.scale, y: ((clientY - rect.top) * dpr - v.ty) / v.scale };
-  }, [dpr]);
+  const worldAt = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const rect = canvas.getBoundingClientRect();
+      const v = viewRef.current;
+      return {
+        x: ((clientX - rect.left) * dpr - v.tx) / v.scale,
+        y: ((clientY - rect.top) * dpr - v.ty) / v.scale,
+      };
+    },
+    [dpr],
+  );
 
   // Middle-button pan (KiCad reserves the left button for select/move).
   const panRef = useRef<{ x: number; y: number } | null>(null);
   // The left press in progress: origin, world origin, the item it landed on (if
   // any), and whether it has moved. Still = click; moved on an item = drag-move;
   // moved on empty = box-select.
-  const downRef = useRef<{ x: number; y: number; world: { x: number; y: number } | null; hitId: string | null; onItem: boolean; moved: boolean; shift: boolean } | null>(null);
+  const downRef = useRef<{
+    x: number;
+    y: number;
+    world: { x: number; y: number } | null;
+    hitId: string | null;
+    onItem: boolean;
+    moved: boolean;
+    shift: boolean;
+  } | null>(null);
 
   // Does an item of this kind pass the Selection Filter panel? (KiCad's
   // SELECTION_FILTER_OPTIONS — track/arc→Tracks, shape→Graphics, etc.)
   const filterKeyOf = (kind: BoardItemKind): string | null =>
-    kind === 'track' || kind === 'arc' ? 'tracks'
-    : kind === 'via' ? 'vias'
-    : kind === 'footprint' ? 'footprints'
-    : kind === 'zone' ? 'zones'
-    : kind === 'shape' ? 'graphics'
-    : kind === 'text' ? 'text'
-    : null;
+    kind === 'track' || kind === 'arc'
+      ? 'tracks'
+      : kind === 'via'
+        ? 'vias'
+        : kind === 'footprint'
+          ? 'footprints'
+          : kind === 'zone'
+            ? 'zones'
+            : kind === 'shape'
+              ? 'graphics'
+              : kind === 'text'
+                ? 'text'
+                : null;
   const passesFilter = (id: string): boolean => {
     const r = parseBoardItemId(id);
     if (!r) return false;
@@ -537,7 +722,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   const applySelect = (id: string | null, additive: boolean): void => {
     setSelection((prev) => {
       const next = new Set(additive ? prev : []);
-      if (id) { if (additive && next.has(id)) next.delete(id); else next.add(id); }
+      if (id) {
+        if (additive && next.has(id)) next.delete(id);
+        else next.add(id);
+      }
       return next;
     });
   };
@@ -551,7 +739,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     const brd = boardRef.current;
     if (!w || !brd) return;
     const cands = boardHitCandidates(brd, w, tolOf()).filter(passesFilter);
-    if (cands.length === 0) { applySelect(null, additive); return; }
+    if (cands.length === 0) {
+      applySelect(null, additive);
+      return;
+    }
     // guessSelectionCandidates: keep only the top-priority tier (a track over a
     // footprint resolves to the track, no menu); ambiguous only within a tier.
     const rankOf = (id: string): number => {
@@ -559,7 +750,10 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
       return k === 'zone' ? 2 : k === 'footprint' ? 1 : 0;
     };
     const tier = cands.filter((c) => rankOf(c) === rankOf(cands[0]!));
-    if (tier.length <= 1) { applySelect(cands[0]!, additive); return; }
+    if (tier.length <= 1) {
+      applySelect(cands[0]!, additive);
+      return;
+    }
     setDisambig({ x: clientX, y: clientY, ids: cands, additive });
   };
 
@@ -572,8 +766,17 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     if (e.button === 0) {
       const w = worldAt(e.clientX, e.clientY);
       const brd = boardRef.current;
-      const hitId = w && brd ? (boardHitCandidates(brd, w, tolOf()).filter(passesFilter)[0] ?? null) : null;
-      downRef.current = { x: e.clientX, y: e.clientY, world: w, hitId, onItem: !!hitId, moved: false, shift: e.shiftKey };
+      const hitId =
+        w && brd ? (boardHitCandidates(brd, w, tolOf()).filter(passesFilter)[0] ?? null) : null;
+      downRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        world: w,
+        hitId,
+        onItem: !!hitId,
+        moved: false,
+        shift: e.shiftKey,
+      };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
   };
@@ -636,7 +839,14 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
       } else if (box && boardRef.current) {
         // Left→right = window (contained); right→left = crossing (touching).
         const contained = box.b.x >= box.a.x;
-        const ids = boardItemsInBox(boardRef.current, box.a.x, box.a.y, box.b.x, box.b.y, contained).filter(passesFilter);
+        const ids = boardItemsInBox(
+          boardRef.current,
+          box.a.x,
+          box.a.y,
+          box.b.x,
+          box.b.y,
+          contained,
+        ).filter(passesFilter);
         setSelection((prev) => {
           const next = new Set(d.shift ? prev : []);
           for (const id of ids) next.add(id);
@@ -650,16 +860,41 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.ctrlKey || e.metaKey;
-      if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
-      if (mod && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); redo(); return; }
-      if (mod && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); duplicateSel(); return; }
-      if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSel(); return; }
-      if (!mod && (e.key === 'r' || e.key === 'R')) { rotateSel(!e.shiftKey); return; } // R = CCW, Shift+R = CW
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (mod && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if (mod && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        duplicateSel();
+        return;
+      }
+      if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        deleteSel();
+        return;
+      }
+      if (!mod && (e.key === 'r' || e.key === 'R')) {
+        rotateSel(!e.shiftKey);
+        return;
+      } // R = CCW, Shift+R = CW
       if (!mod && (e.key === 'f' || e.key === 'F')) zoomToFit();
       if (e.key === 'Escape') {
         // Escape first dismisses the disambiguation menu, then clears selection.
-        if (disambigRef.current) { hoverRef.current = null; setDisambig(null); }
-        else { setShow3D(false); setSelection(new Set()); }
+        if (disambigRef.current) {
+          hoverRef.current = null;
+          setDisambig(null);
+        } else {
+          setShow3D(false);
+          setSelection(new Set());
+        }
       }
     };
     window.addEventListener('keydown', onKey);
@@ -674,13 +909,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     let viewer: Viewer3D | null = null;
     let cancelled = false;
     setViewer3dReady(false);
-    const el = viewer3dRef.current, brd = boardRef.current;
+    const el = viewer3dRef.current,
+      brd = boardRef.current;
     void import('./pcb3d.js').then(({ mount3DViewer }) => {
       if (cancelled) return;
-      try { viewer = mount3DViewer(el, brd); } catch { viewer = null; }
+      try {
+        viewer = mount3DViewer(el, brd);
+      } catch {
+        viewer = null;
+      }
       setViewer3dReady(true);
     });
-    return () => { cancelled = true; viewer?.dispose(); };
+    return () => {
+      cancelled = true;
+      viewer?.dispose();
+    };
   }, [show3D]);
 
   // ----- appearance data ------------------------------------------------------
@@ -754,18 +997,43 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
 
   const onTopAction = (id: string): void => {
     switch (id) {
-      case 'save': saveCopy(); break;
-      case 'undo': undo(); break;
-      case 'redo': redo(); break;
-      case 'rotateCCW': rotateSel(true); break;
-      case 'rotateCW': rotateSel(false); break;
-      case 'zoomRedraw': cacheRef.current = null; requestDraw(); break;
-      case 'zoomIn': zoomStep(1.3); break;
-      case 'zoomOut': zoomStep(1 / 1.3); break;
-      case 'zoomFit': case 'zoomFitObjects': zoomToFit(); break;
-      case 'showEeschema': onShowSchematic?.(); break;
-      case 'threeDViewer': setShow3D(true); break;
-      default: break; // other editing actions are staged
+      case 'save':
+        saveCopy();
+        break;
+      case 'undo':
+        undo();
+        break;
+      case 'redo':
+        redo();
+        break;
+      case 'rotateCCW':
+        rotateSel(true);
+        break;
+      case 'rotateCW':
+        rotateSel(false);
+        break;
+      case 'zoomRedraw':
+        cacheRef.current = null;
+        requestDraw();
+        break;
+      case 'zoomIn':
+        zoomStep(1.3);
+        break;
+      case 'zoomOut':
+        zoomStep(1 / 1.3);
+        break;
+      case 'zoomFit':
+      case 'zoomFitObjects':
+        zoomToFit();
+        break;
+      case 'showEeschema':
+        onShowSchematic?.();
+        break;
+      case 'threeDViewer':
+        setShow3D(true);
+        break;
+      default:
+        break; // other editing actions are staged
     }
   };
 
@@ -809,7 +1077,14 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
         { label: 'Zoom In', action: () => zoomStep(1.3), shortcut: 'Ctrl++' },
         { label: 'Zoom Out', action: () => zoomStep(1 / 1.3), shortcut: 'Ctrl+-' },
         { label: 'Zoom to Fit', action: zoomToFit, shortcut: 'F' },
-        { label: 'Redraw', action: () => { cacheRef.current = null; requestDraw(); }, shortcut: 'F5' },
+        {
+          label: 'Redraw',
+          action: () => {
+            cacheRef.current = null;
+            requestDraw();
+          },
+          shortcut: 'F5',
+        },
         { sep: true },
         { label: 'Show Appearance Manager', action: () => onLeftToggle('showLayersManager') },
         { sep: true },
@@ -883,29 +1158,78 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
     <div className="ze-app">
       <MenuBar
         menus={menus}
-        leftSlot={<div className="ze-home-link" onClick={onExit} title="Back to project manager">⌂ ZiroEDA</div>}
-        title={<><b>{projectName || fileName.replace(/\.kicad_pcb$/i, '') || 'No project'}</b>&nbsp;—&nbsp;PCB Editor</>}
+        leftSlot={
+          <div className="ze-home-link" onClick={onExit} title="Back to project manager">
+            ⌂ ZiroEDA
+          </div>
+        }
+        title={
+          <>
+            <b>{projectName || fileName.replace(/\.kicad_pcb$/i, '') || 'No project'}</b>
+            &nbsp;—&nbsp;PCB Editor
+          </>
+        }
       />
       <Toolbar entries={PCB_TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       {/* TOP_AUX bar: track width / via size / active layer / grid / zoom */}
-      <div className="ze-auxbar" style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '2px 8px', borderBottom: '1px solid #333', fontSize: 12 }}>
-        <select disabled title="Track width (routing is staged)"><option>Track: use netclass width</option></select>
-        <select disabled title="Via size (routing is staged)"><option>Via: use netclass sizes</option></select>
+      <div
+        className="ze-auxbar"
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          padding: '2px 8px',
+          borderBottom: '1px solid #333',
+          fontSize: 12,
+        }}
+      >
+        <select disabled title="Track width (routing is staged)">
+          <option>Track: use netclass width</option>
+        </select>
+        <select disabled title="Via size (routing is staged)">
+          <option>Via: use netclass sizes</option>
+        </select>
         <span style={{ width: 8 }} />
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 12, height: 12, background: layerColor(activeLayer), borderRadius: 2, border: '1px solid #444' }} />
-          <select value={activeLayer} onChange={(e) => setActiveLayer(e.target.value)} title="Active layer">
-            {(board?.layers ?? []).map((l) => <option key={l.name} value={l.name}>{l.name}</option>)}
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              background: layerColor(activeLayer),
+              borderRadius: 2,
+              border: '1px solid #444',
+            }}
+          />
+          <select
+            value={activeLayer}
+            onChange={(e) => setActiveLayer(e.target.value)}
+            title="Active layer"
+          >
+            {(board?.layers ?? []).map((l) => (
+              <option key={l.name} value={l.name}>
+                {l.name}
+              </option>
+            ))}
           </select>
         </span>
         <span style={{ width: 8 }} />
-        <select disabled title="Grid"><option>Grid: 0.635 mm (25 mils)</option></select>
-        <select disabled title="Zoom presets"><option>Zoom Auto</option></select>
+        <select disabled title="Grid">
+          <option>Grid: 0.635 mm (25 mils)</option>
+        </select>
+        <select disabled title="Zoom presets">
+          <option>Zoom Auto</option>
+        </select>
       </div>
 
       <div className="ze-body">
-        <Toolbar entries={PCB_LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
+        <Toolbar
+          entries={PCB_LEFT_TOOLBAR}
+          orientation="vertical"
+          side="left"
+          toggled={toggles}
+          onActivate={onLeftToggle}
+        />
 
         {showProperties && (
           <div className="ze-leftdock" style={{ width: 220 }}>
@@ -937,7 +1261,15 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
             </div>
           )}
           {error && (
-            <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#ff8080' }}>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: 'grid',
+                placeItems: 'center',
+                color: '#ff8080',
+              }}
+            >
               Couldn’t open board: {error}
             </div>
           )}
@@ -954,9 +1286,13 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                     key={t}
                     onClick={() => setTab(t)}
                     style={{
-                      flex: 1, padding: '4px 0', fontSize: 12, cursor: 'pointer',
+                      flex: 1,
+                      padding: '4px 0',
+                      fontSize: 12,
+                      cursor: 'pointer',
                       background: tab === t ? '#2a2a2e' : 'transparent',
-                      color: 'inherit', border: 'none',
+                      color: 'inherit',
+                      border: 'none',
                       borderBottom: tab === t ? '2px solid #4d7fc4' : '2px solid transparent',
                     }}
                   >
@@ -974,7 +1310,12 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                         <div
                           key={name}
                           className={`ze-tree-item ${name === activeLayer ? 'active' : ''}`}
-                          style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 7,
+                            cursor: 'pointer',
+                          }}
                           onClick={() => setActiveLayer(name)}
                           title="Click to make active; click the eye to show/hide"
                         >
@@ -982,19 +1323,41 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                           <img
                             src={eyeUrl(on)}
                             alt={on ? 'visible' : 'hidden'}
-                            onClick={(e) => { e.stopPropagation(); toggleLayer(name); }}
-                            style={{ width: 16, height: 16, opacity: on ? 0.9 : 0.35, cursor: 'pointer' }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleLayer(name);
+                            }}
+                            style={{
+                              width: 16,
+                              height: 16,
+                              opacity: on ? 0.9 : 0.35,
+                              cursor: 'pointer',
+                            }}
                             title={on ? 'Hide layer' : 'Show layer'}
                           />
-                          <span style={{
-                            width: 14, height: 14, borderRadius: 2, flex: '0 0 auto',
-                            background: layerColor(name), border: '1px solid #444',
-                          }} />
+                          <span
+                            style={{
+                              width: 14,
+                              height: 14,
+                              borderRadius: 2,
+                              flex: '0 0 auto',
+                              background: layerColor(name),
+                              border: '1px solid #444',
+                            }}
+                          />
                           <span style={{ opacity: on ? 1 : 0.5 }}>{name}</span>
                         </div>
                       );
                     })}
-                    <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                    <div
+                      style={{
+                        marginTop: 8,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontSize: 12,
+                      }}
+                    >
                       <span>Presets (Ctrl+Tab):</span>
                       <select
                         value={preset}
@@ -1002,33 +1365,46 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                         style={{ flex: 1 }}
                       >
                         {preset === '(unsaved)' && <option value="(unsaved)">(unsaved)</option>}
-                        {PRESETS.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                        {PRESETS.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </>
                 )}
 
-                {tab === 'Objects' && OBJECT_ROWS.map(([key, label, slider]) => (
-                  <div key={key} className="ze-tree-item" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      type="checkbox"
-                      checked={objects[key as keyof ObjectState]}
-                      onChange={() => setObjects((p) => ({ ...p, [key]: !p[key as keyof ObjectState] }))}
-                    />
-                    <span style={{ flex: 1 }}>{label}</span>
-                    {slider && key in opacity && (
+                {tab === 'Objects' &&
+                  OBJECT_ROWS.map(([key, label, slider]) => (
+                    <div
+                      key={key}
+                      className="ze-tree-item"
+                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                    >
                       <input
-                        type="range"
-                        min={0}
-                        max={100}
-                        value={Math.round(opacity[key as keyof typeof opacity] * 100)}
-                        style={{ width: 70 }}
-                        title={`${label} opacity`}
-                        onChange={(e) => setOpacity((p) => ({ ...p, [key]: Number(e.target.value) / 100 }))}
+                        type="checkbox"
+                        checked={objects[key as keyof ObjectState]}
+                        onChange={() =>
+                          setObjects((p) => ({ ...p, [key]: !p[key as keyof ObjectState] }))
+                        }
                       />
-                    )}
-                  </div>
-                ))}
+                      <span style={{ flex: 1 }}>{label}</span>
+                      {slider && key in opacity && (
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={Math.round(opacity[key as keyof typeof opacity] * 100)}
+                          style={{ width: 70 }}
+                          title={`${label} opacity`}
+                          onChange={(e) =>
+                            setOpacity((p) => ({ ...p, [key]: Number(e.target.value) / 100 }))
+                          }
+                        />
+                      )}
+                    </div>
+                  ))}
 
                 {tab === 'Nets' && (
                   <>
@@ -1057,7 +1433,13 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                   <input
                     type="checkbox"
                     checked={selFilter.size === PCB_FILTER_CATS.length}
-                    onChange={() => setSelFilter((p) => (p.size === PCB_FILTER_CATS.length ? new Set() : new Set(PCB_FILTER_CATS.map((c) => c[0]))))}
+                    onChange={() =>
+                      setSelFilter((p) =>
+                        p.size === PCB_FILTER_CATS.length
+                          ? new Set()
+                          : new Set(PCB_FILTER_CATS.map((c) => c[0])),
+                      )
+                    }
                   />
                   All items
                 </label>
@@ -1067,7 +1449,14 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                       <input
                         type="checkbox"
                         checked={selFilter.has(key)}
-                        onChange={() => setSelFilter((p) => { const n = new Set(p); if (n.has(key)) n.delete(key); else n.add(key); return n; })}
+                        onChange={() =>
+                          setSelFilter((p) => {
+                            const n = new Set(p);
+                            if (n.has(key)) n.delete(key);
+                            else n.add(key);
+                            return n;
+                          })
+                        }
                       />
                       {label}
                     </label>
@@ -1083,19 +1472,48 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
           orientation="vertical"
           side="right"
           activeTool={activeTool}
-          onActivate={(id) => { if (id === 'delete') deleteSel(); else setActiveTool(id); }}
+          onActivate={(id) => {
+            if (id === 'delete') deleteSel();
+            else setActiveTool(id);
+          }}
         />
       </div>
 
       {show3D && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgb(13,15,23)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 12px', borderBottom: '1px solid #333', fontSize: 13 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 50,
+            background: 'rgb(13,15,23)',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '6px 12px',
+              borderBottom: '1px solid #333',
+              fontSize: 13,
+            }}
+          >
             <b>3D Viewer</b>
             <span style={{ opacity: 0.6 }}>drag to orbit · wheel to zoom · Esc to close</span>
             <span style={{ flex: 1 }} />
             <button onClick={() => setShow3D(false)}>Close ✕</button>
           </div>
-          <div ref={viewer3dRef} style={{ flex: 1, minHeight: 0, position: 'relative', background: 'linear-gradient(180deg, rgb(204,204,230) 0%, rgb(102,102,128) 100%)' }}>
+          <div
+            ref={viewer3dRef}
+            style={{
+              flex: 1,
+              minHeight: 0,
+              position: 'relative',
+              background: 'linear-gradient(180deg, rgb(204,204,230) 0%, rgb(102,102,128) 100%)',
+            }}
+          >
             {!viewer3dReady && (
               <div className="ze-canvas-loading">
                 <span className="ze-spinner" />
@@ -1112,13 +1530,25 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
         <>
           <div
             style={{ position: 'fixed', inset: 0, zIndex: 60 }}
-            onMouseDown={() => { hoverRef.current = null; setDisambig(null); requestDraw(); }}
+            onMouseDown={() => {
+              hoverRef.current = null;
+              setDisambig(null);
+              requestDraw();
+            }}
           />
           <div
             style={{
-              position: 'fixed', left: Math.min(disambig.x, window.innerWidth - 220), top: disambig.y,
-              zIndex: 61, background: '#26262b', border: '1px solid #444', borderRadius: 4,
-              minWidth: 190, padding: '4px 0', fontSize: 12, boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+              position: 'fixed',
+              left: Math.min(disambig.x, window.innerWidth - 220),
+              top: disambig.y,
+              zIndex: 61,
+              background: '#26262b',
+              border: '1px solid #444',
+              borderRadius: 4,
+              minWidth: 190,
+              padding: '4px 0',
+              fontSize: 12,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
             }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -1128,9 +1558,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
                 key={id}
                 className="ze-tree-item"
                 style={{ padding: '3px 12px', cursor: 'pointer' }}
-                onMouseEnter={() => { hoverRef.current = id; requestDraw(); }}
-                onMouseLeave={() => { if (hoverRef.current === id) { hoverRef.current = null; requestDraw(); } }}
-                onClick={() => { hoverRef.current = null; applySelect(id, disambig.additive); setDisambig(null); }}
+                onMouseEnter={() => {
+                  hoverRef.current = id;
+                  requestDraw();
+                }}
+                onMouseLeave={() => {
+                  if (hoverRef.current === id) {
+                    hoverRef.current = null;
+                    requestDraw();
+                  }
+                }}
+                onClick={() => {
+                  hoverRef.current = null;
+                  applySelect(id, disambig.additive);
+                  setDisambig(null);
+                }}
               >
                 {describeBoardItem(board, id)}
               </div>
@@ -1141,11 +1583,21 @@ export function PcbEditor({ fileName, text, onExit, onShowSchematic, projectName
 
       {/* pcbnew's two-part status bar: item counts row, then position row. */}
       <div className="ze-statusbar" style={{ gap: 18 }}>
-        <span className="cell"><b>Pads</b> {board?.footprints.reduce((n, f) => n + f.pads.length, 0) ?? 0}</span>
-        <span className="cell"><b>Vias</b> {board?.vias.length ?? 0}</span>
-        <span className="cell"><b>Track Segments</b> {board ? board.tracks.length + board.arcs.length : 0}</span>
-        <span className="cell"><b>Nets</b> {board ? Math.max(0, board.nets.size - 1) : 0}</span>
-        <span className="cell grow"><b>Unrouted</b> 0</span>
+        <span className="cell">
+          <b>Pads</b> {board?.footprints.reduce((n, f) => n + f.pads.length, 0) ?? 0}
+        </span>
+        <span className="cell">
+          <b>Vias</b> {board?.vias.length ?? 0}
+        </span>
+        <span className="cell">
+          <b>Track Segments</b> {board ? board.tracks.length + board.arcs.length : 0}
+        </span>
+        <span className="cell">
+          <b>Nets</b> {board ? Math.max(0, board.nets.size - 1) : 0}
+        </span>
+        <span className="cell grow">
+          <b>Unrouted</b> 0
+        </span>
         <span className="cell">{fileName}</span>
       </div>
       <div className="ze-statusbar">
@@ -1170,19 +1622,46 @@ function describeBoardItem(board: Board, id: string): string {
   if (!r) return id;
   const net = (c: number): string => board.nets.get(c) || `net ${c}`;
   switch (r.kind) {
-    case 'track': { const t = board.tracks[r.index]; return t ? `Track ${t.layer} · ${net(t.net)}` : 'Track'; }
-    case 'arc': { const a = board.arcs[r.index]; return a ? `Arc ${a.layer} · ${net(a.net)}` : 'Arc'; }
-    case 'via': { const v = board.vias[r.index]; return v ? `Via · ${net(v.net)}` : 'Via'; }
-    case 'footprint': { const f = board.footprints[r.index]; return f ? `Footprint ${f.reference || f.lib}` : 'Footprint'; }
-    case 'zone': { const z = board.zones[r.index]; return z ? `Zone · ${z.netName ?? net(z.net)}` : 'Zone'; }
-    case 'shape': { const s = board.shapes[r.index]; return s ? `Graphic (${s.kind}) · ${s.layer}` : 'Graphic'; }
-    case 'text': { const t = board.texts[r.index]; return t ? `Text "${t.text}"` : 'Text'; }
+    case 'track': {
+      const t = board.tracks[r.index];
+      return t ? `Track ${t.layer} · ${net(t.net)}` : 'Track';
+    }
+    case 'arc': {
+      const a = board.arcs[r.index];
+      return a ? `Arc ${a.layer} · ${net(a.net)}` : 'Arc';
+    }
+    case 'via': {
+      const v = board.vias[r.index];
+      return v ? `Via · ${net(v.net)}` : 'Via';
+    }
+    case 'footprint': {
+      const f = board.footprints[r.index];
+      return f ? `Footprint ${f.reference || f.lib}` : 'Footprint';
+    }
+    case 'zone': {
+      const z = board.zones[r.index];
+      return z ? `Zone · ${z.netName ?? net(z.net)}` : 'Zone';
+    }
+    case 'shape': {
+      const s = board.shapes[r.index];
+      return s ? `Graphic (${s.kind}) · ${s.layer}` : 'Graphic';
+    }
+    case 'text': {
+      const t = board.texts[r.index];
+      return t ? `Text "${t.text}"` : 'Text';
+    }
   }
 }
 
 /** Read-only summary of the current selection for the Properties panel — the
  *  first slice of pcbnew's PCB_PROPERTIES_PANEL (editable fields come later). */
-function PcbSelectionInfo({ board, selection }: { board: Board | null; selection: ReadonlySet<string> }): JSX.Element {
+function PcbSelectionInfo({
+  board,
+  selection,
+}: {
+  board: Board | null;
+  selection: ReadonlySet<string>;
+}): JSX.Element {
   const mm = (iu: number): string => iuToMM(iu).toFixed(4);
   const ids = [...selection];
 
@@ -1193,31 +1672,117 @@ function PcbSelectionInfo({ board, selection }: { board: Board | null; selection
     const netName = (code: number): string => board.nets.get(code) || `(net ${code})`;
     const row = (k: string, v: string): JSX.Element => (
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
-        <span className="ze-muted">{k}</span><span>{v}</span>
+        <span className="ze-muted">{k}</span>
+        <span>{v}</span>
       </div>
     );
     if (ref) {
       switch (ref.kind) {
-        case 'track': { const t = board.tracks[ref.index]; if (t) return <div><b>Track</b>{row('Layer', t.layer)}{row('Net', netName(t.net))}{row('Width', `${mm(t.width)} mm`)}</div>; break; }
-        case 'arc': { const a = board.arcs[ref.index]; if (a) return <div><b>Arc (track)</b>{row('Layer', a.layer)}{row('Net', netName(a.net))}{row('Width', `${mm(a.width)} mm`)}</div>; break; }
-        case 'via': { const v = board.vias[ref.index]; if (v) return <div><b>Via</b>{row('Net', netName(v.net))}{row('Size', `${mm(v.size)} mm`)}{row('Drill', `${mm(v.drill)} mm`)}</div>; break; }
-        case 'footprint': { const f = board.footprints[ref.index]; if (f) return <div><b>Footprint</b>{row('Reference', f.reference ?? '—')}{row('Value', f.value ?? '—')}{row('Layer', f.layer)}</div>; break; }
-        case 'zone': { const z = board.zones[ref.index]; if (z) return <div><b>Zone</b>{row('Net', z.netName ?? netName(z.net))}{row('Layers', z.layers.join(', '))}</div>; break; }
-        case 'shape': { const s = board.shapes[ref.index]; if (s) return <div><b>Graphic ({s.kind})</b>{row('Layer', s.layer)}{row('Width', `${mm(s.width)} mm`)}</div>; break; }
-        case 'text': { const t = board.texts[ref.index]; if (t) return <div><b>Text</b>{row('Text', t.text)}{row('Layer', t.layer)}</div>; break; }
+        case 'track': {
+          const t = board.tracks[ref.index];
+          if (t)
+            return (
+              <div>
+                <b>Track</b>
+                {row('Layer', t.layer)}
+                {row('Net', netName(t.net))}
+                {row('Width', `${mm(t.width)} mm`)}
+              </div>
+            );
+          break;
+        }
+        case 'arc': {
+          const a = board.arcs[ref.index];
+          if (a)
+            return (
+              <div>
+                <b>Arc (track)</b>
+                {row('Layer', a.layer)}
+                {row('Net', netName(a.net))}
+                {row('Width', `${mm(a.width)} mm`)}
+              </div>
+            );
+          break;
+        }
+        case 'via': {
+          const v = board.vias[ref.index];
+          if (v)
+            return (
+              <div>
+                <b>Via</b>
+                {row('Net', netName(v.net))}
+                {row('Size', `${mm(v.size)} mm`)}
+                {row('Drill', `${mm(v.drill)} mm`)}
+              </div>
+            );
+          break;
+        }
+        case 'footprint': {
+          const f = board.footprints[ref.index];
+          if (f)
+            return (
+              <div>
+                <b>Footprint</b>
+                {row('Reference', f.reference ?? '—')}
+                {row('Value', f.value ?? '—')}
+                {row('Layer', f.layer)}
+              </div>
+            );
+          break;
+        }
+        case 'zone': {
+          const z = board.zones[ref.index];
+          if (z)
+            return (
+              <div>
+                <b>Zone</b>
+                {row('Net', z.netName ?? netName(z.net))}
+                {row('Layers', z.layers.join(', '))}
+              </div>
+            );
+          break;
+        }
+        case 'shape': {
+          const s = board.shapes[ref.index];
+          if (s)
+            return (
+              <div>
+                <b>Graphic ({s.kind})</b>
+                {row('Layer', s.layer)}
+                {row('Width', `${mm(s.width)} mm`)}
+              </div>
+            );
+          break;
+        }
+        case 'text': {
+          const t = board.texts[ref.index];
+          if (t)
+            return (
+              <div>
+                <b>Text</b>
+                {row('Text', t.text)}
+                {row('Layer', t.layer)}
+              </div>
+            );
+          break;
+        }
       }
     }
   }
 
   // Multiple items: a per-kind tally (pcbnew's status "N items selected").
   const counts = new Map<string, number>();
-  for (const id of ids) { const r = parseBoardItemId(id); if (r) counts.set(r.kind, (counts.get(r.kind) ?? 0) + 1); }
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r) counts.set(r.kind, (counts.get(r.kind) ?? 0) + 1);
+  }
   return (
     <div>
       <b>{ids.length} items selected</b>
       {[...counts].map(([k, n]) => (
         <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '1px 0' }}>
-          <span className="ze-muted">{k}</span><span>{n}</span>
+          <span className="ze-muted">{k}</span>
+          <span>{n}</span>
         </div>
       ))}
     </div>

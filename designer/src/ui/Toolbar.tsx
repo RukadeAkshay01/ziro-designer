@@ -14,9 +14,16 @@ interface Props {
   onActivate?: (id: string) => void;
 }
 
-export function Toolbar({ entries, orientation, side, activeTool, toggled, onActivate }: Props): JSX.Element {
+export function Toolbar({
+  entries,
+  orientation,
+  side,
+  activeTool,
+  toggled,
+  onActivate,
+}: Props): JSX.Element {
   return (
-    <div className={`ze-toolbar ${orientation}${side ? ' ' + side : ''}`} role="toolbar">
+    <div className={`ze-toolbar ${orientation}${side ? ` ${side}` : ''}`} role="toolbar">
       {entries.map((e, i) => {
         if (e === 'sep') return <span key={`s${i}`} className="ze-sep" />;
         const isActive = activeTool === e.id || toggled?.has(e.id);

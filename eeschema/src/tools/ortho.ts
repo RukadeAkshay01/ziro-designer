@@ -27,7 +27,11 @@ interface EndAdjust {
   to: Vec2;
 }
 
-function computeOrtho(sch: Schematic, spec: MoveSpec, delta: Vec2): { adjust: EndAdjust[]; bends: SchLine[] } {
+function computeOrtho(
+  sch: Schematic,
+  spec: MoveSpec,
+  delta: Vec2,
+): { adjust: EndAdjust[]; bends: SchLine[] } {
   const adjust: EndAdjust[] = [];
   const bends: SchLine[] = [];
 
@@ -84,14 +88,20 @@ function computeOrtho(sch: Schematic, spec: MoveSpec, delta: Vec2): { adjust: En
 }
 
 const moveSymbol = (s: SchSymbol, d: Vec2): SchSymbol => ({
-  ...s, at: add(s.at, d), fields: s.fields.map((f) => (f.at ? { ...f, at: add(f.at, d) } : f)),
+  ...s,
+  at: add(s.at, d),
+  fields: s.fields.map((f) => (f.at ? { ...f, at: add(f.at, d) } : f)),
 });
 const moveJunction = (j: SchJunction, d: Vec2): SchJunction => ({ ...j, at: add(j.at, d) });
 const moveLabel = (l: SchLabel, d: Vec2): SchLabel => ({ ...l, at: add(l.at, d) });
 
 function applyMove(
-  doc: Schematic, fullIds: ReadonlySet<string>, delta: Vec2,
-  adjust: EndAdjust[], addBends: SchLine[], removeBendIds: ReadonlySet<string>,
+  doc: Schematic,
+  fullIds: ReadonlySet<string>,
+  delta: Vec2,
+  adjust: EndAdjust[],
+  addBends: SchLine[],
+  removeBendIds: ReadonlySet<string>,
 ): Schematic {
   const lines = doc.lines
     .filter((l, i) => !removeBendIds.has(refId('line', l.uuid, i)))
@@ -104,14 +114,25 @@ function applyMove(
     });
   return {
     ...doc,
-    symbols: doc.symbols.map((s, i) => (fullIds.has(refId('symbol', s.uuid, i)) ? moveSymbol(s, delta) : s)),
-    junctions: doc.junctions.map((j, i) => (fullIds.has(refId('junction', j.uuid, i)) ? moveJunction(j, delta) : j)),
-    labels: doc.labels.map((l, i) => (fullIds.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l)),
+    symbols: doc.symbols.map((s, i) =>
+      fullIds.has(refId('symbol', s.uuid, i)) ? moveSymbol(s, delta) : s,
+    ),
+    junctions: doc.junctions.map((j, i) =>
+      fullIds.has(refId('junction', j.uuid, i)) ? moveJunction(j, delta) : j,
+    ),
+    labels: doc.labels.map((l, i) =>
+      fullIds.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l,
+    ),
     lines: addBends.length ? [...lines, ...addBends] : lines,
   };
 }
 
-function forward(fullIds: ReadonlySet<string>, delta: Vec2, adjust: EndAdjust[], bends: SchLine[]): EditCommand {
+function forward(
+  fullIds: ReadonlySet<string>,
+  delta: Vec2,
+  adjust: EndAdjust[],
+  bends: SchLine[],
+): EditCommand {
   return {
     label: 'Move',
     apply: (doc) => applyMove(doc, fullIds, delta, adjust, bends, new Set()),
@@ -119,7 +140,12 @@ function forward(fullIds: ReadonlySet<string>, delta: Vec2, adjust: EndAdjust[],
   };
 }
 
-function inverse(fullIds: ReadonlySet<string>, delta: Vec2, adjust: EndAdjust[], bends: SchLine[]): EditCommand {
+function inverse(
+  fullIds: ReadonlySet<string>,
+  delta: Vec2,
+  adjust: EndAdjust[],
+  bends: SchLine[],
+): EditCommand {
   const neg = { x: -delta.x, y: -delta.y };
   const back = adjust.map((a) => ({ ...a, to: a.from, from: a.to }));
   const bendIds = new Set(bends.map((b) => b.uuid!));

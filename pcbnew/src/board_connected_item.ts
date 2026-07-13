@@ -16,6 +16,10 @@ export abstract class BOARD_CONNECTED_ITEM extends BOARD_ITEM {
     this.m_netCode = netCode;
   }
 
-  GetNetCode(): number { return this.m_netCode; }
-  SetNetCode(aNetCode: number): void { this.m_netCode = aNetCode; }
+  GetNetCode(): number {
+    return this.m_netCode;
+  }
+  SetNetCode(aNetCode: number): void {
+    this.m_netCode = aNetCode;
+  }
 }

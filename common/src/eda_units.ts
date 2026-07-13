@@ -18,9 +18,7 @@ export const SCH_IU_PER_MM = 1e4;
 /** Convert a millimetre value (as found in a file) to integer internal units. */
 export function mmToIU(mm: number): number {
   // Matches KiCad's KiROUND: round half away from zero.
-  return mm < 0
-    ? Math.ceil(mm * SCH_IU_PER_MM - 0.5)
-    : Math.floor(mm * SCH_IU_PER_MM + 0.5);
+  return mm < 0 ? Math.ceil(mm * SCH_IU_PER_MM - 0.5) : Math.floor(mm * SCH_IU_PER_MM + 0.5);
 }
 
 /** Convert integer internal units back to millimetres. */

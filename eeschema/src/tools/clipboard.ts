@@ -19,7 +19,7 @@
 import { parse, serialize } from '@ziroeda/sexpr/src/index.js';
 import { head, isList, list, atom, str, type SList } from '@ziroeda/sexpr/src/types.js';
 import { readSchematic } from '../sch_io/sexpr/read-schematic.js';
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, LibSymbol, Vec2 } from '../types.js';
+import type { Schematic, SchSymbol, SchField, LibSymbol, Vec2 } from '../types.js';
 import { writeSchematic } from '../sch_io/sexpr/write-schematic.js';
 import { childNamed } from '@ziroeda/sexpr/src/query.js';
 import { refId } from './hittest.js';
@@ -48,7 +48,21 @@ export function copySelectionText(sch: Schematic, ids: ReadonlySet<string>): str
   // Sheets are excluded from the clipboard for now: KiCad ships each sheet's
   // screen along on the clipboard (m_supplementaryClipboard), which needs
   // multi-document paste support.
-  const subset: Schematic = { ...sch, symbols, lines, junctions, noConnects, labels, sheets: [], busEntries: [], images: [], graphics: [], textBoxes: [], tables: [], libSymbols: libs };
+  const subset: Schematic = {
+    ...sch,
+    symbols,
+    lines,
+    junctions,
+    noConnects,
+    labels,
+    sheets: [],
+    busEntries: [],
+    images: [],
+    graphics: [],
+    textBoxes: [],
+    tables: [],
+    libSymbols: libs,
+  };
   const root = writeSchematic(subset);
 
   const parts: string[] = [];
@@ -57,9 +71,18 @@ export function copySelectionText(sch: Schematic, ids: ReadonlySet<string>): str
     const h = head(it);
     if (h === 'lib_symbols') {
       if (it.items.length > 1) parts.push(serialize(it));
-    } else if (h === 'symbol' || h === 'wire' || h === 'bus' || h === 'polyline'
-        || h === 'junction' || h === 'no_connect' || h === 'label' || h === 'global_label'
-        || h === 'hierarchical_label' || h === 'text') {
+    } else if (
+      h === 'symbol' ||
+      h === 'wire' ||
+      h === 'bus' ||
+      h === 'polyline' ||
+      h === 'junction' ||
+      h === 'no_connect' ||
+      h === 'label' ||
+      h === 'global_label' ||
+      h === 'hierarchical_label' ||
+      h === 'text'
+    ) {
       parts.push(serialize(it));
     }
   }
@@ -129,7 +152,10 @@ function reannotate(sym: SchSymbol, taken: Set<string>): SchSymbol {
     return sym;
   }
   const { prefix } = splitRef(ref);
-  if (prefix === '' || prefix === '#') { taken.add(ref); return sym; }
+  if (prefix === '' || prefix === '#') {
+    taken.add(ref);
+    return sym;
+  }
   let n = 1;
   while (taken.has(`${prefix}${n}`)) n++;
   const newRef = `${prefix}${n}`;
@@ -157,7 +183,19 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
 
   // Not schematic data: paste as a text object (KiCad's IO_ERROR fallback).
   const asTextItem = (): PastePayload => ({
-    batch: { symbols: [], lines: [], junctions: [], noConnects: [], labels: [makeLabel('text', text, { x: 0, y: 0 })], sheets: [], busEntries: [], images: [], graphics: [], textBoxes: [], tables: [] },
+    batch: {
+      symbols: [],
+      lines: [],
+      junctions: [],
+      noConnects: [],
+      labels: [makeLabel('text', text, { x: 0, y: 0 })],
+      sheets: [],
+      busEntries: [],
+      images: [],
+      graphics: [],
+      textBoxes: [],
+      tables: [],
+    },
     libs: [],
     refPoint: { x: 0, y: 0 },
   });
@@ -184,7 +222,7 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
 
   const symbols = doc.symbols.map((s) => {
     const source = symbolWithFreshUuids(s.source);
-    const uuid = (childNamed(source, 'uuid')?.items[1] as { value: string }).value;
+    const uuid = (childNamed(source, 'uuid')!.items[1] as { value: string }).value;
     // Re-read fields from the fresh source so field.source identity stays aligned.
     const withIds: SchSymbol = { ...s, uuid, source };
     return reannotate(withIds, taken);
@@ -198,7 +236,8 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
   const noConnects = doc.noConnects.map(reuuid);
   const labels = doc.labels.map(reuuid);
 
-  if (symbols.length + lines.length + junctions.length + noConnects.length + labels.length === 0) return null;
+  if (symbols.length + lines.length + junctions.length + noConnects.length + labels.length === 0)
+    return null;
 
   // Only bring along lib definitions the target sheet doesn't already have.
   const have = new Set(existing.libSymbols.map((l) => l.libId));
@@ -217,7 +256,19 @@ export function parsePastedText(text: string, existing: Schematic): PastePayload
   for (const l of labels) consider(l.at);
 
   return {
-    batch: { symbols, lines, junctions, noConnects, labels, sheets: [], busEntries: [], images: [], graphics: [], textBoxes: [], tables: [] },
+    batch: {
+      symbols,
+      lines,
+      junctions,
+      noConnects,
+      labels,
+      sheets: [],
+      busEntries: [],
+      images: [],
+      graphics: [],
+      textBoxes: [],
+      tables: [],
+    },
     libs,
     refPoint: refPoint ?? { x: 0, y: 0 },
   };
@@ -286,7 +337,11 @@ export function pasteItems(payload: PastePayload): EditCommand {
   };
 }
 
-function unpasteItems(payload: PastePayload, ids: ReadonlySet<string>, libIds: readonly string[]): EditCommand {
+function unpasteItems(
+  payload: PastePayload,
+  ids: ReadonlySet<string>,
+  libIds: readonly string[],
+): EditCommand {
   return {
     label: 'Paste',
     apply(doc: Schematic): Schematic {

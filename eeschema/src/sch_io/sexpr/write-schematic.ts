@@ -18,7 +18,22 @@ import { head, isList, list, atom, str, type SList, type SNode } from '@ziroeda/
 import { childNamed, numArg } from '@ziroeda/sexpr/src/query.js';
 import { iuToMM, mmToIU } from '@ziroeda/common/src/eda_units.js';
 import { readField } from './read-schematic.js';
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchLabel, SchField, SchNoConnect, SchSheet, SchBusEntry, SchTextBox, SchTable, SchTableCell, TextEffects, Vec2 } from '../../types.js';
+import type {
+  Schematic,
+  SchSymbol,
+  SchLine,
+  SchJunction,
+  SchLabel,
+  SchField,
+  SchNoConnect,
+  SchSheet,
+  SchBusEntry,
+  SchTextBox,
+  SchTable,
+  SchTableCell,
+  TextEffects,
+  Vec2,
+} from '../../types.js';
 
 function mm(iu: number): string {
   let s = iuToMM(iu).toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
@@ -70,8 +85,9 @@ const DEFAULT_TEXT_SIZE = mmToIU(1.27); // DEFAULT_SIZE_TEXT (50 mil)
 function stripToken(node: SList, name: string): SList {
   return {
     kind: 'list',
-    items: node.items.filter((it) =>
-      !(it.kind === 'atom' && it.value === name) && !(isList(it) && head(it) === name)),
+    items: node.items.filter(
+      (it) => !(it.kind === 'atom' && it.value === name) && !(isList(it) && head(it) === name),
+    ),
   };
 }
 
@@ -127,9 +143,11 @@ function patchEffects(effectsNode: SList, fx: TextEffects, orig: TextEffects | u
   const size = fx.fontSize;
   const boldChanged = !!fx.bold !== !!orig?.bold;
   const italicChanged = !!fx.italic !== !!orig?.italic;
-  const sizeChanged = !!size && (size[0] !== orig?.fontSize?.[0] || size[1] !== orig?.fontSize?.[1]);
+  const sizeChanged =
+    !!size && (size[0] !== orig?.fontSize?.[0] || size[1] !== orig?.fontSize?.[1]);
   if (sizeChanged || boldChanged || italicChanged) {
-    if (!childNamed(e, 'font')) e = { kind: 'list', items: [e.items[0]!, list(atom('font')), ...e.items.slice(1)] };
+    if (!childNamed(e, 'font'))
+      e = { kind: 'list', items: [e.items[0]!, list(atom('font')), ...e.items.slice(1)] };
     e = mapChild(e, 'font', (font) => {
       let f = font;
       if (sizeChanged && size) {
@@ -168,7 +186,9 @@ export function buildPropertyNode(field: Omit<SchField, 'source'>, invertY = fal
   const at = field.at ?? { x: 0, y: 0 };
   const y = invertY ? -at.y : at.y;
   const items: SNode[] = [
-    atom('property'), str(field.key), str(field.value),
+    atom('property'),
+    str(field.key),
+    str(field.value),
     list(atom('at'), atom(mm(at.x)), atom(mm(y)), atom(String(field.angle))),
   ];
   if (field.nameShown) items.push(list(atom('show_name'), atom('yes')));
@@ -211,7 +231,9 @@ export function patchProperty(propNode: SList, field: SchField, invertY = false)
   }
   // Effects: patch in place when present; otherwise synthesize only if non-default.
   if (childNamed(n, 'effects')) {
-    n = mapChild(n, 'effects', (e) => patchEffects(e, field.effects ?? { hidden: false }, orig.effects));
+    n = mapChild(n, 'effects', (e) =>
+      patchEffects(e, field.effects ?? { hidden: false }, orig.effects),
+    );
   } else {
     const fx = buildEffects(field.effects);
     if (fx) n = { kind: 'list', items: [...n.items, fx] };
@@ -245,9 +267,21 @@ function patchMirror(node: SList, mirror: 'x' | 'y' | undefined): SList {
 
 // Canonical order of a schematic (symbol ...)'s children (SCH_IO_KICAD_SEXPR::saveSymbol).
 const SYMBOL_CHILD_ORDER = [
-  'lib_name', 'lib_id', 'at', 'mirror', 'unit', 'body_style',
-  'exclude_from_sim', 'in_bom', 'on_board', 'dnp', 'fields_autoplaced', 'uuid',
-  'property', 'pin', 'instances',
+  'lib_name',
+  'lib_id',
+  'at',
+  'mirror',
+  'unit',
+  'body_style',
+  'exclude_from_sim',
+  'in_bom',
+  'on_board',
+  'dnp',
+  'fields_autoplaced',
+  'uuid',
+  'property',
+  'pin',
+  'instances',
 ];
 
 /** Insert `child` after the last existing child that canonically precedes it. */
@@ -257,7 +291,10 @@ function insertCanonical(node: SList, child: SList): SList {
   for (let i = node.items.length - 1; i >= 1; i--) {
     const it = node.items[i]!;
     const r = isList(it) ? SYMBOL_CHILD_ORDER.indexOf(head(it) ?? '') : -1;
-    if (r !== -1 && r <= rank) { insertAt = i + 1; break; }
+    if (r !== -1 && r <= rank) {
+      insertAt = i + 1;
+      break;
+    }
     insertAt = i;
   }
   const items = node.items.slice();
@@ -306,14 +343,19 @@ function writeSymbol(sym: SchSymbol): SList {
   let inserted = false;
   for (const it of node.items) {
     if (isList(it) && head(it) === 'property') {
-      if (!inserted) { items.push(...propNodes); inserted = true; }
+      if (!inserted) {
+        items.push(...propNodes);
+        inserted = true;
+      }
       continue; // old property nodes are replaced by the model's list
     }
     items.push(it);
   }
   if (!inserted) {
     // No properties in the source (unusual): put them before the first pin/instances.
-    const idx = items.findIndex((it) => isList(it) && (head(it) === 'pin' || head(it) === 'instances'));
+    const idx = items.findIndex(
+      (it) => isList(it) && (head(it) === 'pin' || head(it) === 'instances'),
+    );
     items.splice(idx === -1 ? items.length : idx, 0, ...propNodes);
   }
   return { kind: 'list', items };
@@ -410,9 +452,24 @@ function writeTable(tb: SchTable): SList {
 const HEADER_ORDER = ['version', 'generator', 'generator_version', 'uuid', 'paper', 'title_block'];
 const STRUCTURAL = new Set([...HEADER_ORDER, 'lib_symbols']);
 const ITEM_HEADS = new Set([
-  'symbol', 'wire', 'bus', 'polyline', 'junction', 'no_connect',
-  'label', 'global_label', 'hierarchical_label', 'text', 'bus_entry', 'sheet',
-  'image', 'rectangle', 'circle', 'arc', 'text_box', 'table',
+  'symbol',
+  'wire',
+  'bus',
+  'polyline',
+  'junction',
+  'no_connect',
+  'label',
+  'global_label',
+  'hierarchical_label',
+  'text',
+  'bus_entry',
+  'sheet',
+  'image',
+  'rectangle',
+  'circle',
+  'arc',
+  'text_box',
+  'table',
 ]);
 
 /** Rebuild the `(kicad_sch ...)` root list from the current model. */

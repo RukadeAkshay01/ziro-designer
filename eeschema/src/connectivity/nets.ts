@@ -32,7 +32,7 @@ import { symbolTransform, localToWorld } from '@ziroeda/common/src/transform.js'
 import { refId } from '../tools/hittest.js';
 
 /** KiCad CONNECTION_SUBGRAPH::PRIORITY (higher wins when naming a net). */
-const enum Priority {
+enum Priority {
   None = 0,
   Pin = 1,
   SheetPin = 2,
@@ -105,7 +105,11 @@ export function enumeratePins(sch: Schematic, libById: Map<string, LibSymbol>): 
     const ref = fieldValue(sym, 'Reference') ?? '?';
     let k = 0;
     for (const u of lib.units) {
-      if ((u.unit !== 0 && u.unit !== sym.unit) || (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)) continue;
+      if (
+        (u.unit !== 0 && u.unit !== sym.unit) ||
+        (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)
+      )
+        continue;
       for (const pin of u.pins) {
         out.push({
           id: `${symId}:pin${k}`,
@@ -129,8 +133,12 @@ export function enumeratePins(sch: Schematic, libById: Map<string, LibSymbol>): 
 function onSegment(p: Vec2, a: Vec2, b: Vec2): boolean {
   const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
   if (cross !== 0) return false;
-  return p.x >= Math.min(a.x, b.x) && p.x <= Math.max(a.x, b.x)
-      && p.y >= Math.min(a.y, b.y) && p.y <= Math.max(a.y, b.y);
+  return (
+    p.x >= Math.min(a.x, b.x) &&
+    p.x <= Math.max(a.x, b.x) &&
+    p.y >= Math.min(a.y, b.y) &&
+    p.y <= Math.max(a.y, b.y)
+  );
 }
 
 function fieldValue(sym: SchSymbol, keyName: string): string | undefined {
@@ -141,14 +149,23 @@ class UnionFind {
   private parent = new Map<string, string>();
   find(x: string): string {
     let root = this.parent.get(x);
-    if (root === undefined) { this.parent.set(x, x); return x; }
+    if (root === undefined) {
+      this.parent.set(x, x);
+      return x;
+    }
     while (root !== this.parent.get(root)) root = this.parent.get(root)!;
     // Path-compress.
     let cur = x;
-    while (this.parent.get(cur) !== root) { const next = this.parent.get(cur)!; this.parent.set(cur, root); cur = next; }
+    while (this.parent.get(cur) !== root) {
+      const next = this.parent.get(cur)!;
+      this.parent.set(cur, root);
+      cur = next;
+    }
     return root;
   }
-  union(a: string, b: string): void { this.parent.set(this.find(a), this.find(b)); }
+  union(a: string, b: string): void {
+    this.parent.set(this.find(a), this.find(b));
+  }
 }
 
 /** Compute the single-sheet netlist for a schematic. */
@@ -172,9 +189,17 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
   // Labels: priority/name by kind.
   sch.labels.forEach((l, i) => {
     if (l.kind === 'text') return; // free text is not a net driver
-    const priority = l.kind === 'global_label' ? Priority.Global
-      : l.kind === 'hierarchical_label' ? Priority.HierLabel : Priority.LocalLabel;
-    nodes.push({ id: refId('label', l.uuid, i), points: [l.at], driver: { priority, name: l.text } });
+    const priority =
+      l.kind === 'global_label'
+        ? Priority.Global
+        : l.kind === 'hierarchical_label'
+          ? Priority.HierLabel
+          : Priority.LocalLabel;
+    nodes.push({
+      id: refId('label', l.uuid, i),
+      points: [l.at],
+      driver: { priority, name: l.text },
+    });
   });
 
   // Hierarchical sheet pins connect like labels at their point (KiCad driver
@@ -182,7 +207,11 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
   sch.sheets.forEach((sh, si) => {
     const shId = refId('sheet', sh.uuid, si);
     sh.pins.forEach((p, k) => {
-      nodes.push({ id: `${shId}:sheetpin${k}`, points: [p.at], driver: { priority: Priority.SheetPin, name: p.name } });
+      nodes.push({
+        id: `${shId}:sheetpin${k}`,
+        points: [p.at],
+        driver: { priority: Priority.SheetPin, name: p.name },
+      });
     });
   });
 
@@ -194,7 +223,9 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
 
   // Symbol pins (through the placement transform). Power symbols drive a power net
   // named by the symbol's Value; ordinary pins drive a Net-(REF-pin) auto name.
-  const valueBySym = new Map(sch.symbols.map((s, i) => [refId('symbol', s.uuid, i), fieldValue(s, 'Value') ?? '']));
+  const valueBySym = new Map(
+    sch.symbols.map((s, i) => [refId('symbol', s.uuid, i), fieldValue(s, 'Value') ?? '']),
+  );
   for (const pin of enumeratePins(sch, libById)) {
     const node: Node = { id: pin.id, points: [pin.at], driver: null };
     if (pin.isPowerSymbol) {
@@ -210,7 +241,10 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
   const add = (p: Vec2, id: string): void => {
     const kk = key(p);
     let s = pointMap.get(kk);
-    if (!s) { s = new Set(); pointMap.set(kk, s); }
+    if (!s) {
+      s = new Set();
+      pointMap.set(kk, s);
+    }
     s.add(id);
   };
   for (const n of nodes) for (const p of n.points) add(p, n.id);
@@ -231,7 +265,9 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
     const overlapping = wireNodes.filter((w) => onSegment(l.at, w.a, w.b));
     if (overlapping.length < 2) return;
     const lid = refId('label', l.uuid, i);
-    for (const w of overlapping) { add(l.at, w.id); }
+    for (const w of overlapping) {
+      add(l.at, w.id);
+    }
     void lid;
   });
 
@@ -248,7 +284,10 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
   for (const n of nodes) {
     const r = uf.find(n.id);
     let g = byRoot.get(r);
-    if (!g) { g = []; byRoot.set(r, g); }
+    if (!g) {
+      g = [];
+      byRoot.set(r, g);
+    }
     g.push(n);
   }
 
@@ -260,7 +299,7 @@ export function computeNetlist(sch: Schematic, libById: Map<string, LibSymbol>):
     let best: Driver | null = null;
     let auto: string | undefined;
     for (const n of group) {
-      if (n.driver && n.driver.name && (!best || n.driver.priority > best.priority)) best = n.driver;
+      if (n.driver?.name && (!best || n.driver.priority > best.priority)) best = n.driver;
       if (!auto && n.autoName) auto = n.autoName;
     }
     const name = best?.name ?? auto ?? `Net-${code}`;

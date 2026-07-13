@@ -127,7 +127,10 @@ describe('connection-aware move (rubber-banding)', () => {
     expect(moved.lines[0]!.end).toEqual({ x: before.end.x + delta.x, y: before.end.y + delta.y });
     expect(moved.lines[0]!.start).toEqual(before.start);
     // And the symbol moved too.
-    expect(moved.symbols[0]!.at).toEqual({ x: sch.symbols[0]!.at.x + delta.x, y: sch.symbols[0]!.at.y + delta.y });
+    expect(moved.symbols[0]!.at).toEqual({
+      x: sch.symbols[0]!.at.x + delta.x,
+      y: sch.symbols[0]!.at.y + delta.y,
+    });
   });
 
   it('rubber-bands a stub wire when dragging a wire whose ends are both on fixed pins', () => {
@@ -147,8 +150,10 @@ describe('connection-aware move (rubber-banding)', () => {
 
     // The original wire moved in full (both ends by delta).
     const before = sch.lines[0]!;
-    expect(moved.lines.find((l) => l.uuid === wireId)!.start)
-      .toEqual({ x: before.start.x + delta.x, y: before.start.y + delta.y });
+    expect(moved.lines.find((l) => l.uuid === wireId)!.start).toEqual({
+      x: before.start.x + delta.x,
+      y: before.start.y + delta.y,
+    });
 
     // Two new stub wires now connect each original (fixed) pin position to the
     // dragged wire's new endpoint.
@@ -159,8 +164,8 @@ describe('connection-aware move (rubber-banding)', () => {
       expect(stub).toBeDefined();
       expect(pins.some((p) => p.x === w.fixed.x && p.y === w.fixed.y)).toBe(true);
       // One end anchored at the fixed pin (never moves)...
-      const anchored = stub.start.x === w.fixed.x && stub.start.y === w.fixed.y
-        ? stub.start : stub.end;
+      const anchored =
+        stub.start.x === w.fixed.x && stub.start.y === w.fixed.y ? stub.start : stub.end;
       const tracking = anchored === stub.start ? stub.end : stub.start;
       expect(anchored).toEqual(w.fixed);
       // ...the other end tracking the dragged wire's new position.
@@ -201,7 +206,10 @@ describe('orthogonal move (keeps wires orthogonal with a bend)', () => {
     expect(moved.lines.length).toBe(sch.lines.length + 1);
     const bend = moved.lines.at(-1)!;
     expect(bend.start).toEqual({ x: sch.lines[0]!.end.x, y: sch.lines[0]!.end.y + delta.y });
-    expect(bend.end).toEqual({ x: sch.lines[0]!.end.x + delta.x, y: sch.lines[0]!.end.y + delta.y });
+    expect(bend.end).toEqual({
+      x: sch.lines[0]!.end.x + delta.x,
+      y: sch.lines[0]!.end.y + delta.y,
+    });
   });
 
   it('undoes an orthogonal move exactly (removes the bend, reverses)', async () => {
@@ -235,8 +243,10 @@ describe('orthogonal move (keeps wires orthogonal with a bend)', () => {
     // Each fixed pin still has a wire endpoint touching it (connection preserved).
     const pins = symbolPinPositions(sch.symbols[0]!, libById.get(sch.symbols[0]!.libId));
     for (const pin of pins) {
-      const touches = moved.lines.some((l) =>
-        (l.start.x === pin.x && l.start.y === pin.y) || (l.end.x === pin.x && l.end.y === pin.y));
+      const touches = moved.lines.some(
+        (l) =>
+          (l.start.x === pin.x && l.start.y === pin.y) || (l.end.x === pin.x && l.end.y === pin.y),
+      );
       expect(touches).toBe(true);
     }
   });

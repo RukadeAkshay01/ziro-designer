@@ -23,9 +23,9 @@ const SRC = `(kicad_pcb (version 20241229) (generator "pcbnew")
 describe('PCB_IO_KICAD_SEXPR_PARSER', () => {
   it('parses items into the BOARD object model', () => {
     const b = parseBoard(SRC);
-    expect(b.Tracks()).toHaveLength(3);         // segment + arc + via
+    expect(b.Tracks()).toHaveLength(3); // segment + arc + via
     expect(b.Footprints()).toHaveLength(1);
-    expect(b.Drawings()).toHaveLength(1);       // gr_line
+    expect(b.Drawings()).toHaveLength(1); // gr_line
     expect(b.GetNetname(1)).toBe('GND');
     expect(b.GetLayers().map((l) => l.name)).toContain('F.SilkS');
   });
@@ -40,7 +40,9 @@ describe('PCB_IO_KICAD_SEXPR_PARSER', () => {
   });
 
   it('classifies the via as a PCB_VIA', () => {
-    const via = parseBoard(SRC).Tracks().find((t) => t instanceof PCB_VIA) as PCB_VIA;
+    const via = parseBoard(SRC)
+      .Tracks()
+      .find((t) => t instanceof PCB_VIA) as PCB_VIA;
     expect(via).toBeDefined();
     expect(via.GetPosition()).toEqual({ x: mmToIU(40), y: mmToIU(10) });
   });
@@ -49,7 +51,9 @@ describe('PCB_IO_KICAD_SEXPR_PARSER', () => {
     const b1 = parseBoard(SRC);
     const b2 = parseBoard(formatBoard(b1));
     expect(b2.Tracks()).toHaveLength(3);
-    expect(b2.Footprints()[0]!.Pads()[0]!.GetPosition()).toEqual(b1.Footprints()[0]!.Pads()[0]!.GetPosition());
+    expect(b2.Footprints()[0]!.Pads()[0]!.GetPosition()).toEqual(
+      b1.Footprints()[0]!.Pads()[0]!.GetPosition(),
+    );
     expect(b2.Footprints()[0]!.GetOrientation().AsDegrees()).toBe(90);
   });
 });

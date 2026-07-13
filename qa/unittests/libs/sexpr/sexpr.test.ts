@@ -9,9 +9,7 @@ const fixture = (name: string): string =>
 describe('tokenizer', () => {
   it('splits parens, atoms, and strings', () => {
     const toks = tokenize('(at 0 -1.27 "hi")');
-    expect(toks.map((t) => t.type)).toEqual([
-      'lparen', 'atom', 'atom', 'atom', 'string', 'rparen',
-    ]);
+    expect(toks.map((t) => t.type)).toEqual(['lparen', 'atom', 'atom', 'atom', 'string', 'rparen']);
     expect(toks.map((t) => t.value)).toEqual(['(', 'at', '0', '-1.27', 'hi', ')']);
   });
 

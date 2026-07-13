@@ -3,9 +3,21 @@ import { parse } from '@ziroeda/sexpr/src/index.js';
 import { readFootprintFile } from '@ziroeda/pcbnew/src/read-board.js';
 import { serializeFootprint } from '@ziroeda/pcbnew/src/write-footprint.js';
 import {
-  fpItemId, hitTestFootprint, footprintBBox, moveFootprintItems,
-  rotateFootprintItems, mirrorFootprintItems, deleteFootprintItems, itemsInBox,
-  setFootprintReference, setFootprintValue, setFootprintDescription, footprintStringChild, addPad, patchPad, addShape,
+  fpItemId,
+  hitTestFootprint,
+  footprintBBox,
+  moveFootprintItems,
+  rotateFootprintItems,
+  mirrorFootprintItems,
+  deleteFootprintItems,
+  itemsInBox,
+  setFootprintReference,
+  setFootprintValue,
+  setFootprintDescription,
+  footprintStringChild,
+  addPad,
+  patchPad,
+  addShape,
 } from '@ziroeda/pcbnew/src/edit-footprint.js';
 import type { PcbPad, PcbShape } from '@ziroeda/pcbnew/src/types.js';
 
@@ -43,7 +55,9 @@ describe('footprint editing', () => {
     const fp = read();
     expect(hitTestFootprint(fp, { x: mmToIU(-0.8), y: 0 }, 0)).toBe(fpItemId('pad', 0));
     expect(hitTestFootprint(fp, { x: mmToIU(0.8), y: 0 }, 0)).toBe(fpItemId('pad', 1));
-    expect(hitTestFootprint(fp, { x: 0, y: mmToIU(-0.6) }, mmToIU(0.05))).toBe(fpItemId('shape', 0));
+    expect(hitTestFootprint(fp, { x: 0, y: mmToIU(-0.6) }, mmToIU(0.05))).toBe(
+      fpItemId('shape', 0),
+    );
     expect(hitTestFootprint(fp, { x: mmToIU(5), y: mmToIU(5) }, 0)).toBeNull();
   });
 
@@ -55,7 +69,10 @@ describe('footprint editing', () => {
   });
 
   it('moves a pad and the change survives a serialize round-trip', () => {
-    const moved = moveFootprintItems(read(), new Set([fpItemId('pad', 0)]), { x: mmToIU(1), y: mmToIU(2) });
+    const moved = moveFootprintItems(read(), new Set([fpItemId('pad', 0)]), {
+      x: mmToIU(1),
+      y: mmToIU(2),
+    });
     expect(iuToMM(moved.pads[0]!.at.x)).toBeCloseTo(0.2, 6);
     expect(iuToMM(moved.pads[0]!.at.y)).toBeCloseTo(2, 6);
     const reread = readFootprintFile(parse(serializeFootprint(moved)))!;
@@ -77,7 +94,10 @@ describe('footprint editing', () => {
   });
 
   it('mirrors pads across the Y axis', () => {
-    const m = mirrorFootprintItems(read(), new Set([fpItemId('pad', 0), fpItemId('pad', 1)]), { x: 0, y: 0 });
+    const m = mirrorFootprintItems(read(), new Set([fpItemId('pad', 0), fpItemId('pad', 1)]), {
+      x: 0,
+      y: 0,
+    });
     expect(iuToMM(m.pads[0]!.at.x)).toBeCloseTo(0.8, 6);
     expect(iuToMM(m.pads[1]!.at.x)).toBeCloseTo(-0.8, 6);
   });
@@ -100,8 +120,11 @@ describe('footprint editing', () => {
 
   it('adds a new through-hole pad that serializes canonically', () => {
     const pad: PcbPad = {
-      number: '3', type: 'thru_hole', shape: 'circle',
-      at: { x: mmToIU(2), y: 0 }, angle: 0,
+      number: '3',
+      type: 'thru_hole',
+      shape: 'circle',
+      at: { x: mmToIU(2), y: 0 },
+      angle: 0,
       size: { x: mmToIU(1.524), y: mmToIU(1.524) },
       drill: { oblong: false, w: mmToIU(0.762), h: mmToIU(0.762) },
       layers: ['*.Cu', '*.Mask'],
@@ -124,7 +147,9 @@ describe('footprint editing', () => {
   it('patches an existing pad, keeping unmodelled fields', () => {
     const fp = read();
     const edited = patchPad(fp.pads[0]!, {
-      number: '7', shape: 'rect', size: { x: mmToIU(1.2), y: mmToIU(1.4) },
+      number: '7',
+      shape: 'rect',
+      size: { x: mmToIU(1.2), y: mmToIU(1.4) },
     });
     const fp2 = { ...fp, pads: fp.pads.map((p, i) => (i === 0 ? edited : p)) };
     const reread = readFootprintFile(parse(serializeFootprint(fp2)))!;
@@ -140,8 +165,24 @@ describe('footprint editing', () => {
   });
 
   it('adds silk graphics (line + circle) that round-trip on their layer', () => {
-    const line: PcbShape = { kind: 'line', start: { x: 0, y: 0 }, end: { x: mmToIU(1), y: 0 }, width: mmToIU(0.1), fill: false, layer: 'F.SilkS', source: EMPTY };
-    const circle: PcbShape = { kind: 'circle', center: { x: 0, y: 0 }, end: { x: mmToIU(0.5), y: 0 }, width: mmToIU(0.1), fill: false, layer: 'F.SilkS', source: EMPTY };
+    const line: PcbShape = {
+      kind: 'line',
+      start: { x: 0, y: 0 },
+      end: { x: mmToIU(1), y: 0 },
+      width: mmToIU(0.1),
+      fill: false,
+      layer: 'F.SilkS',
+      source: EMPTY,
+    };
+    const circle: PcbShape = {
+      kind: 'circle',
+      center: { x: 0, y: 0 },
+      end: { x: mmToIU(0.5), y: 0 },
+      width: mmToIU(0.1),
+      fill: false,
+      layer: 'F.SilkS',
+      source: EMPTY,
+    };
     const fp = addShape(addShape(read(), line), circle);
     const reread = readFootprintFile(parse(serializeFootprint(fp)))!;
     expect(reread.shapes.filter((s) => s.kind === 'line')).toHaveLength(2); // the original + the new one

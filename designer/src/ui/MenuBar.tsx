@@ -68,7 +68,11 @@ export function MenuBar({
                       it.action?.();
                     }}
                   >
-                    <span className="mico">{it.icon && toolbarIconUrl(it.icon) ? <img src={toolbarIconUrl(it.icon)} alt="" /> : null}</span>
+                    <span className="mico">
+                      {it.icon && toolbarIconUrl(it.icon) ? (
+                        <img src={toolbarIconUrl(it.icon)} alt="" />
+                      ) : null}
+                    </span>
                     <span className="lbl">{it.label}</span>
                     {it.shortcut && <span className="sc">{it.shortcut}</span>}
                   </div>

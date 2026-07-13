@@ -114,7 +114,8 @@ describe.skipIf(!existsSync(ONEPIN))('readFootprintFile (real KiCad demo footpri
 
 // Sweep the library the Footprint Editor actually bundles (designer/public):
 // every real KiCad 9 footprint the editor can open must parse and round-trip.
-const BUNDLED = new URL('../../../designer/public/footprints/CM5IO.pretty', import.meta.url).pathname;
+const BUNDLED = new URL('../../../designer/public/footprints/CM5IO.pretty', import.meta.url)
+  .pathname;
 describe.skipIf(!existsSync(BUNDLED))('bundled footprint library (CM5IO.pretty)', () => {
   const files = readdirSync(BUNDLED).filter((f) => f.endsWith('.kicad_mod'));
   it('parses every bundled footprint', () => {

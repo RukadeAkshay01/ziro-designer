@@ -8,16 +8,33 @@
  * follow KiCad's per-orientation direction.
  */
 
-import { type Vec2 } from '@ziroeda/kimath';
+import type { Vec2 } from '@ziroeda/kimath';
 import { symbolTransform, localToWorld, iuToMM, type Transform } from '@ziroeda/common';
-import { refId, symbolBodyBBox, danglingPinPositions, fieldShownText, fieldBoundingBox, fieldDrawRotation, ITALIC_TILT, type BBox, type Schematic, type SchLabel, type LibGraphic, type LibSymbol, type LibSymbolUnit } from '@ziroeda/eeschema';
+import {
+  refId,
+  symbolBodyBBox,
+  danglingPinPositions,
+  fieldShownText,
+  fieldBoundingBox,
+  fieldDrawRotation,
+  ITALIC_TILT,
+  type BBox,
+  type Schematic,
+  type SchLabel,
+  type LibGraphic,
+  type LibSymbol,
+  type LibSymbolUnit,
+} from '@ziroeda/eeschema';
 import type { Theme } from '../theme.js';
 import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
 // Per-render state (single-threaded): the visible world rect for culling and the
 // current zoom, so text below a few screen pixels is drawn cheaply.
 let g_scale = 1;
-let g_minX = -Infinity, g_minY = -Infinity, g_maxX = Infinity, g_maxY = Infinity;
+let g_minX = -Infinity,
+  g_minY = -Infinity,
+  g_maxX = Infinity,
+  g_maxY = Infinity;
 function inView(minX: number, minY: number, maxX: number, maxY: number): boolean {
   return maxX >= g_minX && minX <= g_maxX && maxY >= g_minY && minY <= g_maxY;
 }
@@ -29,7 +46,10 @@ interface FieldDraw {
   key: string;
   shown: string;
   centre: Vec2;
-  minX: number; minY: number; maxX: number; maxY: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
   h: number;
   rot: 0 | 90;
   bold: boolean;
@@ -55,7 +75,11 @@ function bodyBoxesFor(sch: Schematic, libById: Map<string, LibSymbol>): BBox[] {
   return g_bboxes;
 }
 
-function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>, showHidden: boolean): FieldDraw[][] {
+function fieldDrawsFor(
+  sch: Schematic,
+  libById: Map<string, LibSymbol>,
+  showHidden: boolean,
+): FieldDraw[][] {
   if (sch === g_fieldSch && showHidden === g_fieldShowHidden) return g_fieldDraws;
   g_fieldSch = sch;
   g_fieldShowHidden = showHidden;
@@ -74,7 +98,10 @@ function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>, showHidd
         key: f.key,
         shown,
         centre: { x: box.x + Math.trunc(box.w / 2), y: box.y + Math.trunc(box.h / 2) },
-        minX: box.x, minY: box.y, maxX: box.x + box.w, maxY: box.y + box.h,
+        minX: box.x,
+        minY: box.y,
+        maxX: box.x + box.w,
+        maxY: box.y + box.h,
         h: f.effects?.fontSize?.[0] ?? 1.27 * MM,
         rot: fieldDrawRotation(f, sym),
         bold: !!f.effects?.bold,
@@ -94,7 +121,10 @@ function fieldDrawsFor(sch: Schematic, libById: Map<string, LibSymbol>, showHidd
 let g_dangleSch: Schematic | null = null;
 let g_dangle: readonly Vec2[] = [];
 function danglingFor(sch: Schematic, libById: Map<string, LibSymbol>): readonly Vec2[] {
-  if (sch !== g_dangleSch) { g_dangleSch = sch; g_dangle = danglingPinPositions(sch, libById); }
+  if (sch !== g_dangleSch) {
+    g_dangleSch = sch;
+    g_dangle = danglingPinPositions(sch, libById);
+  }
   return g_dangle;
 }
 
@@ -147,7 +177,7 @@ export const DEFAULT_RENDER_OPTS: RenderOpts = {
 
 const MM = 10000; // IU per mm
 const DEFAULT_LINE_WIDTH = 0.1524 * MM; // ~6 mil, KiCad default
-const GRID = 1.27 * MM; // 50 mil
+const _GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
   return (u.unit === 0 || u.unit === unit) && (u.bodyStyle === 0 || u.bodyStyle === bodyStyle);
@@ -165,22 +195,37 @@ function cssColor(c: readonly [number, number, number, number]): string {
 function setDash(ctx: CanvasRenderingContext2D, type: string | undefined, width: number): void {
   const w = width > 0 ? width : DEFAULT_LINE_WIDTH;
   switch (type) {
-    case 'dash': ctx.setLineDash([12 * w, 3 * w]); break;
-    case 'dot': ctx.setLineDash([w, 3 * w]); break;
-    case 'dash_dot': ctx.setLineDash([12 * w, 3 * w, w, 3 * w]); break;
-    case 'dash_dot_dot': ctx.setLineDash([12 * w, 3 * w, w, 3 * w, w, 3 * w]); break;
-    default: ctx.setLineDash([]); break;
+    case 'dash':
+      ctx.setLineDash([12 * w, 3 * w]);
+      break;
+    case 'dot':
+      ctx.setLineDash([w, 3 * w]);
+      break;
+    case 'dash_dot':
+      ctx.setLineDash([12 * w, 3 * w, w, 3 * w]);
+      break;
+    case 'dash_dot_dot':
+      ctx.setLineDash([12 * w, 3 * w, w, 3 * w, w, 3 * w]);
+      break;
+    default:
+      ctx.setLineDash([]);
+      break;
   }
 }
 
 /** Local body-end of a pin given its connection point, orientation and length (KiCad mapping). */
 function pinBodyEnd(at: Vec2, angle: number, length: number): Vec2 {
   switch (((angle % 360) + 360) % 360) {
-    case 0: return { x: at.x + length, y: at.y };
-    case 90: return { x: at.x, y: at.y - length };
-    case 180: return { x: at.x - length, y: at.y };
-    case 270: return { x: at.x, y: at.y + length };
-    default: return at;
+    case 0:
+      return { x: at.x + length, y: at.y };
+    case 90:
+      return { x: at.x, y: at.y - length };
+    case 180:
+      return { x: at.x - length, y: at.y };
+    case 270:
+      return { x: at.x, y: at.y + length };
+    default:
+      return at;
   }
 }
 
@@ -231,7 +276,7 @@ export function renderSchematic(
   }
   drawDrawingSheet(ctx, sch, theme);
 
-  const hl = (id: string): boolean => highlight !== undefined && highlight.has(id);
+  const hl = (id: string): boolean => highlight?.has(id) ?? false;
 
   // KiCad draws selection as a blue LAYER_SELECTION_SHADOWS glow *under* the item,
   // never a bounding box: a wider stroke of the item's own geometry in the shadow
@@ -239,9 +284,18 @@ export function renderSchematic(
   // getShadowWidth(false) = selection_thickness (3 mils) as a zoom-scaled screen
   // term plus a fixed world minimum. Net highlight (magenta) is a *separate* thing.
   const SELECTION_THICKNESS_MILS = opts.selectionThicknessMils;
-  const selShadowWidth = Math.abs(SELECTION_THICKNESS_MILS / scale) + SELECTION_THICKNESS_MILS * (0.0254 * MM);
+  const selShadowWidth =
+    Math.abs(SELECTION_THICKNESS_MILS / scale) + SELECTION_THICKNESS_MILS * (0.0254 * MM);
   if (selection && selection.size > 0)
-    drawSelectionShadows(ctx, sch, libById, selection, theme, theme.selectionShadow, selShadowWidth);
+    drawSelectionShadows(
+      ctx,
+      sch,
+      libById,
+      selection,
+      theme,
+      theme.selectionShadow,
+      selShadowWidth,
+    );
 
   // Net highlighting, ported from SCH_PAINTER: brightened items are drawn twice —
   // once on LAYER_SELECTION_SHADOWS (a wider stroke of the brightened colour at 15%
@@ -283,31 +337,53 @@ export function renderSchematic(
   // and dash style, and draws all of its vertices — not just the first segment.
   sch.lines.forEach((line, i) => {
     const pts = line.points ?? [line.start, line.end];
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
     if (!inView(minX, minY, maxX, maxY)) return;
 
     const on = hl(refId('line', line.uuid, i));
     const width = line.stroke && line.stroke.width > 0 ? line.stroke.width : DEFAULT_LINE_WIDTH;
-    ctx.strokeStyle = on ? theme.netHighlight
-      : line.kind === 'bus' ? theme.bus
-      : line.kind === 'wire' ? theme.wire
-      : line.stroke?.color ? cssColor(line.stroke.color) // graphic polyline: its own colour
-      : theme.noteLine;
+    ctx.strokeStyle = on
+      ? theme.netHighlight
+      : line.kind === 'bus'
+        ? theme.bus
+        : line.kind === 'wire'
+          ? theme.wire
+          : line.stroke?.color
+            ? cssColor(line.stroke.color) // graphic polyline: its own colour
+            : theme.noteLine;
     ctx.lineWidth = width;
     setDash(ctx, line.stroke?.type, width);
     ctx.beginPath();
     ctx.moveTo(pts[0]!.x, pts[0]!.y);
     for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k]!.x, pts[k]!.y);
     ctx.stroke();
-    if (line.stroke?.type && line.stroke.type !== 'default' && line.stroke.type !== 'solid') ctx.setLineDash([]);
+    if (line.stroke?.type && line.stroke.type !== 'default' && line.stroke.type !== 'solid')
+      ctx.setLineDash([]);
   });
 
   // Wire-to-bus entries: a 45-degree stub from `at` to `at + size`, drawn on the
   // wire layer (SCH_PAINTER::draw(SCH_BUS_ENTRY_BASE): SCH_BUS_WIRE_ENTRY -> LAYER_WIRE).
   for (const be of sch.busEntries) {
-    const ex = be.at.x + be.size.x, ey = be.at.y + be.size.y;
-    if (!inView(Math.min(be.at.x, ex), Math.min(be.at.y, ey), Math.max(be.at.x, ex), Math.max(be.at.y, ey))) continue;
+    const ex = be.at.x + be.size.x,
+      ey = be.at.y + be.size.y;
+    if (
+      !inView(
+        Math.min(be.at.x, ex),
+        Math.min(be.at.y, ey),
+        Math.max(be.at.x, ex),
+        Math.max(be.at.y, ey),
+      )
+    )
+      continue;
     ctx.strokeStyle = theme.wire;
     ctx.lineWidth = be.stroke && be.stroke.width > 0 ? be.stroke.width : DEFAULT_LINE_WIDTH;
     ctx.beginPath();
@@ -373,12 +449,28 @@ export function renderSchematic(
     const bodyVisible = inView(bb.minX, bb.minY, bb.maxX, bb.maxY);
     if (lib && bodyVisible) {
       const t = symbolTransform(sym.angle, sym.mirror);
-      const pins = { numbersHidden: lib.pinNumbersHidden, namesHidden: lib.pinNamesHidden, nameOffset: lib.pinNameOffset };
+      const pins = {
+        numbersHidden: lib.pinNumbersHidden,
+        namesHidden: lib.pinNamesHidden,
+        nameOffset: lib.pinNameOffset,
+      };
       const symId = refId('symbol', sym.uuid, si);
       let pinIndex = 0;
       for (const unit of lib.units) {
         if (libUnitMatches(unit, sym.unit, sym.bodyStyle))
-          pinIndex = drawLibUnit(ctx, unit, sym.at, t, theme, pins, symId, pinIndex, highlight, shadowWidth, opts.showHiddenPins);
+          pinIndex = drawLibUnit(
+            ctx,
+            unit,
+            sym.at,
+            t,
+            theme,
+            pins,
+            symId,
+            pinIndex,
+            highlight,
+            shadowWidth,
+            opts.showHiddenPins,
+          );
       }
     }
     // Fields are painted exactly as KiCad's SCH_PAINTER::draw(SCH_FIELD): the
@@ -388,8 +480,14 @@ export function renderSchematic(
     // centre with the draw rotation (GetDrawRotation).
     for (const fd of fieldDraws[si] ?? []) {
       if (!inView(fd.minX, fd.minY, fd.maxX, fd.maxY)) continue;
-      const color = fd.hidden ? theme.hidden
-        : fd.cssColor ?? (fd.key === 'Reference' ? theme.reference : fd.key === 'Value' ? theme.value : theme.fields);
+      const color = fd.hidden
+        ? theme.hidden
+        : (fd.cssColor ??
+          (fd.key === 'Reference'
+            ? theme.reference
+            : fd.key === 'Value'
+              ? theme.value
+              : theme.fields));
       drawText(ctx, fd.shown, fd.centre, fd.h, color, undefined, fd.rot, fd.bold, fd.italic);
     }
   });
@@ -409,7 +507,8 @@ export function renderSchematic(
   // painter casts SCH_SHEET_PIN to SCH_HIERLABEL) in the LAYER_SHEETLABEL colour.
   for (const sh of sch.sheets) {
     const pad = 8 * MM; // fields sit just outside the rectangle
-    if (!inView(sh.at.x - pad, sh.at.y - pad, sh.at.x + sh.size.w + pad, sh.at.y + sh.size.h + pad)) continue;
+    if (!inView(sh.at.x - pad, sh.at.y - pad, sh.at.x + sh.size.w + pad, sh.at.y + sh.size.h + pad))
+      continue;
     const border = sh.stroke?.color ? cssColor(sh.stroke.color) : theme.sheetBorder;
     const bw = sh.stroke && sh.stroke.width > 0 ? sh.stroke.width : DEFAULT_LINE_WIDTH;
     if (sh.fillColor) {
@@ -425,20 +524,36 @@ export function renderSchematic(
       if (!f.at || f.effects?.hidden || f.value === '') continue;
       // SCH_FIELD::GetShownText prefixes the filename field (sch_field.cpp).
       const text = f.key === 'Sheetfile' ? `File: ${f.value}` : f.value;
-      const color = f.key === 'Sheetname' ? theme.sheetName
-        : f.key === 'Sheetfile' ? theme.sheetFile : theme.label;
+      const color =
+        f.key === 'Sheetname'
+          ? theme.sheetName
+          : f.key === 'Sheetfile'
+            ? theme.sheetFile
+            : theme.label;
       const h = f.effects?.fontSize?.[0] ?? 1.27 * MM;
-      drawText(ctx, text, f.at, h, color, f.effects?.justify, (f.angle % 180) === 90 ? 90 : 0,
-        f.effects?.bold, f.effects?.italic);
+      drawText(
+        ctx,
+        text,
+        f.at,
+        h,
+        color,
+        f.effects?.justify,
+        f.angle % 180 === 90 ? 90 : 0,
+        f.effects?.bold,
+        f.effects?.italic,
+      );
     }
 
     for (const p of sh.pins) {
       const fake: SchLabel = {
-        kind: 'hierarchical_label', text: p.name, at: p.at,
+        kind: 'hierarchical_label',
+        text: p.name,
+        at: p.at,
         // Sheet-pin angle encodes the side (0=right, 90=top, 180=left, 270=bottom);
         // the flag orientation comes from angle + justify like a hier label.
         angle: p.angle === 90 || p.angle === 270 ? 90 : 0,
-        shape: p.shape, source: p.source,
+        shape: p.shape,
+        source: p.source,
         ...(p.effects ? { effects: p.effects } : {}),
       };
       drawLabel(ctx, fake, { ...theme, hierLabel: theme.sheetLabel });
@@ -471,15 +586,27 @@ function drawSheetGraphic(ctx: CanvasRenderingContext2D, g: LibGraphic, theme: T
   const fill = g.fill?.type === 'color' && g.fill.color ? cssColor(g.fill.color) : null;
 
   // Cheap culling per shape.
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const inc = (p: Vec2): void => {
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
   };
-  if (g.kind === 'rectangle') { inc(g.start); inc(g.end); }
-  else if (g.kind === 'circle') { inc({ x: g.center.x - g.radius, y: g.center.y - g.radius }); inc({ x: g.center.x + g.radius, y: g.center.y + g.radius }); }
-  else if (g.kind === 'arc') { inc(g.start); inc(g.mid); inc(g.end); }
-  else if (g.kind === 'polyline') g.points.forEach(inc);
+  if (g.kind === 'rectangle') {
+    inc(g.start);
+    inc(g.end);
+  } else if (g.kind === 'circle') {
+    inc({ x: g.center.x - g.radius, y: g.center.y - g.radius });
+    inc({ x: g.center.x + g.radius, y: g.center.y + g.radius });
+  } else if (g.kind === 'arc') {
+    inc(g.start);
+    inc(g.mid);
+    inc(g.end);
+  } else if (g.kind === 'polyline') g.points.forEach(inc);
   if (!inView(minX, minY, maxX, maxY)) return;
 
   ctx.strokeStyle = color;
@@ -493,11 +620,18 @@ function drawSheetGraphic(ctx: CanvasRenderingContext2D, g: LibGraphic, theme: T
   } else {
     ctx.beginPath();
     if (g.kind === 'rectangle') {
-      ctx.rect(Math.min(g.start.x, g.end.x), Math.min(g.start.y, g.end.y), Math.abs(g.end.x - g.start.x), Math.abs(g.end.y - g.start.y));
+      ctx.rect(
+        Math.min(g.start.x, g.end.x),
+        Math.min(g.start.y, g.end.y),
+        Math.abs(g.end.x - g.start.x),
+        Math.abs(g.end.y - g.start.y),
+      );
     } else if (g.kind === 'circle') {
       ctx.arc(g.center.x, g.center.y, g.radius, 0, Math.PI * 2);
     } else {
-      g.points.forEach((p: Vec2, i: number) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      g.points.forEach((p: Vec2, i: number) =>
+        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+      );
     }
     if (fill) ctx.fill();
     ctx.stroke();
@@ -515,12 +649,18 @@ const INTERLINE = 1.68 * 0.9583;
 function wrapTextBox(text: string, maxWidth: number, height: number): string[] {
   const out: string[] = [];
   for (const para of text.split('\n')) {
-    if (para === '') { out.push(''); continue; }
+    if (para === '') {
+      out.push('');
+      continue;
+    }
     let cur = '';
     for (const word of para.split(' ')) {
       const trial = cur === '' ? word : `${cur} ${word}`;
       if (cur === '' || measureText(trial, height) <= maxWidth) cur = trial;
-      else { out.push(cur); cur = word; }
+      else {
+        out.push(cur);
+        cur = word;
+      }
     }
     out.push(cur);
   }
@@ -532,23 +672,36 @@ function wrapTextBox(text: string, maxWidth: number, height: number): string[] {
  * word-wrapped inside the box minus margins, honouring justification (default
  * left/top). Grounded in KiCad's SCH_TEXTBOX::GetShownText / GetDrawPos.
  */
-function drawTextBox(ctx: CanvasRenderingContext2D, tb: Schematic['textBoxes'][number], theme: Theme): void {
-  const x0 = Math.min(tb.start.x, tb.end.x), x1 = Math.max(tb.start.x, tb.end.x);
-  const y0 = Math.min(tb.start.y, tb.end.y), y1 = Math.max(tb.start.y, tb.end.y);
+function drawTextBox(
+  ctx: CanvasRenderingContext2D,
+  tb: Schematic['textBoxes'][number],
+  theme: Theme,
+): void {
+  const x0 = Math.min(tb.start.x, tb.end.x),
+    x1 = Math.max(tb.start.x, tb.end.x);
+  const y0 = Math.min(tb.start.y, tb.end.y),
+    y1 = Math.max(tb.start.y, tb.end.y);
   if (!inView(x0, y0, x1, y1)) return;
 
   const stroke = tb.stroke;
   const width = stroke && stroke.width > 0 ? stroke.width : DEFAULT_LINE_WIDTH;
   const borderColor = stroke?.color ? cssColor(stroke.color) : theme.noteLine;
   const textColor = tb.effects?.color ? cssColor(tb.effects.color) : theme.noteLine;
-  const fill = tb.fill?.type === 'color' && tb.fill.color ? cssColor(tb.fill.color)
-    : tb.fill?.type === 'background' ? theme.background : null;
+  const fill =
+    tb.fill?.type === 'color' && tb.fill.color
+      ? cssColor(tb.fill.color)
+      : tb.fill?.type === 'background'
+        ? theme.background
+        : null;
 
   // Border + fill. A width-0 default border still draws (KiCad draws the outline).
   ctx.beginPath();
   ctx.rect(x0, y0, x1 - x0, y1 - y0);
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (!stroke || stroke.type !== 'none') {
+  if (fill) {
+    ctx.fillStyle = fill;
+    ctx.fill();
+  }
+  if (stroke?.type !== 'none') {
     ctx.strokeStyle = borderColor;
     ctx.lineWidth = width;
     setDash(ctx, stroke?.type, width);
@@ -561,45 +714,79 @@ function drawTextBox(ctx: CanvasRenderingContext2D, tb: Schematic['textBoxes'][n
   const h = tb.effects?.fontSize?.[0] ?? 12700;
   const bold = tb.effects?.bold ?? false;
   const italic = tb.effects?.italic ?? false;
-  const innerW = (x1 - x0) - m.left - m.right;
+  const innerW = x1 - x0 - m.left - m.right;
   if (innerW <= 0 || tb.text === '') return;
   const lines = wrapTextBox(tb.text, innerW, h);
   const pitch = h * INTERLINE;
   const justify = tb.effects?.justify ?? ['left', 'top'];
-  const right = justify.includes('right'), hcenter = justify.includes('center') && !justify.includes('left') && !justify.includes('right');
-  const bottom = justify.includes('bottom'), vcenter = justify.includes('center');
+  const right = justify.includes('right'),
+    hcenter = justify.includes('center') && !justify.includes('left') && !justify.includes('right');
+  const bottom = justify.includes('bottom'),
+    vcenter = justify.includes('center');
 
   const anchorX = right ? x1 - m.right : hcenter ? (x0 + m.left + x1 - m.right) / 2 : x0 + m.left;
   const hj: readonly string[] = right ? ['right'] : hcenter ? ['center'] : ['left'];
   const blockH = (lines.length - 1) * pitch + h;
-  const innerTop = y0 + m.top, innerBot = y1 - m.bottom;
-  const firstBaseTop = bottom ? innerBot - blockH + h : vcenter ? (innerTop + innerBot) / 2 - blockH / 2 + h : innerTop + h;
+  const innerTop = y0 + m.top,
+    innerBot = y1 - m.bottom;
+  const firstBaseTop = bottom
+    ? innerBot - blockH + h
+    : vcenter
+      ? (innerTop + innerBot) / 2 - blockH / 2 + h
+      : innerTop + h;
 
   lines.forEach((line, i) => {
     // drawText takes the top of the cap box when justify includes 'top'; pass the
     // per-line top so each wrapped row sits pitch apart.
-    drawText(ctx, line, { x: anchorX, y: firstBaseTop - h + i * pitch }, h, textColor, [...hj, 'top'], 0, bold, italic);
+    drawText(
+      ctx,
+      line,
+      { x: anchorX, y: firstBaseTop - h + i * pitch },
+      h,
+      textColor,
+      [...hj, 'top'],
+      0,
+      bold,
+      italic,
+    );
   });
 }
 
 /** Draw word-wrapped text inside the box [x0,y0]-[x1,y1] minus margins (shared by cells). */
 function drawBoxText(
-  ctx: CanvasRenderingContext2D, text: string, x0: number, y0: number, x1: number, y1: number,
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x0: number,
+  y0: number,
+  x1: number,
+  _y1: number,
   m: { left: number; top: number; right: number; bottom: number },
-  effects: Schematic['textBoxes'][number]['effects'], color: string,
+  effects: Schematic['textBoxes'][number]['effects'],
+  color: string,
 ): void {
   const h = effects?.fontSize?.[0] ?? 12700;
-  const innerW = (x1 - x0) - m.left - m.right;
+  const innerW = x1 - x0 - m.left - m.right;
   if (innerW <= 0 || text === '') return;
   const lines = wrapTextBox(text, innerW, h);
   const pitch = h * INTERLINE;
   const justify = effects?.justify ?? ['left', 'top'];
-  const right = justify.includes('right'), hcenter = justify.includes('center') && !justify.includes('left') && !justify.includes('right');
+  const right = justify.includes('right'),
+    hcenter = justify.includes('center') && !justify.includes('left') && !justify.includes('right');
   const anchorX = right ? x1 - m.right : hcenter ? (x0 + m.left + x1 - m.right) / 2 : x0 + m.left;
   const hj: readonly string[] = right ? ['right'] : hcenter ? ['center'] : ['left'];
   const top = y0 + m.top;
   lines.forEach((line, i) => {
-    drawText(ctx, line, { x: anchorX, y: top + i * pitch }, h, color, [...hj, 'top'], 0, effects?.bold ?? false, effects?.italic ?? false);
+    drawText(
+      ctx,
+      line,
+      { x: anchorX, y: top + i * pitch },
+      h,
+      color,
+      [...hj, 'top'],
+      0,
+      effects?.bold ?? false,
+      effects?.italic ?? false,
+    );
   });
 }
 
@@ -608,26 +795,48 @@ function drawBoxText(
  * separators and the external border. Grounded in SCH_TABLE::Plot ordering
  * (cells first, grid lines last).
  */
-function drawTable(ctx: CanvasRenderingContext2D, t: Schematic['tables'][number], theme: Theme): void {
+function drawTable(
+  ctx: CanvasRenderingContext2D,
+  t: Schematic['tables'][number],
+  theme: Theme,
+): void {
   if (t.cells.length === 0) return;
   // Table extent from the cells.
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  let x0 = Infinity,
+    y0 = Infinity,
+    x1 = -Infinity,
+    y1 = -Infinity;
   for (const c of t.cells) {
-    x0 = Math.min(x0, c.start.x, c.end.x); y0 = Math.min(y0, c.start.y, c.end.y);
-    x1 = Math.max(x1, c.start.x, c.end.x); y1 = Math.max(y1, c.start.y, c.end.y);
+    x0 = Math.min(x0, c.start.x, c.end.x);
+    y0 = Math.min(y0, c.start.y, c.end.y);
+    x1 = Math.max(x1, c.start.x, c.end.x);
+    y1 = Math.max(y1, c.start.y, c.end.y);
   }
   if (!inView(x0, y0, x1, y1)) return;
 
   const color = theme.noteLine;
-  const border = t.borderStroke && t.borderStroke.width > 0 ? t.borderStroke.width : DEFAULT_LINE_WIDTH;
-  const sep = t.separatorsStroke && t.separatorsStroke.width > 0 ? t.separatorsStroke.width : DEFAULT_LINE_WIDTH;
+  const border =
+    t.borderStroke && t.borderStroke.width > 0 ? t.borderStroke.width : DEFAULT_LINE_WIDTH;
+  const sep =
+    t.separatorsStroke && t.separatorsStroke.width > 0
+      ? t.separatorsStroke.width
+      : DEFAULT_LINE_WIDTH;
 
   // Cell text.
   const m = { left: 0, top: 0, right: 0, bottom: 0 };
   for (const c of t.cells) {
     const cm = c.margins ?? m;
-    drawBoxText(ctx, c.text, Math.min(c.start.x, c.end.x), Math.min(c.start.y, c.end.y),
-      Math.max(c.start.x, c.end.x), Math.max(c.start.y, c.end.y), cm, c.effects, color);
+    drawBoxText(
+      ctx,
+      c.text,
+      Math.min(c.start.x, c.end.x),
+      Math.min(c.start.y, c.end.y),
+      Math.max(c.start.x, c.end.x),
+      Math.max(c.start.y, c.end.y),
+      cm,
+      c.effects,
+      color,
+    );
   }
 
   ctx.strokeStyle = color;
@@ -639,7 +848,10 @@ function drawTable(ctx: CanvasRenderingContext2D, t: Schematic['tables'][number]
     let x = x0;
     for (let c = 0; c < t.colWidths.length - 1; c++) {
       x += t.colWidths[c]!;
-      ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.lineTo(x, y1);
+      ctx.stroke();
     }
   }
   // Row separators (internal horizontal lines). The first one is the header separator.
@@ -649,7 +861,10 @@ function drawTable(ctx: CanvasRenderingContext2D, t: Schematic['tables'][number]
     const isHeader = r === 0;
     if ((isHeader && t.borderHeader) || (!isHeader && t.separatorRows)) {
       ctx.lineWidth = sep;
-      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x1, y);
+      ctx.stroke();
     }
   }
 
@@ -665,7 +880,10 @@ function drawTable(ctx: CanvasRenderingContext2D, t: Schematic['tables'][number]
 // BITMAP_BASE: m_pixelSizeIu = 254000 / ppi with the default 300 ppi.
 const IU_PER_PIXEL = 254000 / 300;
 
-interface ImageEntry { img: HTMLImageElement; ready: boolean }
+interface ImageEntry {
+  img: HTMLImageElement;
+  ready: boolean;
+}
 const g_images = new Map<string, ImageEntry>();
 let g_invalidate: (() => void) | null = null;
 
@@ -681,7 +899,10 @@ function imageFor(im: { data: string; uuid?: string }): ImageEntry | null {
   if (!entry) {
     const img = new Image();
     entry = { img, ready: false };
-    img.onload = () => { entry!.ready = true; g_invalidate?.(); };
+    img.onload = () => {
+      entry!.ready = true;
+      g_invalidate?.();
+    };
     img.src = `data:image/png;base64,${im.data}`;
     g_images.set(key, entry);
   }
@@ -698,7 +919,15 @@ const NOCONNECT_SIZE = 1.2192 * MM;
 // KiCad's ERC marker: MarkerShapeCorners (marker_base.cpp) scaled by 0.15 mm
 // (sch_marker.cpp SCALING_FACTOR) — the little bent arrow anchored at the fault.
 const MARKER_SHAPE: readonly (readonly [number, number])[] = [
-  [0, 0], [8, 1], [4, 3], [13, 8], [9, 9], [8, 13], [3, 4], [1, 8], [0, 0],
+  [0, 0],
+  [8, 1],
+  [4, 3],
+  [13, 8],
+  [9, 9],
+  [8, 13],
+  [3, 4],
+  [1, 8],
+  [0, 0],
 ];
 const MARKER_SCALE = 0.15 * MM;
 
@@ -722,7 +951,8 @@ export function drawErcMarkers(
     MARKER_SHAPE.forEach(([x, y], i) => {
       const px = m.at.x + x * MARKER_SCALE;
       const py = m.at.y + y * MARKER_SCALE;
-      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
     });
     ctx.closePath();
     ctx.fill();
@@ -734,7 +964,9 @@ function brighten(hex: string, f: number): string {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
   if (!m) return hex;
   const mix = (c: number) => Math.round(c + (255 - c) * f);
-  const r = mix(parseInt(m[1]!, 16)), g = mix(parseInt(m[2]!, 16)), b = mix(parseInt(m[3]!, 16));
+  const r = mix(parseInt(m[1]!, 16)),
+    g = mix(parseInt(m[2]!, 16)),
+    b = mix(parseInt(m[3]!, 16));
   return `rgb(${r}, ${g}, ${b})`;
 }
 
@@ -756,31 +988,36 @@ function labelSpin(angle: number, justify?: readonly string[]): number {
 // Shapes: 0 input, 1 output, 2 bidirectional, 3 tri_state, 4 passive(unspecified).
 // Spins:  0 LEFT(HN), 1 UP, 2 RIGHT(HI), 3 BOTTOM.
 const HIER_TEMPLATES: number[][][] = [
-  [ // input
+  [
+    // input
     [0, 0, -1, -1, -2, -1, -2, 1, -1, 1, 0, 0],
     [0, 0, 1, -1, 1, -2, -1, -2, -1, -1, 0, 0],
     [0, 0, 1, 1, 2, 1, 2, -1, 1, -1, 0, 0],
     [0, 0, 1, 1, 1, 2, -1, 2, -1, 1, 0, 0],
   ],
-  [ // output
+  [
+    // output
     [-2, 0, -1, 1, 0, 1, 0, -1, -1, -1, -2, 0],
     [0, -2, 1, -1, 1, 0, -1, 0, -1, -1, 0, -2],
     [2, 0, 1, -1, 0, -1, 0, 1, 1, 1, 2, 0],
     [0, 2, 1, 1, 1, 0, -1, 0, -1, 1, 0, 2],
   ],
-  [ // bidirectional
+  [
+    // bidirectional
     [0, 0, -1, -1, -2, 0, -1, 1, 0, 0],
     [0, 0, -1, -1, 0, -2, 1, -1, 0, 0],
     [0, 0, 1, -1, 2, 0, 1, 1, 0, 0],
     [0, 0, -1, 1, 0, 2, 1, 1, 0, 0],
   ],
-  [ // tri_state (same outline as bidirectional)
+  [
+    // tri_state (same outline as bidirectional)
     [0, 0, -1, -1, -2, 0, -1, 1, 0, 0],
     [0, 0, -1, -1, 0, -2, 1, -1, 0, 0],
     [0, 0, 1, -1, 2, 0, 1, 1, 0, 0],
     [0, 0, -1, 1, 0, 2, 1, 1, 0, 0],
   ],
-  [ // passive / unspecified
+  [
+    // passive / unspecified
     [0, -1, -2, -1, -2, 1, 0, 1, 0, -1],
     [1, 0, 1, -2, -1, -2, -1, 0, 1, 0],
     [0, -1, 2, -1, 2, 1, 0, 1, 0, -1],
@@ -788,36 +1025,63 @@ const HIER_TEMPLATES: number[][][] = [
   ],
 ];
 
-const SHAPE_INDEX: Record<string, number> = { input: 0, output: 1, bidirectional: 2, tri_state: 3, passive: 4 };
+const SHAPE_INDEX: Record<string, number> = {
+  input: 0,
+  output: 1,
+  bidirectional: 2,
+  tri_state: 3,
+  passive: 4,
+};
 const LABEL_RATIO = 0.375; // KiCad DEFAULT_LABEL_SIZE_RATIO (box expansion)
 
 /** Rotate a point by the spin style, as KiCad's global-label CreateGraphicShape does. */
 function spinRotate(p: Vec2, spin: number): Vec2 {
   switch (spin) {
-    case SPIN.UP: return { x: p.y, y: -p.x }; // -90°
-    case SPIN.RIGHT: return { x: -p.x, y: -p.y }; // 180°
-    case SPIN.BOTTOM: return { x: -p.y, y: p.x }; // +90°
-    default: return p; // LEFT
+    case SPIN.UP:
+      return { x: p.y, y: -p.x }; // -90°
+    case SPIN.RIGHT:
+      return { x: -p.x, y: -p.y }; // 180°
+    case SPIN.BOTTOM:
+      return { x: -p.y, y: p.x }; // +90°
+    default:
+      return p; // LEFT
   }
 }
 
 /** When `shadow` is set, draw only the blue selection underglow (wider strokes, no text). */
-function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme, shadow?: { color: string; width: number }): void {
+function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  l: SchLabel,
+  theme: Theme,
+  shadow?: { color: string; width: number },
+): void {
   const h = l.effects?.fontSize?.[0] ?? 1.27 * MM;
   const spin = labelSpin(l.angle, l.effects?.justify);
   // Free text uses its own font colour when set, else the notes-layer blue
   // (LAYER_NOTES, rgb(0,0,194) in KiCad's default theme) — not the label black.
-  const color = shadow ? shadow.color
-    : l.kind === 'global_label' ? theme.globalLabel
-    : l.kind === 'hierarchical_label' ? theme.hierLabel
-    : l.kind === 'text' ? (l.effects?.color ? cssColor(l.effects.color) : theme.noText)
-    : theme.label;
+  const color = shadow
+    ? shadow.color
+    : l.kind === 'global_label'
+      ? theme.globalLabel
+      : l.kind === 'hierarchical_label'
+        ? theme.hierLabel
+        : l.kind === 'text'
+          ? l.effects?.color
+            ? cssColor(l.effects.color)
+            : theme.noText
+          : theme.label;
   // SCH_LABEL_BASE::GetSchematicTextOffset: lift the text clear of the wire by
   // m_TextOffsetRatio (0.15) x text size plus the pen width (sch_label.cpp).
   const dist = Math.round(0.15 * h) + DEFAULT_LINE_WIDTH;
   // Reading direction unit vector for the spin style (where the text flows).
-  const flow = spin === SPIN.LEFT ? { x: -1, y: 0 } : spin === SPIN.RIGHT ? { x: 1, y: 0 }
-    : spin === SPIN.UP ? { x: 0, y: -1 } : { x: 0, y: 1 };
+  const flow =
+    spin === SPIN.LEFT
+      ? { x: -1, y: 0 }
+      : spin === SPIN.RIGHT
+        ? { x: 1, y: 0 }
+        : spin === SPIN.UP
+          ? { x: 0, y: -1 }
+          : { x: 0, y: 1 };
 
   ctx.lineWidth = shadow ? DEFAULT_LINE_WIDTH + shadow.width : DEFAULT_LINE_WIDTH;
   ctx.strokeStyle = color;
@@ -827,24 +1091,51 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme, sha
     if (l.kind === 'hierarchical_label') {
       const tpl = HIER_TEMPLATES[SHAPE_INDEX[l.shape ?? 'input'] ?? 0]![spin]!;
       const pts: Vec2[] = [];
-      for (let i = 0; i < tpl.length; i += 2) pts.push({ x: l.at.x + halfSize * tpl[i]!, y: l.at.y + halfSize * tpl[i + 1]! });
+      for (let i = 0; i < tpl.length; i += 2)
+        pts.push({ x: l.at.x + halfSize * tpl[i]!, y: l.at.y + halfSize * tpl[i + 1]! });
       polygon(ctx, pts, false, true);
       // Text sits just beyond the flag (which spans ~2*halfSize from the anchor).
       const off = 2 * halfSize + dist;
-      if (!shadow) drawText(ctx, l.text, { x: l.at.x + flow.x * off, y: l.at.y + flow.y * off }, h, color, justifyFor(spin));
+      if (!shadow)
+        drawText(
+          ctx,
+          l.text,
+          { x: l.at.x + flow.x * off, y: l.at.y + flow.y * off },
+          h,
+          color,
+          justifyFor(spin),
+        );
     } else {
       // Global label: 6-point box (margined) with a notch/point per shape, then spin-rotated.
       const margin = LABEL_RATIO * h;
       const hs = halfSize + margin;
       const symbLen = Math.max(1, l.text.length) * h * 0.62 + 2 * margin;
-      const x = symbLen + 3, y = hs + 3;
-      const box: { x: number; y: number }[] = [{ x: 0, y: 0 }, { x: 0, y: -y }, { x: -x, y: -y }, { x: -x, y: 0 }, { x: -x, y }, { x: 0, y }];
+      const x = symbLen + 3,
+        y = hs + 3;
+      const box: { x: number; y: number }[] = [
+        { x: 0, y: 0 },
+        { x: 0, y: -y },
+        { x: -x, y: -y },
+        { x: -x, y: 0 },
+        { x: -x, y },
+        { x: 0, y },
+      ];
       let xoff = 0;
       const s = l.shape ?? 'bidirectional';
-      if (s === 'input') { xoff = -hs; box[0]!.x += hs; }
-      else if (s === 'output') { box[3]!.x -= hs; }
-      else if (s === 'bidirectional' || s === 'tri_state') { xoff = -hs; box[0]!.x += hs; box[3]!.x -= hs; }
-      const pts = box.map((p) => { const r = spinRotate({ x: p.x + xoff, y: p.y }, spin); return { x: l.at.x + r.x, y: l.at.y + r.y }; });
+      if (s === 'input') {
+        xoff = -hs;
+        box[0]!.x += hs;
+      } else if (s === 'output') {
+        box[3]!.x -= hs;
+      } else if (s === 'bidirectional' || s === 'tri_state') {
+        xoff = -hs;
+        box[0]!.x += hs;
+        box[3]!.x -= hs;
+      }
+      const pts = box.map((p) => {
+        const r = spinRotate({ x: p.x + xoff, y: p.y }, spin);
+        return { x: l.at.x + r.x, y: l.at.y + r.y };
+      });
       polygon(ctx, pts, false, true);
       // Centre the text in the box (box centre is at -symbLen/2 along the reading axis).
       const c = spinRotate({ x: -x / 2 + xoff, y: 0 }, spin);
@@ -861,8 +1152,17 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme, sha
       strokeLine(ctx, l.at, { x: l.at.x + len, y: l.at.y });
       return;
     }
-    drawText(ctx, l.text, l.at, h, color, l.effects?.justify ?? ['left', 'bottom'],
-      (l.angle % 180) === 90 ? 90 : 0, l.effects?.bold ?? false, l.effects?.italic ?? false);
+    drawText(
+      ctx,
+      l.text,
+      l.at,
+      h,
+      color,
+      l.effects?.justify ?? ['left', 'bottom'],
+      l.angle % 180 === 90 ? 90 : 0,
+      l.effects?.bold ?? false,
+      l.effects?.italic ?? false,
+    );
     return;
   }
 
@@ -875,25 +1175,39 @@ function drawLabel(ctx: CanvasRenderingContext2D, l: SchLabel, theme: Theme, sha
   if (shadow) {
     // No flag to glow: underline the text run in the reading direction as the cue.
     const len = Math.max(1, l.text.length) * h * 0.6;
-    const from = spin === SPIN.LEFT || spin === SPIN.BOTTOM ? { x: anchor.x - flow.x * len, y: anchor.y - flow.y * len } : anchor;
+    const from =
+      spin === SPIN.LEFT || spin === SPIN.BOTTOM
+        ? { x: anchor.x - flow.x * len, y: anchor.y - flow.y * len }
+        : anchor;
     const to = { x: from.x + flow.x * len, y: from.y + flow.y * len };
     strokeLine(ctx, from, to);
     return;
   }
   const vertical = spin === SPIN.UP || spin === SPIN.BOTTOM;
-  drawText(ctx, l.text, anchor, h, color,
+  drawText(
+    ctx,
+    l.text,
+    anchor,
+    h,
+    color,
     l.effects?.justify ?? [...justifyFor(spin), 'bottom'],
-    vertical ? 90 : 0, l.effects?.bold ?? false, l.effects?.italic ?? false);
+    vertical ? 90 : 0,
+    l.effects?.bold ?? false,
+    l.effects?.italic ?? false,
+  );
 }
-
 
 /** Text justification for a spin style: anchored at the connection point, reading outward. */
 function justifyFor(spin: number): string[] {
   switch (spin) {
-    case SPIN.LEFT: return ['right'];
-    case SPIN.UP: return ['left'];
-    case SPIN.BOTTOM: return ['right'];
-    default: return ['left']; // RIGHT
+    case SPIN.LEFT:
+      return ['right'];
+    case SPIN.UP:
+      return ['left'];
+    case SPIN.BOTTOM:
+      return ['right'];
+    default:
+      return ['left']; // RIGHT
   }
 }
 
@@ -953,7 +1267,8 @@ function drawSelectionShadows(
     if (!lib) return;
     const t = symbolTransform(sym.angle, sym.mirror);
     for (const unit of lib.units)
-      if (libUnitMatches(unit, sym.unit, sym.bodyStyle)) drawLibUnitShadow(ctx, unit, sym.at, t, color, width);
+      if (libUnitMatches(unit, sym.unit, sym.bodyStyle))
+        drawLibUnitShadow(ctx, unit, sym.at, t, color, width);
   });
 
   // Labels: re-stroke the flag/box geometry wider in the shadow colour.
@@ -980,32 +1295,49 @@ interface PinDisplay {
 /** Local-space unit vector pointing from a pin's connection point toward the body. */
 function pinDir(angle: number): Vec2 {
   switch (((angle % 360) + 360) % 360) {
-    case 0: return { x: 1, y: 0 };
-    case 90: return { x: 0, y: -1 };
-    case 180: return { x: -1, y: 0 };
-    default: return { x: 0, y: 1 };
+    case 0:
+      return { x: 1, y: 0 };
+    case 90:
+      return { x: 0, y: -1 };
+    case 180:
+      return { x: -1, y: 0 };
+    default:
+      return { x: 0, y: 1 };
   }
 }
 
 /** Underglow for a selected symbol: re-stroke its body graphics and pins wider in `color`. */
 function drawLibUnitShadow(
-  ctx: CanvasRenderingContext2D, unit: LibSymbolUnit, origin: Vec2, t: Transform, color: string, width: number,
+  ctx: CanvasRenderingContext2D,
+  unit: LibSymbolUnit,
+  origin: Vec2,
+  t: Transform,
+  color: string,
+  width: number,
 ): void {
   ctx.strokeStyle = color;
   for (const g of unit.graphics) {
-    const base = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
+    const base =
+      g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
     ctx.lineWidth = base + width;
     switch (g.kind) {
       case 'rectangle': {
         const corners = [
-          { x: g.start.x, y: g.start.y }, { x: g.end.x, y: g.start.y },
-          { x: g.end.x, y: g.end.y }, { x: g.start.x, y: g.end.y },
+          { x: g.start.x, y: g.start.y },
+          { x: g.end.x, y: g.start.y },
+          { x: g.end.x, y: g.end.y },
+          { x: g.start.x, y: g.end.y },
         ].map((c) => localToWorld(origin, t, c));
         polygon(ctx, corners, false, true);
         break;
       }
       case 'polyline':
-        polygon(ctx, g.points.map((p) => localToWorld(origin, t, p)), false, false);
+        polygon(
+          ctx,
+          g.points.map((p) => localToWorld(origin, t, p)),
+          false,
+          false,
+        );
         break;
       case 'circle': {
         const c = localToWorld(origin, t, g.center);
@@ -1015,9 +1347,16 @@ function drawLibUnitShadow(
         break;
       }
       case 'arc':
-        drawArc(ctx, localToWorld(origin, t, g.start), localToWorld(origin, t, g.mid), localToWorld(origin, t, g.end), false);
+        drawArc(
+          ctx,
+          localToWorld(origin, t, g.start),
+          localToWorld(origin, t, g.mid),
+          localToWorld(origin, t, g.end),
+          false,
+        );
         break;
-      case 'text': break; // text has no stroke halo
+      case 'text':
+        break; // text has no stroke halo
     }
   }
   ctx.lineWidth = DEFAULT_LINE_WIDTH + width;
@@ -1043,11 +1382,13 @@ function drawLibUnit(
   showHiddenPins = false,
 ): number {
   for (const g of unit.graphics) {
-    const lw = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
+    const lw =
+      g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : DEFAULT_LINE_WIDTH;
     const filled = g.kind !== 'text' && g.fill && g.fill.type !== 'none';
     ctx.lineWidth = lw;
     ctx.strokeStyle = theme.symbolOutline;
-    ctx.fillStyle = g.kind !== 'text' && g.fill?.type === 'background' ? theme.symbolFill : theme.symbolOutline;
+    ctx.fillStyle =
+      g.kind !== 'text' && g.fill?.type === 'background' ? theme.symbolFill : theme.symbolOutline;
 
     switch (g.kind) {
       case 'rectangle': {
@@ -1074,19 +1415,33 @@ function drawLibUnit(
         break;
       }
       case 'arc': {
-        drawArc(ctx, localToWorld(origin, t, g.start), localToWorld(origin, t, g.mid), localToWorld(origin, t, g.end), !!filled);
+        drawArc(
+          ctx,
+          localToWorld(origin, t, g.start),
+          localToWorld(origin, t, g.mid),
+          localToWorld(origin, t, g.end),
+          !!filled,
+        );
         break;
       }
       case 'text': {
         const p = localToWorld(origin, t, g.at);
-        drawText(ctx, g.text, p, g.effects?.fontSize?.[0] ?? 1.27 * MM, theme.symbolOutline, g.effects?.justify);
+        drawText(
+          ctx,
+          g.text,
+          p,
+          g.effects?.fontSize?.[0] ?? 1.27 * MM,
+          theme.symbolOutline,
+          g.effects?.justify,
+        );
         break;
       }
     }
   }
 
   // Pins.
-  const DEFAULT_TEXT = 1.27 * MM, MARGIN = 0.25 * MM;
+  const DEFAULT_TEXT = 1.27 * MM,
+    MARGIN = 0.25 * MM;
   let pinIndex = pinIndexStart;
   for (const pin of unit.pins) {
     const idx = pinIndex++;
@@ -1110,7 +1465,8 @@ function drawLibUnit(
     const strokePinBody = (): void => {
       if (inverted && pin.length > 0) {
         // Unit vector pointing from the body end outward to the tip.
-        const ox = (a.x - b.x) / pin.length, oy = (a.y - b.y) / pin.length;
+        const ox = (a.x - b.x) / pin.length,
+          oy = (a.y - b.y) / pin.length;
         ctx.beginPath();
         ctx.arc(b.x + ox * DECO_R, b.y + oy * DECO_R, DECO_R, 0, Math.PI * 2);
         ctx.stroke();
@@ -1139,19 +1495,39 @@ function drawLibUnit(
     if (!pins.numbersHidden && NUM > 0 && pin.number && pin.number !== '~') {
       const mid = { x: (pin.at.x + endLocal.x) / 2, y: (pin.at.y + endLocal.y) / 2 };
       const off = NUM / 2 + MARGIN;
-      const anchor = localToWorld(origin, t, horiz ? { x: mid.x, y: mid.y - off } : { x: mid.x - off, y: mid.y });
+      const anchor = localToWorld(
+        origin,
+        t,
+        horiz ? { x: mid.x, y: mid.y - off } : { x: mid.x - off, y: mid.y },
+      );
       drawText(ctx, pin.number, anchor, NUM, hiddenGhost ? theme.hidden : theme.pinNumber);
     }
 
     // Pin name: inside the body at the inner end (offset > 0), else just outside.
     if (!pins.namesHidden && NAME > 0 && pin.name && pin.name !== '~') {
       if (pins.nameOffset > 0) {
-        const anchor = localToWorld(origin, t, { x: endLocal.x + dir.x * pins.nameOffset, y: endLocal.y + dir.y * pins.nameOffset });
+        const anchor = localToWorld(origin, t, {
+          x: endLocal.x + dir.x * pins.nameOffset,
+          y: endLocal.y + dir.y * pins.nameOffset,
+        });
         const justify = horiz ? [dir.x > 0 ? 'left' : 'right'] : ['left'];
         drawText(ctx, pin.name, anchor, NAME, hiddenGhost ? theme.hidden : theme.pinName, justify);
       } else {
-        const anchor = localToWorld(origin, t, horiz ? { x: endLocal.x - dir.x * MARGIN, y: endLocal.y - NAME / 2 } : { x: endLocal.x, y: endLocal.y });
-        drawText(ctx, pin.name, anchor, NAME, hiddenGhost ? theme.hidden : theme.pinName, horiz ? [dir.x > 0 ? 'right' : 'left'] : undefined);
+        const anchor = localToWorld(
+          origin,
+          t,
+          horiz
+            ? { x: endLocal.x - dir.x * MARGIN, y: endLocal.y - NAME / 2 }
+            : { x: endLocal.x, y: endLocal.y },
+        );
+        drawText(
+          ctx,
+          pin.name,
+          anchor,
+          NAME,
+          hiddenGhost ? theme.hidden : theme.pinName,
+          horiz ? [dir.x > 0 ? 'right' : 'left'] : undefined,
+        );
       }
     }
   }
@@ -1184,15 +1560,34 @@ function polygon(ctx: CanvasRenderingContext2D, pts: Vec2[], fill: boolean, clos
  * KiCad, where a filled arc combines with its sibling polyline to form e.g. a gate
  * body, and the shared chord edge is never stroked.
  */
-function drawArc(ctx: CanvasRenderingContext2D, start: Vec2, mid: Vec2, end: Vec2, fill = false): void {
-  const ax = start.x, ay = start.y, bx = mid.x, by = mid.y, cx = end.x, cy = end.y;
+function drawArc(
+  ctx: CanvasRenderingContext2D,
+  start: Vec2,
+  mid: Vec2,
+  end: Vec2,
+  fill = false,
+): void {
+  const ax = start.x,
+    ay = start.y,
+    bx = mid.x,
+    by = mid.y,
+    cx = end.x,
+    cy = end.y;
   const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
   if (Math.abs(d) < 1e-6) {
     strokeLine(ctx, start, end); // collinear: degenerate to a segment
     return;
   }
-  const ux = ((ax * ax + ay * ay) * (by - cy) + (bx * bx + by * by) * (cy - ay) + (cx * cx + cy * cy) * (ay - by)) / d;
-  const uy = ((ax * ax + ay * ay) * (cx - bx) + (bx * bx + by * by) * (ax - cx) + (cx * cx + cy * cy) * (bx - ax)) / d;
+  const ux =
+    ((ax * ax + ay * ay) * (by - cy) +
+      (bx * bx + by * by) * (cy - ay) +
+      (cx * cx + cy * cy) * (ay - by)) /
+    d;
+  const uy =
+    ((ax * ax + ay * ay) * (cx - bx) +
+      (bx * bx + by * by) * (ax - cx) +
+      (cx * cx + cy * cy) * (bx - ax)) /
+    d;
   const r = Math.hypot(ax - ux, ay - uy);
   const a0 = Math.atan2(ay - uy, ax - ux);
   const a1 = Math.atan2(cy - uy, cx - ux);
@@ -1226,13 +1621,19 @@ function drawText(
   if (text === '' || text === '~') return;
 
   const cap = heightIU;
-  const right = justify?.includes('right'), left = justify?.includes('left');
-  const top = justify?.includes('top'), bottom = justify?.includes('bottom');
+  const right = justify?.includes('right'),
+    left = justify?.includes('left');
+  const top = justify?.includes('top'),
+    bottom = justify?.includes('bottom');
 
   // KiCad reads 90°/rotated text turned counter-clockwise (screen y is down).
   const a = (((angleDeg % 360) + 360) % 360) * (Math.PI / 180);
-  const cos = Math.cos(-a), sin = Math.sin(-a);
-  const placeAt = (x: number, y: number): Vec2 => ({ x: at.x + x * cos - y * sin, y: at.y + x * sin + y * cos });
+  const cos = Math.cos(-a),
+    sin = Math.sin(-a);
+  const _placeAt = (x: number, y: number): Vec2 => ({
+    x: at.x + x * cos - y * sin,
+    y: at.y + x * sin + y * cos,
+  });
 
   // Real glyphs at every zoom (KiCad keeps stroking text however small); below
   // ~0.6 screen px a run is sub-pixel noise, so it is skipped entirely.
@@ -1244,7 +1645,7 @@ function drawText(
   // make dense sheets (hundreds of labels/pin names) pan smoothly.
   const { path, width } = textPath(text, heightIU, italic);
   const offX = right ? -width : left ? 0 : -width / 2; // default: centre
-  const offY = top ? cap : bottom ? 0 : cap / 2;       // baseline placement; default: middle
+  const offY = top ? cap : bottom ? 0 : cap / 2; // baseline placement; default: middle
 
   ctx.save();
   ctx.translate(at.x, at.y);
@@ -1276,8 +1677,13 @@ function textPath(text: string, size: number, italic: boolean): { path: Path2D; 
       if (stroke.length === 0) continue;
       const p0 = stroke[0]!;
       path.moveTo(p0.x - p0.y * tilt, p0.y);
-      if (stroke.length === 1) path.lineTo(p0.x - p0.y * tilt + 0.01, p0.y); // lone point -> dot
-      else for (let i = 1; i < stroke.length; i++) { const pt = stroke[i]!; path.lineTo(pt.x - pt.y * tilt, pt.y); }
+      if (stroke.length === 1)
+        path.lineTo(p0.x - p0.y * tilt + 0.01, p0.y); // lone point -> dot
+      else
+        for (let i = 1; i < stroke.length; i++) {
+          const pt = stroke[i]!;
+          path.lineTo(pt.x - pt.y * tilt, pt.y);
+        }
     }
     if (g_textPaths.size > 6000) g_textPaths.clear();
     entry = { path, width };
@@ -1296,9 +1702,20 @@ function textPath(text: string, size: number, italic: boolean): { path: Path2D; 
 
 /** Paper sizes in mm (landscape), from common/page_info.cpp. */
 const PAPER_MM: Record<string, [number, number]> = {
-  A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841],
-  A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
-  USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
+  A5: [210, 148],
+  A4: [297, 210],
+  A3: [420, 297],
+  A2: [594, 420],
+  A1: [841, 594],
+  A0: [1189, 841],
+  A: [279.4, 215.9],
+  B: [431.8, 279.4],
+  C: [558.8, 431.8],
+  D: [863.6, 558.8],
+  E: [1117.6, 863.6],
+  USLetter: [279.4, 215.9],
+  USLegal: [355.6, 215.9],
+  USLedger: [431.8, 279.4],
 };
 
 /** Page size for a `(paper ...)` token in IU, or null when unknown/custom. */
@@ -1316,7 +1733,10 @@ function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: 
   const page = paperSizeIU(sch.paper);
   if (!page) return;
   const M = 10 * MM; // left/right/top/bottom margins
-  const L = M, T = M, R = page.w - M, B = page.h - M;
+  const L = M,
+    T = M,
+    R = page.w - M,
+    B = page.h - M;
   const lw = 0.15 * MM; // default linewidth
   const color = theme.pageFrame;
 
@@ -1335,12 +1755,16 @@ function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: 
   const step = 50 * MM;
   ctx.beginPath();
   for (let x = L + step; x < R - i2; x += step) {
-    ctx.moveTo(x, T); ctx.lineTo(x, T + i2);
-    ctx.moveTo(x, B); ctx.lineTo(x, B - i2);
+    ctx.moveTo(x, T);
+    ctx.lineTo(x, T + i2);
+    ctx.moveTo(x, B);
+    ctx.lineTo(x, B - i2);
   }
   for (let y = T + step; y < B - i2; y += step) {
-    ctx.moveTo(L, y); ctx.lineTo(L + i2, y);
-    ctx.moveTo(R, y); ctx.lineTo(R - i2, y);
+    ctx.moveTo(L, y);
+    ctx.lineTo(L + i2, y);
+    ctx.moveTo(R, y);
+    ctx.lineTo(R - i2, y);
   }
   ctx.stroke();
   let n = 1;
@@ -1363,9 +1787,14 @@ function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: 
   const ry = (d: number): number => B - d * MM;
   ctx.strokeRect(rx(110), ry(34), 108 * MM, 32 * MM);
   ctx.beginPath();
-  for (const yy of [5.5, 8.5, 12.5, 18.5]) { ctx.moveTo(rx(110), ry(yy)); ctx.lineTo(rx(2), ry(yy)); }
-  ctx.moveTo(rx(90), ry(8.5)); ctx.lineTo(rx(90), ry(5.5));
-  ctx.moveTo(rx(26), ry(8.5)); ctx.lineTo(rx(26), ry(2));
+  for (const yy of [5.5, 8.5, 12.5, 18.5]) {
+    ctx.moveTo(rx(110), ry(yy));
+    ctx.lineTo(rx(2), ry(yy));
+  }
+  ctx.moveTo(rx(90), ry(8.5));
+  ctx.lineTo(rx(90), ry(5.5));
+  ctx.moveTo(rx(26), ry(8.5));
+  ctx.lineTo(rx(26), ry(2));
   ctx.stroke();
 
   const tb = sch.titleBlock;
@@ -1378,7 +1807,17 @@ function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: 
   drawText(ctx, `Rev: ${tb?.rev ?? ''}`, { x: rx(24), y: ry(6.9) }, t15, color, ['left'], 0, true);
   drawText(ctx, `Size: ${sch.paper ?? ''}`, { x: rx(109), y: ry(6.9) }, t15, color, ['left']);
   drawText(ctx, 'Id: 1/1', { x: rx(24), y: ry(4.1) }, t15, color, ['left']);
-  drawText(ctx, `Title: ${tb?.title ?? ''}`, { x: rx(109), y: ry(10.7) }, 2 * MM, color, ['left'], 0, true, true);
+  drawText(
+    ctx,
+    `Title: ${tb?.title ?? ''}`,
+    { x: rx(109), y: ry(10.7) },
+    2 * MM,
+    color,
+    ['left'],
+    0,
+    true,
+    true,
+  );
   drawText(ctx, `File: ${sch.fileName ?? ''}`, { x: rx(109), y: ry(14.3) }, t15, color, ['left']);
   drawText(ctx, 'Sheet: /', { x: rx(109), y: ry(17) }, t15, color, ['left']);
   drawText(ctx, tb?.company ?? '', { x: rx(109), y: ry(20) }, t15, color, ['left'], 0, true);
@@ -1394,8 +1833,8 @@ function drawGrid(
   grid: RenderOpts['grid'],
 ): void {
   // Visible world bounds (inverse of the viewport transform).
-  const left = (-viewport.offsetX) / viewport.scale;
-  const top = (-viewport.offsetY) / viewport.scale;
+  const left = -viewport.offsetX / viewport.scale;
+  const top = -viewport.offsetY / viewport.scale;
   const right = (canvasWidth - viewport.offsetX) / viewport.scale;
   const bottom = (canvasHeight - viewport.offsetY) / viewport.scale;
 
@@ -1415,8 +1854,14 @@ function drawGrid(
     ctx.lineWidth = px;
     ctx.setLineDash([]);
     ctx.beginPath();
-    for (let x = x0; x <= right; x += step) { ctx.moveTo(x, top); ctx.lineTo(x, bottom); }
-    for (let y = y0; y <= bottom; y += step) { ctx.moveTo(left, y); ctx.lineTo(right, y); }
+    for (let x = x0; x <= right; x += step) {
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+    }
+    for (let y = y0; y <= bottom; y += step) {
+      ctx.moveTo(left, y);
+      ctx.lineTo(right, y);
+    }
     ctx.stroke();
     return;
   }
@@ -1427,8 +1872,10 @@ function drawGrid(
     ctx.beginPath();
     for (let x = x0; x <= right; x += step) {
       for (let y = y0; y <= bottom; y += step) {
-        ctx.moveTo(x - arm, y); ctx.lineTo(x + arm, y);
-        ctx.moveTo(x, y - arm); ctx.lineTo(x, y + arm);
+        ctx.moveTo(x - arm, y);
+        ctx.lineTo(x + arm, y);
+        ctx.moveTo(x, y - arm);
+        ctx.lineTo(x, y + arm);
       }
     }
     ctx.stroke();
@@ -1456,15 +1903,30 @@ export function renderSymbolPreview(
   ctx.fillRect(0, 0, width, height);
 
   const units = lib.units.filter((u) => libUnitMatches(u, 1, 1));
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  const inc = (p: Vec2) => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); };
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  const inc = (p: Vec2) => {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  };
   for (const u of units) {
     for (const g of u.graphics) {
-      if (g.kind === 'rectangle') { inc(g.start); inc(g.end); }
-      else if (g.kind === 'polyline') g.points.forEach(inc);
-      else if (g.kind === 'circle') { inc({ x: g.center.x - g.radius, y: g.center.y - g.radius }); inc({ x: g.center.x + g.radius, y: g.center.y + g.radius }); }
-      else if (g.kind === 'arc') { inc(g.start); inc(g.mid); inc(g.end); }
-      else inc(g.at);
+      if (g.kind === 'rectangle') {
+        inc(g.start);
+        inc(g.end);
+      } else if (g.kind === 'polyline') g.points.forEach(inc);
+      else if (g.kind === 'circle') {
+        inc({ x: g.center.x - g.radius, y: g.center.y - g.radius });
+        inc({ x: g.center.x + g.radius, y: g.center.y + g.radius });
+      } else if (g.kind === 'arc') {
+        inc(g.start);
+        inc(g.mid);
+        inc(g.end);
+      } else inc(g.at);
     }
     // Hidden pins (e.g. power) sit far from the body; excluding them keeps the
     // visible symbol from being shrunk to a dot, matching KiCad's preview fit.
@@ -1482,37 +1944,65 @@ export function renderSymbolPreview(
     return;
   }
 
-  const bw = (maxX - minX) || 1, bh = (maxY - minY) || 1;
+  const bw = maxX - minX || 1,
+    bh = maxY - minY || 1;
   const scale = Math.min(width / (bw * 1.35), height / (bh * 1.35));
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const cx = (minX + maxX) / 2,
+    cy = (minY + maxY) / 2;
   ctx.setTransform(scale, 0, 0, scale, width / 2 - cx * scale, height / 2 - cy * scale);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  const pins = { numbersHidden: lib.pinNumbersHidden, namesHidden: lib.pinNamesHidden, nameOffset: lib.pinNameOffset };
+  const pins = {
+    numbersHidden: lib.pinNumbersHidden,
+    namesHidden: lib.pinNamesHidden,
+    nameOffset: lib.pinNameOffset,
+  };
   for (const u of units) drawLibUnit(ctx, u, { x: 0, y: 0 }, symbolTransform(0), theme, pins);
 }
 
 /** Compute a viewport that fits the schematic content into the given canvas size. */
 export function fitToContent(sch: Schematic, canvasWidth: number, canvasHeight: number): Viewport {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const include = (p: Vec2) => {
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
   };
-  for (const l of sch.lines) { include(l.start); include(l.end); }
+  for (const l of sch.lines) {
+    include(l.start);
+    include(l.end);
+  }
   for (const j of sch.junctions) include(j.at);
-  for (const s of sch.symbols) { include(s.at); for (const f of s.fields) if (f.at) include(f.at); }
+  for (const s of sch.symbols) {
+    include(s.at);
+    for (const f of s.fields) if (f.at) include(f.at);
+  }
   for (const l of sch.labels) include(l.at);
-  for (const sh of sch.sheets) { include(sh.at); include({ x: sh.at.x + sh.size.w, y: sh.at.y + sh.size.h }); }
+  for (const sh of sch.sheets) {
+    include(sh.at);
+    include({ x: sh.at.x + sh.size.w, y: sh.at.y + sh.size.h });
+  }
   // The drawing sheet is part of the scene: fit shows the whole page (as KiCad does).
   const page = paperSizeIU(sch.paper);
-  if (page) { include({ x: 0, y: 0 }); include({ x: page.w, y: page.h }); }
+  if (page) {
+    include({ x: 0, y: 0 });
+    include({ x: page.w, y: page.h });
+  }
 
-  if (!Number.isFinite(minX)) return { scale: 0.02, offsetX: canvasWidth / 2, offsetY: canvasHeight / 2 };
+  if (!Number.isFinite(minX))
+    return { scale: 0.02, offsetX: canvasWidth / 2, offsetY: canvasHeight / 2 };
 
   const pad = 8 * MM;
-  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-  const w = maxX - minX || 1, h = maxY - minY || 1;
+  minX -= pad;
+  minY -= pad;
+  maxX += pad;
+  maxY += pad;
+  const w = maxX - minX || 1,
+    h = maxY - minY || 1;
   const scale = Math.min(canvasWidth / w, canvasHeight / h);
   const offsetX = canvasWidth / 2 - ((minX + maxX) / 2) * scale;
   const offsetY = canvasHeight / 2 - ((minY + maxY) / 2) * scale;

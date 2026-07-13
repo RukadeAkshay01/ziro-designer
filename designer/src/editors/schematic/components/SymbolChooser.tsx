@@ -16,16 +16,28 @@ interface Props {
 const MAX_RESULTS = 500;
 
 /** KiCad-style "Choose Symbol" modal: search/browse on the left, live preview on the right. */
-export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootprintPreview = true }: Props): JSX.Element {
+export function SymbolChooser({
+  onPick,
+  onCancel,
+  powerOnly = false,
+  showFootprintPreview = true,
+}: Props): JSX.Element {
   const [rawIndex, setRawIndex] = useState<LibIndexEntry[]>([]);
-  const index = useMemo(() => (powerOnly ? rawIndex.filter((l) => /power/i.test(l.name)) : rawIndex), [rawIndex, powerOnly]);
+  const index = useMemo(
+    () => (powerOnly ? rawIndex.filter((l) => /power/i.test(l.name)) : rawIndex),
+    [rawIndex, powerOnly],
+  );
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [previewSym, setPreviewSym] = useState<LibSymbol | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => { loadIndex().then(setRawIndex).catch(() => setRawIndex([])); }, []);
+  useEffect(() => {
+    loadIndex()
+      .then(setRawIndex)
+      .catch(() => setRawIndex([]));
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -67,14 +79,18 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootpri
         let score: number;
         if (n === q) score = 0;
         else if (n.startsWith(q)) score = 1;
-        else if (new RegExp(`(^|[_\\s])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(n)) score = 2;
+        else if (new RegExp(`(^|[_\\s])${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(n))
+          score = 2;
         else if (n.includes(q)) score = 3;
         else if (full.includes(q)) score = 4;
         else continue;
         scored.push({ row: [lib.name, name], score });
       }
     }
-    scored.sort((a, b) => a.score - b.score || a.row[1].length - b.row[1].length || a.row[1].localeCompare(b.row[1]));
+    scored.sort(
+      (a, b) =>
+        a.score - b.score || a.row[1].length - b.row[1].length || a.row[1].localeCompare(b.row[1]),
+    );
     return scored.slice(0, MAX_RESULTS).map((s) => s.row);
   }, [q, index]);
 
@@ -106,7 +122,9 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootpri
       <div className="ze-modal" onMouseDown={(e) => e.stopPropagation()}>
         <div className="ze-modal-header">
           {powerOnly ? 'Choose Power Symbol' : 'Choose Symbol'}
-          <span className="x" onClick={onCancel}>✕</span>
+          <span className="x" onClick={onCancel}>
+            ✕
+          </span>
         </div>
         <div className="ze-modal-body">
           <div className="ze-chooser-tree">
@@ -125,20 +143,35 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootpri
                 <>
                   {results.length === 0 && <div className="ze-muted">No matches</div>}
                   {results.map(([lib, name]) => (
-                    <div key={`${lib}:${name}`} className={`ze-tree-item${previewId === `${lib}:${name}` ? ' active' : ''}`}
-                      onClick={() => highlight(lib, name)} onDoubleClick={() => previewSym && onPick(previewSym)} title={`${lib}:${name}`}>
+                    <div
+                      key={`${lib}:${name}`}
+                      className={`ze-tree-item${previewId === `${lib}:${name}` ? ' active' : ''}`}
+                      onClick={() => highlight(lib, name)}
+                      onDoubleClick={() => previewSym && onPick(previewSym)}
+                      title={`${lib}:${name}`}
+                    >
                       <span style={{ color: '#7f97b0', fontSize: 11 }}>{lib}</span>&nbsp;{name}
                     </div>
                   ))}
-                  {results.length >= MAX_RESULTS && <div className="ze-muted">…refine your search</div>}
+                  {results.length >= MAX_RESULTS && (
+                    <div className="ze-muted">…refine your search</div>
+                  )}
                 </>
               ) : (
                 index.map((lib) => {
                   const open = expanded.has(lib.name);
                   return (
                     <div key={lib.name}>
-                      <div className="ze-tree-item root"
-                        onClick={() => setExpanded((p) => { const n = new Set(p); n.has(lib.name) ? n.delete(lib.name) : n.add(lib.name); return n; })}>
+                      <div
+                        className="ze-tree-item root"
+                        onClick={() =>
+                          setExpanded((p) => {
+                            const n = new Set(p);
+                            n.has(lib.name) ? n.delete(lib.name) : n.add(lib.name);
+                            return n;
+                          })
+                        }
+                      >
                         <span className="twisty">{open ? '▾' : '▸'}</span>
                         {lib.name} <span style={{ color: '#7f97b0' }}>({lib.count})</span>
                       </div>
@@ -159,13 +192,17 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootpri
                 pane shows the symbol's assigned footprint by name. */}
             {showFootprintPreview && (
               <>
-                <div className="ze-fp-bar">{previewSym ? (footprint || '— no default footprint —') : ''}</div>
+                <div className="ze-fp-bar">
+                  {previewSym ? footprint || '— no default footprint —' : ''}
+                </div>
                 <div className="ze-fp-preview">
                   {previewSym ? (
                     footprint ? (
                       <div className="ze-fp-note">
                         <div className="fp-name">{footprint}</div>
-                        <div className="ze-muted">Footprint preview needs the footprint libraries (not loaded).</div>
+                        <div className="ze-muted">
+                          Footprint preview needs the footprint libraries (not loaded).
+                        </div>
                       </div>
                     ) : (
                       <div className="ze-muted">No footprint assigned to this symbol.</div>
@@ -189,8 +226,16 @@ export function SymbolChooser({ onPick, onCancel, powerOnly = false, showFootpri
           </div>
         </div>
         <div className="ze-modal-footer">
-          <button className="ze-btn" onClick={onCancel}>Cancel</button>
-          <button className="ze-btn primary" disabled={!previewSym} onClick={() => previewSym && onPick(previewSym)}>Place Symbol</button>
+          <button className="ze-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="ze-btn primary"
+            disabled={!previewSym}
+            onClick={() => previewSym && onPick(previewSym)}
+          >
+            Place Symbol
+          </button>
         </div>
       </div>
     </div>

@@ -38,7 +38,10 @@ describe('writeSchematic', () => {
     const moved = moveItems(new Set([sch.symbols[0]!.uuid!]), delta).apply(sch);
 
     const reSch = readSchematic(writeSchematic(moved));
-    expect(reSch.symbols[0]!.at).toEqual({ x: sch.symbols[0]!.at.x + delta.x, y: sch.symbols[0]!.at.y + delta.y });
+    expect(reSch.symbols[0]!.at).toEqual({
+      x: sch.symbols[0]!.at.x + delta.x,
+      y: sch.symbols[0]!.at.y + delta.y,
+    });
   });
 
   it('writes a newly placed symbol and its embedded library definition', () => {
@@ -108,7 +111,10 @@ describe('bus entries, images and sheet graphics round-trip', () => {
     const sch = readSchematic(parse(src));
     const moved = {
       ...sch,
-      busEntries: sch.busEntries.map((b) => ({ ...b, at: { x: b.at.x + mmToIU(2.54), y: b.at.y } })),
+      busEntries: sch.busEntries.map((b) => ({
+        ...b,
+        at: { x: b.at.x + mmToIU(2.54), y: b.at.y },
+      })),
     };
     const re = readSchematic(writeSchematic(moved));
     expect(re.busEntries[0]!.at).toEqual({ x: mmToIU(53.34), y: mmToIU(25.4) });

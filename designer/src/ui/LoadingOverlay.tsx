@@ -1,4 +1,4 @@
-import { type JSX } from 'react';
+import type { JSX } from 'react';
 
 /**
  * Blocking progress overlay — the web equivalent of KiCad's WX_PROGRESS_REPORTER

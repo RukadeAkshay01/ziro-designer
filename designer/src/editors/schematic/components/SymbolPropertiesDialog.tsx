@@ -2,7 +2,24 @@ import { iuToMM } from '@ziroeda/common';
 import { mmToIU, symbolTransform, composeMirror, orientationFromTransform } from '@ziroeda/common';
 import { useMemo, useState } from 'react';
 import {
-  effectiveHorizJustify, effectiveVertJustify, storedForEffectiveHoriz, storedForEffectiveVert, justifyTokens, storedHJustify, storedVJustify, fieldShownText, isMandatoryField, DEFAULT_TEXT_SIZE, letterSubReference, type SchSymbol, type SchField, type LibSymbol, type SymbolEdit, type EditedField, type TextEffects } from '@ziroeda/eeschema';
+  effectiveHorizJustify,
+  effectiveVertJustify,
+  storedForEffectiveHoriz,
+  storedForEffectiveVert,
+  justifyTokens,
+  storedHJustify,
+  storedVJustify,
+  fieldShownText,
+  isMandatoryField,
+  DEFAULT_TEXT_SIZE,
+  letterSubReference,
+  type SchSymbol,
+  type SchField,
+  type LibSymbol,
+  type SymbolEdit,
+  type EditedField,
+  type TextEffects,
+} from '@ziroeda/eeschema';
 import { measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
 /**
@@ -60,7 +77,10 @@ function absField(row: Row, sym: SchSymbol): SchField {
 }
 
 export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): JSX.Element {
-  const unitCount = useMemo(() => (lib ? lib.units.reduce((m, u) => Math.max(m, u.unit), 0) : 1), [lib]);
+  const unitCount = useMemo(
+    () => (lib ? lib.units.reduce((m, u) => Math.max(m, u.unit), 0) : 1),
+    [lib],
+  );
 
   const [rows, setRows] = useState<Row[]>(() =>
     symbol.fields.map((f) => ({
@@ -77,7 +97,9 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
 
   // Orientation & mirror decompose exactly as TransferDataToWindow: choices are
   // 0 / +90 / -90 / 180 (SYM_ORIENT_0/90/270/180) and none / around-X / around-Y.
-  const [orient, setOrient] = useState<number>(symbol.angle === 90 ? 90 : symbol.angle === 270 ? 270 : symbol.angle === 180 ? 180 : 0);
+  const [orient, setOrient] = useState<number>(
+    symbol.angle === 90 ? 90 : symbol.angle === 270 ? 270 : symbol.angle === 180 ? 180 : 0,
+  );
   const [mirror, setMirror] = useState<'' | 'x' | 'y'>(symbol.mirror ?? '');
   const [unit, setUnit] = useState(symbol.unit);
 
@@ -95,7 +117,12 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
   // Numeric cells keep free text while typing and commit on blur/Enter, like a grid.
   const [cellText, setCellText] = useState<Record<string, string>>({});
   const cellKey = (i: number, col: string): string => `${i}:${col}`;
-  const numCell = (i: number, col: string, valueIU: number, commit: (iu: number) => void): JSX.Element => (
+  const numCell = (
+    i: number,
+    col: string,
+    valueIU: number,
+    commit: (iu: number) => void,
+  ): JSX.Element => (
     <input
       className="ze-cell-input num"
       value={cellText[cellKey(i, col)] ?? mmStr(valueIU)}
@@ -103,9 +130,16 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
       onBlur={(e) => {
         const v = Number(e.target.value.replace(',', '.'));
         if (Number.isFinite(v)) commit(mmToIU(v));
-        setCellText((t) => { const n = { ...t }; delete n[cellKey(i, col)]; return n; });
+        setCellText((t) => {
+          const n = { ...t };
+          delete n[cellKey(i, col)];
+          return n;
+        });
       }}
-      onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
     />
   );
 
@@ -114,14 +148,17 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
   // OnAddField: "Field<n>", the Reference field's angle, hidden, at the symbol origin.
   const addRow = (): void => {
     const refAngle = rows.find((r) => r.key === 'Reference')?.angle ?? 0;
-    setRows((rs) => [...rs, {
-      key: `Field${rs.length}`,
-      value: '',
-      at: { x: 0, y: 0 },
-      angle: refAngle,
-      effects: { hidden: true, fontSize: [DEFAULT_TEXT_SIZE, DEFAULT_TEXT_SIZE] },
-      nameShown: false,
-    }]);
+    setRows((rs) => [
+      ...rs,
+      {
+        key: `Field${rs.length}`,
+        value: '',
+        at: { x: 0, y: 0 },
+        angle: refAngle,
+        effects: { hidden: true, fontSize: [DEFAULT_TEXT_SIZE, DEFAULT_TEXT_SIZE] },
+        nameShown: false,
+      },
+    ]);
     setSelRow(rows.length);
   };
 
@@ -129,7 +166,10 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
   const deleteRow = (): void => {
     const row = rows[selRow];
     if (!row) return;
-    if (isMandatoryField(row.key)) { setError(`The first ${mandatoryCount} fields are mandatory.`); return; }
+    if (isMandatoryField(row.key)) {
+      setError(`The first ${mandatoryCount} fields are mandatory.`);
+      return;
+    }
     setRows((rs) => rs.filter((_, i) => i !== selRow));
     setSelRow((i) => Math.max(0, i - 1));
   };
@@ -137,7 +177,11 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
     const j = selRow + dir;
     if (j < 0 || j >= rows.length) return;
     if (isMandatoryField(rows[selRow]!.key) || isMandatoryField(rows[j]!.key)) return;
-    setRows((rs) => { const n = rs.slice(); [n[selRow], n[j]] = [n[j]!, n[selRow]!]; return n; });
+    setRows((rs) => {
+      const n = rs.slice();
+      [n[selRow], n[j]] = [n[j]!, n[selRow]!];
+      return n;
+    });
     setSelRow(j);
   };
 
@@ -187,19 +231,34 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
       <div className="ze-modal ze-props-dialog" onMouseDown={(e) => e.stopPropagation()}>
         <div className="ze-modal-header">
           Symbol Properties
-          <span className="x" onClick={onCancel}>✕</span>
+          <span className="x" onClick={onCancel}>
+            ✕
+          </span>
         </div>
 
         <div className="ze-props-body">
-          {error && <div className="ze-props-error" onClick={() => setError(null)}>{error} — click to dismiss</div>}
+          {error && (
+            <div className="ze-props-error" onClick={() => setError(null)}>
+              {error} — click to dismiss
+            </div>
+          )}
 
           <div className="ze-props-grid-wrap">
             <table className="ze-props-grid">
               <thead>
                 <tr>
-                  <th>Name</th><th>Value</th><th>Show</th><th>Show Name</th>
-                  <th>H Align</th><th>V Align</th><th>Italic</th><th>Bold</th>
-                  <th>Text Size</th><th>Orientation</th><th>Position X</th><th>Position Y</th>
+                  <th>Name</th>
+                  <th>Value</th>
+                  <th>Show</th>
+                  <th>Show Name</th>
+                  <th>H Align</th>
+                  <th>V Align</th>
+                  <th>Italic</th>
+                  <th>Bold</th>
+                  <th>Text Size</th>
+                  <th>Orientation</th>
+                  <th>Position X</th>
+                  <th>Position Y</th>
                 </tr>
               </thead>
               <tbody>
@@ -212,47 +271,122 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
                   return (
                     <tr key={i} className={i === selRow ? 'sel' : ''} onClick={() => setSelRow(i)}>
                       <td>
-                        {mandatory
-                          ? <span className="ze-cell-ro">{row.key}</span>
-                          : <input className="ze-cell-input" value={row.key} onChange={(e) => patchRow(i, { key: e.target.value })}
-                              onKeyDown={(e) => e.stopPropagation()} />}
+                        {mandatory ? (
+                          <span className="ze-cell-ro">{row.key}</span>
+                        ) : (
+                          <input
+                            className="ze-cell-input"
+                            value={row.key}
+                            onChange={(e) => patchRow(i, { key: e.target.value })}
+                            onKeyDown={(e) => e.stopPropagation()}
+                          />
+                        )}
                       </td>
                       <td>
-                        <input className="ze-cell-input" value={row.value} onChange={(e) => patchRow(i, { value: e.target.value })}
-                          onKeyDown={(e) => e.stopPropagation()} />
+                        <input
+                          className="ze-cell-input"
+                          value={row.value}
+                          onChange={(e) => patchRow(i, { value: e.target.value })}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        />
                       </td>
-                      <td className="c"><input type="checkbox" checked={!row.effects.hidden} onChange={(e) => patchEffects(i, { hidden: !e.target.checked })} /></td>
-                      <td className="c"><input type="checkbox" checked={row.nameShown} onChange={(e) => patchRow(i, { nameShown: e.target.checked })} /></td>
+                      <td className="c">
+                        <input
+                          type="checkbox"
+                          checked={!row.effects.hidden}
+                          onChange={(e) => patchEffects(i, { hidden: !e.target.checked })}
+                        />
+                      </td>
+                      <td className="c">
+                        <input
+                          type="checkbox"
+                          checked={row.nameShown}
+                          onChange={(e) => patchRow(i, { nameShown: e.target.checked })}
+                        />
+                      </td>
                       <td>
-                        <select className="ze-cell-select" value={effH}
+                        <select
+                          className="ze-cell-select"
+                          value={effH}
                           onChange={(e) => {
-                            const stored = storedForEffectiveHoriz(f, symbol, shown, measureText, e.target.value as 'left' | 'center' | 'right');
+                            const stored = storedForEffectiveHoriz(
+                              f,
+                              symbol,
+                              shown,
+                              measureText,
+                              e.target.value as 'left' | 'center' | 'right',
+                            );
                             patchEffects(i, { justify: justifyTokens(stored, storedVJustify(f)) });
-                          }}>
-                          <option value="left">Left</option><option value="center">Center</option><option value="right">Right</option>
+                          }}
+                        >
+                          <option value="left">Left</option>
+                          <option value="center">Center</option>
+                          <option value="right">Right</option>
                         </select>
                       </td>
                       <td>
-                        <select className="ze-cell-select" value={effV}
+                        <select
+                          className="ze-cell-select"
+                          value={effV}
                           onChange={(e) => {
-                            const stored = storedForEffectiveVert(f, symbol, shown, measureText, e.target.value as 'top' | 'center' | 'bottom');
+                            const stored = storedForEffectiveVert(
+                              f,
+                              symbol,
+                              shown,
+                              measureText,
+                              e.target.value as 'top' | 'center' | 'bottom',
+                            );
                             patchEffects(i, { justify: justifyTokens(storedHJustify(f), stored) });
-                          }}>
-                          <option value="top">Top</option><option value="center">Center</option><option value="bottom">Bottom</option>
+                          }}
+                        >
+                          <option value="top">Top</option>
+                          <option value="center">Center</option>
+                          <option value="bottom">Bottom</option>
                         </select>
                       </td>
-                      <td className="c"><input type="checkbox" checked={!!row.effects.italic} onChange={(e) => patchEffects(i, { italic: e.target.checked || undefined })} /></td>
-                      <td className="c"><input type="checkbox" checked={!!row.effects.bold} onChange={(e) => patchEffects(i, { bold: e.target.checked || undefined })} /></td>
-                      <td>{numCell(i, 'size', row.effects.fontSize?.[0] ?? DEFAULT_TEXT_SIZE,
-                        (iu) => patchEffects(i, { fontSize: [iu, iu] }))}</td>
+                      <td className="c">
+                        <input
+                          type="checkbox"
+                          checked={!!row.effects.italic}
+                          onChange={(e) =>
+                            patchEffects(i, { italic: e.target.checked || undefined })
+                          }
+                        />
+                      </td>
+                      <td className="c">
+                        <input
+                          type="checkbox"
+                          checked={!!row.effects.bold}
+                          onChange={(e) => patchEffects(i, { bold: e.target.checked || undefined })}
+                        />
+                      </td>
                       <td>
-                        <select className="ze-cell-select" value={row.angle === 90 ? 'Vertical' : 'Horizontal'}
-                          onChange={(e) => patchRow(i, { angle: e.target.value === 'Vertical' ? 90 : 0 })}>
-                          <option>Horizontal</option><option>Vertical</option>
+                        {numCell(i, 'size', row.effects.fontSize?.[0] ?? DEFAULT_TEXT_SIZE, (iu) =>
+                          patchEffects(i, { fontSize: [iu, iu] }),
+                        )}
+                      </td>
+                      <td>
+                        <select
+                          className="ze-cell-select"
+                          value={row.angle === 90 ? 'Vertical' : 'Horizontal'}
+                          onChange={(e) =>
+                            patchRow(i, { angle: e.target.value === 'Vertical' ? 90 : 0 })
+                          }
+                        >
+                          <option>Horizontal</option>
+                          <option>Vertical</option>
                         </select>
                       </td>
-                      <td>{numCell(i, 'posx', row.at.x, (iu) => patchRow(i, { at: { ...row.at, x: iu } }))}</td>
-                      <td>{numCell(i, 'posy', row.at.y, (iu) => patchRow(i, { at: { ...row.at, y: iu } }))}</td>
+                      <td>
+                        {numCell(i, 'posx', row.at.x, (iu) =>
+                          patchRow(i, { at: { ...row.at, x: iu } }),
+                        )}
+                      </td>
+                      <td>
+                        {numCell(i, 'posy', row.at.y, (iu) =>
+                          patchRow(i, { at: { ...row.at, y: iu } }),
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -261,11 +395,19 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
           </div>
 
           <div className="ze-props-rowbtns">
-            <button className="ze-btn sm" title="Add field" onClick={addRow}>+</button>
-            <button className="ze-btn sm" title="Move up" onClick={() => moveRow(-1)}>↑</button>
-            <button className="ze-btn sm" title="Move down" onClick={() => moveRow(1)}>↓</button>
+            <button className="ze-btn sm" title="Add field" onClick={addRow}>
+              +
+            </button>
+            <button className="ze-btn sm" title="Move up" onClick={() => moveRow(-1)}>
+              ↑
+            </button>
+            <button className="ze-btn sm" title="Move down" onClick={() => moveRow(1)}>
+              ↓
+            </button>
             <span className="grow" />
-            <button className="ze-btn sm" title="Delete field" onClick={deleteRow}>🗑</button>
+            <button className="ze-btn sm" title="Delete field" onClick={deleteRow}>
+              🗑
+            </button>
           </div>
 
           <div className="ze-props-columns">
@@ -273,16 +415,26 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
               <legend>General</legend>
               <label className="row">
                 <span>Unit:</span>
-                <select className="ze-select" disabled={unitCount < 2} value={unit}
-                  onChange={(e) => setUnit(Number(e.target.value))}>
+                <select
+                  className="ze-select"
+                  disabled={unitCount < 2}
+                  value={unit}
+                  onChange={(e) => setUnit(Number(e.target.value))}
+                >
                   {Array.from({ length: Math.max(unitCount, 1) }, (_, k) => (
-                    <option key={k + 1} value={k + 1}>Unit {letterSubReference(k + 1)}</option>
+                    <option key={k + 1} value={k + 1}>
+                      Unit {letterSubReference(k + 1)}
+                    </option>
                   ))}
                 </select>
               </label>
               <label className="row">
                 <span>Angle:</span>
-                <select className="ze-select" value={orient} onChange={(e) => setOrient(Number(e.target.value))}>
+                <select
+                  className="ze-select"
+                  value={orient}
+                  onChange={(e) => setOrient(Number(e.target.value))}
+                >
                   <option value={0}>0</option>
                   <option value={90}>+90</option>
                   <option value={270}>-90</option>
@@ -291,7 +443,11 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
               </label>
               <label className="row">
                 <span>Mirror:</span>
-                <select className="ze-select" value={mirror} onChange={(e) => setMirror(e.target.value as '' | 'x' | 'y')}>
+                <select
+                  className="ze-select"
+                  value={mirror}
+                  onChange={(e) => setMirror(e.target.value as '' | 'x' | 'y')}
+                >
                   <option value="">Not mirrored</option>
                   <option value="x">Around X axis</option>
                   <option value="y">Around Y axis</option>
@@ -301,22 +457,52 @@ export function SymbolPropertiesDialog({ symbol, lib, onOk, onCancel }: Props): 
 
             <fieldset className="ze-props-group">
               <legend>Attributes</legend>
-              <label><input type="checkbox" checked={excludeSim} onChange={(e) => setExcludeSim(e.target.checked)} /> Exclude from simulation</label>
-              <label><input type="checkbox" checked={excludeBom} onChange={(e) => setExcludeBom(e.target.checked)} /> Exclude from bill of materials</label>
-              <label><input type="checkbox" checked={excludeBoard} onChange={(e) => setExcludeBoard(e.target.checked)} /> Exclude from board</label>
-              <label><input type="checkbox" checked={dnp} onChange={(e) => setDnp(e.target.checked)} /> Do not populate</label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={excludeSim}
+                  onChange={(e) => setExcludeSim(e.target.checked)}
+                />{' '}
+                Exclude from simulation
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={excludeBom}
+                  onChange={(e) => setExcludeBom(e.target.checked)}
+                />{' '}
+                Exclude from bill of materials
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={excludeBoard}
+                  onChange={(e) => setExcludeBoard(e.target.checked)}
+                />{' '}
+                Exclude from board
+              </label>
+              <label>
+                <input type="checkbox" checked={dnp} onChange={(e) => setDnp(e.target.checked)} />{' '}
+                Do not populate
+              </label>
             </fieldset>
           </div>
 
           <div className="ze-props-libid">
             <span className="lbl">Library link:</span>
-            <span className="val" title={symbol.libId}>{symbol.libId}</span>
+            <span className="val" title={symbol.libId}>
+              {symbol.libId}
+            </span>
           </div>
         </div>
 
         <div className="ze-modal-footer">
-          <button className="ze-btn" onClick={onCancel}>Cancel</button>
-          <button className="ze-btn primary" onClick={submit}>OK</button>
+          <button className="ze-btn" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="ze-btn primary" onClick={submit}>
+            OK
+          </button>
         </div>
       </div>
     </div>

@@ -7,7 +7,22 @@
  * tee or a 3+-way meeting, not where two wires merely cross or simply continue.
  */
 
-import type { Schematic, SchSymbol, SchLine, SchJunction, SchNoConnect, SchLabel, SchSheet, SchBusEntry, SchImage, SchTextBox, SchTable, LibGraphic, LibSymbol, Vec2 } from '../types.js';
+import type {
+  Schematic,
+  SchSymbol,
+  SchLine,
+  SchJunction,
+  SchNoConnect,
+  SchLabel,
+  SchSheet,
+  SchBusEntry,
+  SchImage,
+  SchTextBox,
+  SchTable,
+  LibGraphic,
+  LibSymbol,
+  Vec2,
+} from '../types.js';
 import type { Orientation } from '@ziroeda/common/src/transform.js';
 import { refId } from './hittest.js';
 import { makeSymbol } from './build.js';
@@ -71,10 +86,14 @@ export function addItems(batch: ItemsBatch): EditCommand {
         symbols: batch.symbols?.length ? [...doc.symbols, ...batch.symbols] : doc.symbols,
         lines: batch.lines?.length ? [...doc.lines, ...batch.lines] : doc.lines,
         junctions: batch.junctions?.length ? [...doc.junctions, ...batch.junctions] : doc.junctions,
-        noConnects: batch.noConnects?.length ? [...doc.noConnects, ...batch.noConnects] : doc.noConnects,
+        noConnects: batch.noConnects?.length
+          ? [...doc.noConnects, ...batch.noConnects]
+          : doc.noConnects,
         labels: batch.labels?.length ? [...doc.labels, ...batch.labels] : doc.labels,
         sheets: batch.sheets?.length ? [...doc.sheets, ...batch.sheets] : doc.sheets,
-        busEntries: batch.busEntries?.length ? [...doc.busEntries, ...batch.busEntries] : doc.busEntries,
+        busEntries: batch.busEntries?.length
+          ? [...doc.busEntries, ...batch.busEntries]
+          : doc.busEntries,
         images: batch.images?.length ? [...doc.images, ...batch.images] : doc.images,
         graphics: batch.graphics?.length ? [...doc.graphics, ...batch.graphics] : doc.graphics,
         textBoxes: batch.textBoxes?.length ? [...doc.textBoxes, ...batch.textBoxes] : doc.textBoxes,

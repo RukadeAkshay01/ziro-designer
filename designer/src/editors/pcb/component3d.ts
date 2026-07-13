@@ -17,12 +17,17 @@ import { VRMLLoader } from 'three/addons/loaders/VRMLLoader.js';
 import type { Board } from '@ziroeda/pcbnew';
 import { resolveModel } from './model3d.js';
 
-const MM = 10000;            // internal units per mm
-const MODEL_UNIT_MM = 2.54;  // KiCad VRML unit = 0.1 inch
+const MM = 10000; // internal units per mm
+const MODEL_UNIT_MM = 2.54; // KiCad VRML unit = 0.1 inch
 
 type Footprint = Board['footprints'][number];
 type Model = Footprint['models'][number];
-interface Box { minX: number; minY: number; maxX: number; maxY: number }
+interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 const rotZ = (r: number): THREE.Matrix4 => new THREE.Matrix4().makeRotationZ(r);
 const rotY = (r: number): THREE.Matrix4 => new THREE.Matrix4().makeRotationY(r);
@@ -39,7 +44,10 @@ export function modelMatrix(fp: Footprint, model: Model, box: Box, hz: number): 
 
   const m = new THREE.Matrix4().makeTranslation(fx, fy, flipped ? -hz : hz);
   m.multiply(rotZ(deg(fp.angle)));
-  if (flipped) { m.multiply(rotY(Math.PI)); m.multiply(rotZ(Math.PI)); }
+  if (flipped) {
+    m.multiply(rotY(Math.PI));
+    m.multiply(rotZ(Math.PI));
+  }
   m.multiply(new THREE.Matrix4().makeScale(MODEL_UNIT_MM, MODEL_UNIT_MM, MODEL_UNIT_MM));
   m.multiply(new THREE.Matrix4().makeTranslation(model.offset.x, model.offset.y, model.offset.z));
   m.multiply(rotZ(deg(-model.rotate.z)));
@@ -77,7 +85,10 @@ export function mountComponents(
 
       let p = cache.get(url);
       if (!p) {
-        p = loader.loadAsync(url).then((o) => o as THREE.Object3D).catch(() => null);
+        p = loader
+          .loadAsync(url)
+          .then((o) => o as THREE.Object3D)
+          .catch(() => null);
         cache.set(url, p);
       }
       const matrix = modelMatrix(fp, model, box, hz);

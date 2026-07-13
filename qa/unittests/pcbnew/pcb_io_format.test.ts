@@ -14,14 +14,63 @@ import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 
 function sampleBoard(): BOARD {
   const b = new BOARD();
-  b.SetLayers([{ id: 0, name: 'F.Cu', type: 'signal' }, { id: 2, name: 'B.Cu', type: 'signal' }, { id: 25, name: 'Edge.Cuts', type: 'user' }, { id: 5, name: 'F.SilkS', type: 'user', userName: 'F.Silkscreen' }]);
-  b.SetNet(0, ''); b.SetNet(1, 'GND');
-  b.Add(new PCB_TRACK({ x: mmToIU(10), y: mmToIU(10) }, { x: mmToIU(30), y: mmToIU(10) }, mmToIU(0.25), 'F.Cu', 1));
-  b.Add(new PCB_VIA({ x: mmToIU(40), y: mmToIU(10) }, mmToIU(0.8), mmToIU(0.4), 'F.Cu', 'B.Cu', VIATYPE.THROUGH, 1));
-  b.Add(new PCB_SHAPE(SHAPE_T.SEGMENT, 'Edge.Cuts', { start: { x: 0, y: 0 }, end: { x: mmToIU(50), y: 0 }, width: mmToIU(0.15) }));
-  const pad = new PAD({ number: '1', pos: { x: mmToIU(10), y: mmToIU(10) }, size: { x: mmToIU(0.9), y: mmToIU(0.95) }, shape: PAD_SHAPE.RECTANGLE, attribute: PAD_ATTRIB.SMD, layers: ['F.Cu'] });
-  const ref = new PCB_FIELD('F.SilkS', MANDATORY_FIELD_T.REFERENCE, 'Reference', { text: 'R1', pos: { x: mmToIU(10), y: mmToIU(9) }, size: { x: mmToIU(1), y: mmToIU(1) } });
-  b.Add(new FOOTPRINT({ fpid: 'R_0603', pos: { x: mmToIU(10), y: mmToIU(10) }, layer: 'F.Cu', pads: [pad], fields: [ref] }));
+  b.SetLayers([
+    { id: 0, name: 'F.Cu', type: 'signal' },
+    { id: 2, name: 'B.Cu', type: 'signal' },
+    { id: 25, name: 'Edge.Cuts', type: 'user' },
+    { id: 5, name: 'F.SilkS', type: 'user', userName: 'F.Silkscreen' },
+  ]);
+  b.SetNet(0, '');
+  b.SetNet(1, 'GND');
+  b.Add(
+    new PCB_TRACK(
+      { x: mmToIU(10), y: mmToIU(10) },
+      { x: mmToIU(30), y: mmToIU(10) },
+      mmToIU(0.25),
+      'F.Cu',
+      1,
+    ),
+  );
+  b.Add(
+    new PCB_VIA(
+      { x: mmToIU(40), y: mmToIU(10) },
+      mmToIU(0.8),
+      mmToIU(0.4),
+      'F.Cu',
+      'B.Cu',
+      VIATYPE.THROUGH,
+      1,
+    ),
+  );
+  b.Add(
+    new PCB_SHAPE(SHAPE_T.SEGMENT, 'Edge.Cuts', {
+      start: { x: 0, y: 0 },
+      end: { x: mmToIU(50), y: 0 },
+      width: mmToIU(0.15),
+    }),
+  );
+  const pad = new PAD({
+    number: '1',
+    pos: { x: mmToIU(10), y: mmToIU(10) },
+    size: { x: mmToIU(0.9), y: mmToIU(0.95) },
+    shape: PAD_SHAPE.RECTANGLE,
+    attribute: PAD_ATTRIB.SMD,
+    layers: ['F.Cu'],
+  });
+  const ref = new PCB_FIELD('F.SilkS', MANDATORY_FIELD_T.REFERENCE, 'Reference', {
+    text: 'R1',
+    pos: { x: mmToIU(10), y: mmToIU(9) },
+    size: { x: mmToIU(1), y: mmToIU(1) },
+  });
+  b.Add(
+    new FOOTPRINT({
+      fpid: 'R_0603',
+      pos: { x: mmToIU(10), y: mmToIU(10) },
+      layer: 'F.Cu',
+      pads: [pad],
+      fields: [ref],
+    }),
+  );
   return b;
 }
 

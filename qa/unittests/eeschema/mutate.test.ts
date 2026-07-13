@@ -59,14 +59,18 @@ describe('needsJunction', () => {
   it('is true where three wire ends meet', () => {
     let sch = load();
     const hub = P(120, 120);
-    sch = addItems({ lines: [makeWire(hub, P(130, 120)), makeWire(hub, P(120, 130)), makeWire(hub, P(110, 120))] }).apply(sch);
+    sch = addItems({
+      lines: [makeWire(hub, P(130, 120)), makeWire(hub, P(120, 130)), makeWire(hub, P(110, 120))],
+    }).apply(sch);
     expect(needsJunction(sch, hub)).toBe(true);
   });
 
   it('is false where only two wire ends meet (a simple corner)', () => {
     let sch = load();
     const corner = P(120, 120);
-    sch = addItems({ lines: [makeWire(corner, P(130, 120)), makeWire(corner, P(120, 130))] }).apply(sch);
+    sch = addItems({ lines: [makeWire(corner, P(130, 120)), makeWire(corner, P(120, 130))] }).apply(
+      sch,
+    );
     expect(needsJunction(sch, corner)).toBe(false);
   });
 

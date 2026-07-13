@@ -45,16 +45,26 @@ function movePoint(p: Vec2, op: TransformOp, center: Vec2): Vec2 {
 function transformSymbol(s: SchSymbol, op: TransformOp, center: Vec2): SchSymbol {
   const at = movePoint(s.at, op, center);
   const orient =
-    op === 'rotateCW' ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, true)
-    : op === 'rotateCCW' ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, false)
-    : op === 'mirrorX' ? mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'x')
-    : mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'y');
+    op === 'rotateCW'
+      ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, true)
+      : op === 'rotateCCW'
+        ? rotateOrientation({ angle: s.angle, mirror: s.mirror }, false)
+        : op === 'mirrorX'
+          ? mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'x')
+          : mirrorOrientation({ angle: s.angle, mirror: s.mirror }, 'y');
 
   // The symbol and its name fields are one rigid part: orbit each field's position
   // about the same center as the body. The field text orientation then turns with the
   // symbol via GetDrawRotation at render time, so position + text rotate together.
-  const fields = s.fields.map((f: SchField) => (f.at ? { ...f, at: movePoint(f.at, op, center) } : f));
-  const next: { -readonly [K in keyof SchSymbol]: SchSymbol[K] } = { ...s, at, angle: orient.angle, fields };
+  const fields = s.fields.map((f: SchField) =>
+    f.at ? { ...f, at: movePoint(f.at, op, center) } : f,
+  );
+  const next: { -readonly [K in keyof SchSymbol]: SchSymbol[K] } = {
+    ...s,
+    at,
+    angle: orient.angle,
+    fields,
+  };
   if (orient.mirror) next.mirror = orient.mirror;
   else delete next.mirror;
   return next;
@@ -63,7 +73,9 @@ function transformSymbol(s: SchSymbol, op: TransformOp, center: Vec2): SchSymbol
 /** Bounding-box center of the selected symbols' positions (snapped is the caller's job). */
 function selectionCenter(doc: Schematic, ids: ReadonlySet<string>): Vec2 {
   const pts: Vec2[] = [];
-  doc.symbols.forEach((s, i) => { if (ids.has(refId('symbol', s.uuid, i))) pts.push(s.at); });
+  doc.symbols.forEach((s, i) => {
+    if (ids.has(refId('symbol', s.uuid, i))) pts.push(s.at);
+  });
   if (pts.length === 0) return { x: 0, y: 0 };
   const minX = Math.min(...pts.map((p) => p.x));
   const maxX = Math.max(...pts.map((p) => p.x));
@@ -77,7 +89,11 @@ function selectionCenter(doc: Schematic, ids: ReadonlySet<string>): Vec2 {
  * symbol the center is its own position, so only its orientation changes (KiCad's
  * single-item behaviour). `center` may be supplied to keep undo exact.
  */
-export function transformItems(ids: ReadonlySet<string>, op: TransformOp, center?: Vec2): EditCommand {
+export function transformItems(
+  ids: ReadonlySet<string>,
+  op: TransformOp,
+  center?: Vec2,
+): EditCommand {
   return {
     label: op.startsWith('rotate') ? 'Rotate' : 'Mirror',
     apply(doc: Schematic): Schematic {
@@ -85,7 +101,9 @@ export function transformItems(ids: ReadonlySet<string>, op: TransformOp, center
       const c = center ?? selectionCenter(doc, ids);
       return {
         ...doc,
-        symbols: doc.symbols.map((s, i) => (ids.has(refId('symbol', s.uuid, i)) ? transformSymbol(s, op, c) : s)),
+        symbols: doc.symbols.map((s, i) =>
+          ids.has(refId('symbol', s.uuid, i)) ? transformSymbol(s, op, c) : s,
+        ),
       };
     },
     invert(before: Schematic): EditCommand {

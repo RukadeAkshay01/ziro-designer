@@ -21,8 +21,12 @@ export class History {
   private undoStack: EditCommand[] = [];
   private redoStack: EditCommand[] = [];
 
-  get canUndo(): boolean { return this.undoStack.length > 0; }
-  get canRedo(): boolean { return this.redoStack.length > 0; }
+  get canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+  get canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
 
   /** Apply a command, recording its inverse for undo. Clears the redo stack. */
   execute(doc: Schematic, cmd: EditCommand): Schematic {

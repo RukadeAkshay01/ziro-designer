@@ -7,7 +7,13 @@ import { PCB_TEXT } from './pcb_text.js';
 import type { PCB_LAYER_ID } from './layer_ids.js';
 import type { EDA_TEXT } from '@ziroeda/common/src/eda_text.js';
 
-export enum MANDATORY_FIELD_T { REFERENCE = 0, VALUE = 1, DATASHEET = 2, FOOTPRINT_FIELD = 3, DESCRIPTION = 4 }
+export enum MANDATORY_FIELD_T {
+  REFERENCE = 0,
+  VALUE = 1,
+  DATASHEET = 2,
+  FOOTPRINT_FIELD = 3,
+  DESCRIPTION = 4,
+}
 
 type EdaTextOpts = ConstructorParameters<typeof EDA_TEXT>[0];
 
@@ -21,8 +27,16 @@ export class PCB_FIELD extends PCB_TEXT {
     this.m_name = name;
   }
 
-  GetId(): number { return this.m_id; }
-  GetName(): string { return this.m_name; }
-  IsReference(): boolean { return this.m_id === MANDATORY_FIELD_T.REFERENCE; }
-  IsValue(): boolean { return this.m_id === MANDATORY_FIELD_T.VALUE; }
+  GetId(): number {
+    return this.m_id;
+  }
+  GetName(): string {
+    return this.m_name;
+  }
+  IsReference(): boolean {
+    return this.m_id === MANDATORY_FIELD_T.REFERENCE;
+  }
+  IsValue(): boolean {
+    return this.m_id === MANDATORY_FIELD_T.VALUE;
+  }
 }

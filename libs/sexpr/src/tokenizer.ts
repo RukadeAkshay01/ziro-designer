@@ -68,12 +68,24 @@ export function tokenize(src: string): Token[] {
           const next = src[i + 1];
           if (next === undefined) throw new TokenizeError('Unterminated escape in string', i);
           switch (next) {
-            case 'n': out += '\n'; break;
-            case 'r': out += '\r'; break;
-            case 't': out += '\t'; break;
-            case '\\': out += '\\'; break;
-            case '"': out += '"'; break;
-            default: out += next; break; // pass through unknown escapes literally
+            case 'n':
+              out += '\n';
+              break;
+            case 'r':
+              out += '\r';
+              break;
+            case 't':
+              out += '\t';
+              break;
+            case '\\':
+              out += '\\';
+              break;
+            case '"':
+              out += '"';
+              break;
+            default:
+              out += next;
+              break; // pass through unknown escapes literally
           }
           i += 2;
           continue;

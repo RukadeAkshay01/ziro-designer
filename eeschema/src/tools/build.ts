@@ -9,7 +9,18 @@
 
 import { list, atom, str, type SList } from '@ziroeda/sexpr/src/types.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
-import type { SchLine, SchJunction, SchNoConnect, SchSymbol, SchField, SchLabel, LabelKind, LabelShape, LibSymbol, Vec2 } from '../types.js';
+import type {
+  SchLine,
+  SchJunction,
+  SchNoConnect,
+  SchSymbol,
+  SchField,
+  SchLabel,
+  LabelKind,
+  LabelShape,
+  LibSymbol,
+  Vec2,
+} from '../types.js';
 import type { Orientation } from '@ziroeda/common/src/transform.js';
 
 /** A UUID for a new item. Falls back to a random hex string off-platform. */
@@ -92,14 +103,25 @@ export interface LabelOptions {
  * `(hierarchical_label …)` and `(text …)`. Global/hierarchical labels carry a
  * `(shape …)`; the default is bidirectional, as in KiCad's place-label tool.
  */
-export function makeLabel(kind: LabelKind, text: string, at: Vec2, opts: LabelOptions = {}): SchLabel {
+export function makeLabel(
+  kind: LabelKind,
+  text: string,
+  at: Vec2,
+  opts: LabelOptions = {},
+): SchLabel {
   const uuid = newUuid();
   const angle = opts.angle ?? 0;
   const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
   const shape: LabelShape = opts.shape ?? 'bidirectional';
-  const justify = kind === 'label' ? list(atom('justify'), atom('left'), atom('bottom'))
-    : list(atom('justify'), atom('left'));
-  const effects = list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))), justify);
+  const justify =
+    kind === 'label'
+      ? list(atom('justify'), atom('left'), atom('bottom'))
+      : list(atom('justify'), atom('left'));
+  const effects = list(
+    atom('effects'),
+    list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))),
+    justify,
+  );
   const items: SList['items'] = [atom(kind), str(text)];
   if (hasShape) items.push(list(atom('shape'), atom(shape)));
   items.push(
@@ -108,8 +130,16 @@ export function makeLabel(kind: LabelKind, text: string, at: Vec2, opts: LabelOp
     list(atom('uuid'), str(uuid)),
   );
   const label: { -readonly [K in keyof SchLabel]: SchLabel[K] } = {
-    kind, text, at, angle, uuid,
-    effects: { hidden: false, fontSize: [12700, 12700], justify: kind === 'label' ? ['left', 'bottom'] : ['left'] },
+    kind,
+    text,
+    at,
+    angle,
+    uuid,
+    effects: {
+      hidden: false,
+      fontSize: [12700, 12700],
+      justify: kind === 'label' ? ['left', 'bottom'] : ['left'],
+    },
     source: { kind: 'list', items },
   };
   if (hasShape) label.shape = shape;
@@ -133,17 +163,26 @@ export function makeNoConnect(at: Vec2): SchNoConnect {
   return { at, uuid, source };
 }
 
-const DEFAULT_FONT = (): SList => list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))));
+const DEFAULT_FONT = (): SList =>
+  list(atom('effects'), list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))));
 
 function buildPropertyNode(key: string, value: string, at: Vec2, angle: number): SList {
   return list(
-    atom('property'), str(key), str(value),
+    atom('property'),
+    str(key),
+    str(value),
     list(atom('at'), atom(mm(at.x)), atom(mm(at.y)), atom(String(angle))),
     DEFAULT_FONT(),
   );
 }
 
-function buildSymbolNode(libId: string, at: Vec2, uuid: string, fields: SchField[], orient: Orientation): SList {
+function buildSymbolNode(
+  libId: string,
+  at: Vec2,
+  uuid: string,
+  fields: SchField[],
+  orient: Orientation,
+): SList {
   const items: SList['items'] = [
     atom('symbol'),
     list(atom('lib_id'), str(libId)),
@@ -167,7 +206,11 @@ function buildSymbolNode(libId: string, at: Vec2, uuid: string, fields: SchField
  * the library's reference prefix with a `?` (pre-annotation), as in KiCad; the
  * visible Reference/Value fields are offset using the library's field templates.
  */
-export function makeSymbol(lib: LibSymbol, at: Vec2, orient: Orientation = { angle: 0 }): SchSymbol {
+export function makeSymbol(
+  lib: LibSymbol,
+  at: Vec2,
+  orient: Orientation = { angle: 0 },
+): SchSymbol {
   const uuid = newUuid();
   const refProp = lib.properties.find((p) => p.key === 'Reference');
   const valProp = lib.properties.find((p) => p.key === 'Value');
@@ -178,13 +221,31 @@ export function makeSymbol(lib: LibSymbol, at: Vec2, orient: Orientation = { ang
   const mkField = (key: string, val: string, tmpl: SchField | undefined): SchField => {
     const fat: Vec2 = tmpl?.at ? { x: at.x + tmpl.at.x, y: at.y + tmpl.at.y } : at;
     const angle = tmpl?.angle ?? 0;
-    return { key, value: val, at: fat, angle, effects: { hidden: false, fontSize: [12700, 12700] }, source: buildPropertyNode(key, val, fat, angle) };
+    return {
+      key,
+      value: val,
+      at: fat,
+      angle,
+      effects: { hidden: false, fontSize: [12700, 12700] },
+      source: buildPropertyNode(key, val, fat, angle),
+    };
   };
 
-  const fields: SchField[] = [mkField('Reference', reference, refProp), mkField('Value', value, valProp)];
+  const fields: SchField[] = [
+    mkField('Reference', reference, refProp),
+    mkField('Value', value, valProp),
+  ];
   const sym: { -readonly [K in keyof SchSymbol]: SchSymbol[K] } = {
-    libId: lib.libId, at, angle: orient.angle, unit: 1, bodyStyle: 1,
-    inBom: true, onBoard: true, dnp: false, uuid, fields,
+    libId: lib.libId,
+    at,
+    angle: orient.angle,
+    unit: 1,
+    bodyStyle: 1,
+    inBom: true,
+    onBoard: true,
+    dnp: false,
+    uuid,
+    fields,
     source: buildSymbolNode(lib.libId, at, uuid, fields, orient),
   };
   if (orient.mirror) sym.mirror = orient.mirror;

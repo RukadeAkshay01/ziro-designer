@@ -10,7 +10,18 @@ import { contains, inflate, labelBox, symbolBodyBBox } from './bbox.js';
 
 /** A reference to a top-level, selectable schematic item. */
 export interface ItemRef {
-  kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet' | 'busentry' | 'image' | 'graphic' | 'textbox' | 'table';
+  kind:
+    | 'symbol'
+    | 'line'
+    | 'junction'
+    | 'noconnect'
+    | 'label'
+    | 'sheet'
+    | 'busentry'
+    | 'image'
+    | 'graphic'
+    | 'textbox'
+    | 'table';
   /** Stable identity: the item's uuid, or `idx:<n>` when one is absent. */
   id: string;
 }
@@ -22,15 +33,20 @@ const IU_PER_PIXEL = 254000 / 300;
 function hitGraphic(g: LibGraphic, p: Vec2, tol: number): boolean {
   switch (g.kind) {
     case 'rectangle': {
-      const x0 = Math.min(g.start.x, g.end.x), x1 = Math.max(g.start.x, g.end.x);
-      const y0 = Math.min(g.start.y, g.end.y), y1 = Math.max(g.start.y, g.end.y);
-      if (g.fill && g.fill.type !== 'none' && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1) return true;
-      return Math.min(
-        distToSegment(p, { x: x0, y: y0 }, { x: x1, y: y0 }),
-        distToSegment(p, { x: x0, y: y1 }, { x: x1, y: y1 }),
-        distToSegment(p, { x: x0, y: y0 }, { x: x0, y: y1 }),
-        distToSegment(p, { x: x1, y: y0 }, { x: x1, y: y1 }),
-      ) <= tol;
+      const x0 = Math.min(g.start.x, g.end.x),
+        x1 = Math.max(g.start.x, g.end.x);
+      const y0 = Math.min(g.start.y, g.end.y),
+        y1 = Math.max(g.start.y, g.end.y);
+      if (g.fill && g.fill.type !== 'none' && p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1)
+        return true;
+      return (
+        Math.min(
+          distToSegment(p, { x: x0, y: y0 }, { x: x1, y: y0 }),
+          distToSegment(p, { x: x0, y: y1 }, { x: x1, y: y1 }),
+          distToSegment(p, { x: x0, y: y0 }, { x: x0, y: y1 }),
+          distToSegment(p, { x: x1, y: y0 }, { x: x1, y: y1 }),
+        ) <= tol
+      );
     }
     case 'circle': {
       const d = Math.hypot(p.x - g.center.x, p.y - g.center.y);
@@ -41,12 +57,15 @@ function hitGraphic(g: LibGraphic, p: Vec2, tol: number): boolean {
       // Approximate the arc by its start–mid–end chords (fine within tolerance).
       return distToSegment(p, g.start, g.mid) <= tol || distToSegment(p, g.mid, g.end) <= tol;
     case 'polyline': {
-      for (let i = 1; i < g.points.length; i++) if (distToSegment(p, g.points[i - 1]!, g.points[i]!) <= tol) return true;
+      for (let i = 1; i < g.points.length; i++)
+        if (distToSegment(p, g.points[i - 1]!, g.points[i]!) <= tol) return true;
       return false;
     }
     case 'text': {
       const h = g.effects?.fontSize?.[0] ?? 12700;
-      return Math.abs(p.x - g.at.x) <= h * Math.max(2, g.text.length) && Math.abs(p.y - g.at.y) <= h;
+      return (
+        Math.abs(p.x - g.at.x) <= h * Math.max(2, g.text.length) && Math.abs(p.y - g.at.y) <= h
+      );
     }
   }
 }
@@ -80,7 +99,8 @@ export function hitTest(
   for (let i = 0; i < sch.junctions.length; i++) {
     const j = sch.junctions[i]!;
     const r = (j.diameter > 0 ? j.diameter : 9000) / 2 + accuracy;
-    if (Math.hypot(p.x - j.at.x, p.y - j.at.y) <= r) return { kind: 'junction', id: refId('junction', j.uuid, i) };
+    if (Math.hypot(p.x - j.at.x, p.y - j.at.y) <= r)
+      return { kind: 'junction', id: refId('junction', j.uuid, i) };
   }
 
   // No-connect flags: KiCad's X spans DEFAULT_NOCONNECT_SIZE (48 mil) about the point.
@@ -100,20 +120,23 @@ export function hitTest(
   for (let i = 0; i < sch.lines.length; i++) {
     const ln = sch.lines[i]!;
     const tol = accuracy + (ln.stroke && ln.stroke.width > 0 ? ln.stroke.width / 2 : 0);
-    if (distToSegment(p, ln.start, ln.end) <= tol) return { kind: 'line', id: refId('line', ln.uuid, i) };
+    if (distToSegment(p, ln.start, ln.end) <= tol)
+      return { kind: 'line', id: refId('line', ln.uuid, i) };
   }
 
   // Wire-to-bus entries: the 45° stub from `at` to `at + size`.
   for (let i = 0; i < sch.busEntries.length; i++) {
     const be = sch.busEntries[i]!;
     const end = { x: be.at.x + be.size.x, y: be.at.y + be.size.y };
-    if (distToSegment(p, be.at, end) <= accuracy) return { kind: 'busentry', id: refId('busentry', be.uuid, i) };
+    if (distToSegment(p, be.at, end) <= accuracy)
+      return { kind: 'busentry', id: refId('busentry', be.uuid, i) };
   }
 
   // Sheet-level graphic shapes (rectangles/circles/arcs/polylines).
   for (let i = 0; i < sch.graphics.length; i++) {
     const g = sch.graphics[i]!;
-    const tol = accuracy + (g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width / 2 : 0);
+    const tol =
+      accuracy + (g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width / 2 : 0);
     if (hitGraphic(g, p, tol)) return { kind: 'graphic', id: refId('graphic', undefined, i) };
   }
 
@@ -139,21 +162,39 @@ export function hitTest(
   // smaller items drawn over it win first.
   for (let i = 0; i < sch.textBoxes.length; i++) {
     const tb = sch.textBoxes[i]!;
-    const x0 = Math.min(tb.start.x, tb.end.x), x1 = Math.max(tb.start.x, tb.end.x);
-    const y0 = Math.min(tb.start.y, tb.end.y), y1 = Math.max(tb.start.y, tb.end.y);
-    if (p.x >= x0 - accuracy && p.x <= x1 + accuracy && p.y >= y0 - accuracy && p.y <= y1 + accuracy)
+    const x0 = Math.min(tb.start.x, tb.end.x),
+      x1 = Math.max(tb.start.x, tb.end.x);
+    const y0 = Math.min(tb.start.y, tb.end.y),
+      y1 = Math.max(tb.start.y, tb.end.y);
+    if (
+      p.x >= x0 - accuracy &&
+      p.x <= x1 + accuracy &&
+      p.y >= y0 - accuracy &&
+      p.y <= y1 + accuracy
+    )
       return { kind: 'textbox', id: refId('textbox', tb.uuid, i) };
   }
 
   // Tables: the union of every cell's bounding box (SCH_TABLE::HitTest).
   for (let i = 0; i < sch.tables.length; i++) {
     const t = sch.tables[i]!;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const c of t.cells) {
-      minX = Math.min(minX, c.start.x, c.end.x); minY = Math.min(minY, c.start.y, c.end.y);
-      maxX = Math.max(maxX, c.start.x, c.end.x); maxY = Math.max(maxY, c.start.y, c.end.y);
+      minX = Math.min(minX, c.start.x, c.end.x);
+      minY = Math.min(minY, c.start.y, c.end.y);
+      maxX = Math.max(maxX, c.start.x, c.end.x);
+      maxY = Math.max(maxY, c.start.y, c.end.y);
     }
-    if (t.cells.length && p.x >= minX - accuracy && p.x <= maxX + accuracy && p.y >= minY - accuracy && p.y <= maxY + accuracy)
+    if (
+      t.cells.length &&
+      p.x >= minX - accuracy &&
+      p.x <= maxX + accuracy &&
+      p.y >= minY - accuracy &&
+      p.y <= maxY + accuracy
+    )
       return { kind: 'table', id: refId('table', t.uuid, i) };
   }
 

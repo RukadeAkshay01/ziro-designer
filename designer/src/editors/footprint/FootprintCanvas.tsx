@@ -7,12 +7,24 @@
  * controller (zoomToFit/zoomIn/zoomOut/redraw) exposed via ref like SymbolCanvas.
  */
 
-import { type Vec2 } from '@ziroeda/kimath';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import type { Vec2 } from '@ziroeda/kimath';
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { hitTestFootprint } from '@ziroeda/pcbnew';
 import { itemsInBox, fpItemBBox, type PcbFootprint } from '@ziroeda/pcbnew';
 import {
-  buildScene, buildDrawSteps, DEFAULT_DRAW_OPTIONS, type BoardScene, type PcbDrawOptions,
+  buildScene,
+  buildDrawSteps,
+  DEFAULT_DRAW_OPTIONS,
+  type BoardScene,
+  type PcbDrawOptions,
 } from '../pcb/renderBoard.js';
 import { PCB_BACKGROUND } from '../pcb/pcbTheme.js';
 import { footprintToBoard } from './footprintBoard.js';
@@ -53,10 +65,24 @@ export interface FootprintCanvasProps {
 const EMPTY_SEL: ReadonlySet<string> = new Set();
 
 export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCanvasProps>(
-  function FootprintCanvas({
-    footprint, visible, drawOpts = DEFAULT_DRAW_OPTIONS, selection = EMPTY_SEL, activeTool = 'select',
-    onCursorMove, onScaleChange, onSelect, onSelectBox, onMoveItems, onPlace, onEditItem, preview = null,
-  }, ref) {
+  function FootprintCanvas(
+    {
+      footprint,
+      visible,
+      drawOpts = DEFAULT_DRAW_OPTIONS,
+      selection = EMPTY_SEL,
+      activeTool = 'select',
+      onCursorMove,
+      onScaleChange,
+      onSelect,
+      onSelectBox,
+      onMoveItems,
+      onPlace,
+      onEditItem,
+      preview = null,
+    },
+    ref,
+  ) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapRef = useRef<HTMLDivElement>(null);
     const viewRef = useRef({ scale: 0.005, tx: 0, ty: 0 });
@@ -81,7 +107,10 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
     sceneRef.current = scene;
 
     // ----- crisp off-screen raster, blitted with a delta transform each frame ---
-    const cacheRef = useRef<{ canvas: HTMLCanvasElement; view: { scale: number; tx: number; ty: number } } | null>(null);
+    const cacheRef = useRef<{
+      canvas: HTMLCanvasElement;
+      view: { scale: number; tx: number; ty: number };
+    } | null>(null);
     const renderingRef = useRef(false);
     const viewChangedRef = useRef(true);
 
@@ -89,8 +118,15 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       const c = cacheRef.current;
       const v = viewRef.current;
       const canvas = canvasRef.current;
-      return !!c && !!canvas && c.view.scale === v.scale && c.view.tx === v.tx && c.view.ty === v.ty
-        && c.canvas.width === canvas.width && c.canvas.height === canvas.height;
+      return (
+        !!c &&
+        !!canvas &&
+        c.view.scale === v.scale &&
+        c.view.tx === v.tx &&
+        c.view.ty === v.ty &&
+        c.canvas.width === canvas.width &&
+        c.canvas.height === canvas.height
+      );
     }, []);
 
     const startCrispRender = useCallback(() => {
@@ -98,17 +134,26 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       const canvas = canvasRef.current;
       const scn = sceneRef.current;
       if (!canvas || !scn || canvas.width < 2) return;
-      if (viewMatchesCache()) { viewChangedRef.current = false; return; }
+      if (viewMatchesCache()) {
+        viewChangedRef.current = false;
+        return;
+      }
       renderingRef.current = true;
       viewChangedRef.current = false;
       const work = document.createElement('canvas');
       work.width = canvas.width;
       work.height = canvas.height;
       const cctx = work.getContext('2d');
-      if (!cctx) { renderingRef.current = false; return; }
+      if (!cctx) {
+        renderingRef.current = false;
+        return;
+      }
       const jobView = { ...viewRef.current };
       // No drawing sheet in the footprint editor (a library footprint has no page).
-      const steps = buildDrawSteps(cctx, scn, jobView, visible, work.width, work.height, { ...drawOpts, drawingSheet: false });
+      const steps = buildDrawSteps(cctx, scn, jobView, visible, work.width, work.height, {
+        ...drawOpts,
+        drawingSheet: false,
+      });
       let i = 0;
       const run = (): void => {
         const t0 = performance.now();
@@ -158,28 +203,36 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
         ctx.strokeStyle = 'rgba(255,255,255,0.95)';
         ctx.lineWidth = Math.max(1, dpr);
         ctx.setLineDash([4 * dpr, 3 * dpr]);
-        const ox = md ? md.x : 0, oy = md ? md.y : 0;
+        const ox = md ? md.x : 0,
+          oy = md ? md.y : 0;
         for (const id of sel) {
           const b = fpItemBBox(fp, id);
           if (!b) continue;
           const p0 = toPx({ x: b.minX + ox, y: b.minY + oy });
           const p1 = toPx({ x: b.maxX + ox, y: b.maxY + oy });
           const pad = 2 * dpr;
-          ctx.strokeRect(Math.min(p0.x, p1.x) - pad, Math.min(p0.y, p1.y) - pad,
-            Math.abs(p1.x - p0.x) + 2 * pad, Math.abs(p1.y - p0.y) + 2 * pad);
+          ctx.strokeRect(
+            Math.min(p0.x, p1.x) - pad,
+            Math.min(p0.y, p1.y) - pad,
+            Math.abs(p1.x - p0.x) + 2 * pad,
+            Math.abs(p1.y - p0.y) + 2 * pad,
+          );
         }
         ctx.setLineDash([]);
       }
       const box = boxRef.current;
       if (box) {
-        const p0 = toPx(box.a), p1 = toPx(box.b);
+        const p0 = toPx(box.a),
+          p1 = toPx(box.b);
         // KiCad tints the marquee blue (l→r) or green (r→l window select).
         const rightward = box.b.x >= box.a.x;
         ctx.strokeStyle = rightward ? 'rgba(120,170,255,0.9)' : 'rgba(120,255,150,0.9)';
         ctx.fillStyle = rightward ? 'rgba(120,170,255,0.12)' : 'rgba(120,255,150,0.12)';
         ctx.lineWidth = dpr;
-        const x = Math.min(p0.x, p1.x), y = Math.min(p0.y, p1.y);
-        const w = Math.abs(p1.x - p0.x), h = Math.abs(p1.y - p0.y);
+        const x = Math.min(p0.x, p1.x),
+          y = Math.min(p0.y, p1.y);
+        const w = Math.abs(p1.x - p0.x),
+          h = Math.abs(p1.y - p0.y);
         ctx.fillRect(x, y, w, h);
         ctx.strokeRect(x, y, w, h);
       }
@@ -187,7 +240,8 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       const pv = previewRef.current;
       const cur = cursorWorldRef.current;
       if (pv && cur) {
-        const a = toPx(pv.start), b = toPx(cur);
+        const a = toPx(pv.start),
+          b = toPx(cur);
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = dpr;
         ctx.setLineDash([4 * dpr, 3 * dpr]);
@@ -196,9 +250,15 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
           const r = Math.hypot(b.x - a.x, b.y - a.y);
           ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
         } else if (pv.tool === 'drawRectangle') {
-          ctx.rect(Math.min(a.x, b.x), Math.min(a.y, b.y), Math.abs(b.x - a.x), Math.abs(b.y - a.y));
+          ctx.rect(
+            Math.min(a.x, b.x),
+            Math.min(a.y, b.y),
+            Math.abs(b.x - a.x),
+            Math.abs(b.y - a.y),
+          );
         } else {
-          ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
         }
         ctx.stroke();
         ctx.setLineDash([]);
@@ -220,7 +280,9 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
     }, [scene, visible, drawOpts, requestDraw]);
 
     // The selection only affects the overlay, not the raster — just repaint.
-    useEffect(() => { requestDraw(); }, [selection, requestDraw]);
+    useEffect(() => {
+      requestDraw();
+    }, [selection, requestDraw]);
 
     const zoomToFit = useCallback(() => {
       const canvas = canvasRef.current;
@@ -242,26 +304,36 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       requestDraw();
     }, [requestDraw]);
 
-    const zoomStep = useCallback((factor: number) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const v = viewRef.current;
-      const px = canvas.width / 2;
-      const py = canvas.height / 2;
-      const wx = (px - v.tx) / v.scale;
-      const wy = (py - v.ty) / v.scale;
-      v.scale *= factor;
-      v.tx = px - wx * v.scale;
-      v.ty = py - wy * v.scale;
-      requestDraw();
-    }, [requestDraw]);
+    const zoomStep = useCallback(
+      (factor: number) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const v = viewRef.current;
+        const px = canvas.width / 2;
+        const py = canvas.height / 2;
+        const wx = (px - v.tx) / v.scale;
+        const wy = (py - v.ty) / v.scale;
+        v.scale *= factor;
+        v.tx = px - wx * v.scale;
+        v.ty = py - wy * v.scale;
+        requestDraw();
+      },
+      [requestDraw],
+    );
 
-    useImperativeHandle(ref, () => ({
-      zoomToFit,
-      zoomIn: () => zoomStep(1.3),
-      zoomOut: () => zoomStep(1 / 1.3),
-      redraw: () => { cacheRef.current = null; requestDraw(); },
-    }), [zoomToFit, zoomStep, requestDraw]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        zoomToFit,
+        zoomIn: () => zoomStep(1.3),
+        zoomOut: () => zoomStep(1 / 1.3),
+        redraw: () => {
+          cacheRef.current = null;
+          requestDraw();
+        },
+      }),
+      [zoomToFit, zoomStep, requestDraw],
+    );
 
     // Size the canvas to its container (device pixels); fit on first layout.
     const fittedRef = useRef(false);
@@ -323,7 +395,10 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       const canvas = canvasRef.current!;
       const rect = canvas.getBoundingClientRect();
       const v = viewRef.current;
-      return { x: ((clientX - rect.left) * dpr - v.tx) / v.scale, y: ((clientY - rect.top) * dpr - v.ty) / v.scale };
+      return {
+        x: ((clientX - rect.left) * dpr - v.tx) / v.scale,
+        y: ((clientY - rect.top) * dpr - v.ty) / v.scale,
+      };
     };
 
     // A gesture in flight: pan (middle button), or — with the select tool —
@@ -429,7 +504,11 @@ export const FootprintCanvas = forwardRef<FootprintCanvasController, FootprintCa
       <div className="ze-canvas-wrap" ref={wrapRef} style={{ position: 'relative' }}>
         <canvas
           ref={canvasRef}
-          style={{ position: 'absolute', inset: 0, cursor: activeTool === 'select' ? 'default' : 'crosshair' }}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            cursor: activeTool === 'select' ? 'default' : 'crosshair',
+          }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

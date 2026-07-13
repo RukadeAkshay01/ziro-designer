@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { zipSync, unzipSync } from 'fflate';
 import { MenuBar, type Menu } from '../ui/MenuBar.js';
-import { storageAvailable, listProjects, saveProject, loadProject, deleteProject, touchOpened, type ProjectMeta } from './projectStore.js';
+import {
+  storageAvailable,
+  listProjects,
+  saveProject,
+  loadProject,
+  deleteProject,
+  touchOpened,
+  type ProjectMeta,
+} from './projectStore.js';
 import { useAuth } from '../auth/AuthProvider.js';
 import { syncAllProjects, pushProject, deleteCloudProject } from '../cloud/sync.js';
 import { LoadingOverlay, nextPaint } from '../ui/LoadingOverlay.js';
@@ -11,14 +19,26 @@ import '../ui/shell.css';
 /** A file picked from disk for a project open. `bytes` is the byte-exact source
  * of truth (persist/archive, like KiCad's byte-stream archiver); `text` is a
  * decoded view the editors parse — valid for text files, unused for binaries. */
-export interface PickedHomeFile { name: string; text: string; bytes?: Uint8Array }
+export interface PickedHomeFile {
+  name: string;
+  text: string;
+  bytes?: Uint8Array;
+}
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();
 
 // KiCad's own dark-theme icons (GPL), vendored under assets/.
-const TILE_ICONS = import.meta.glob('../assets/launcher/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const MGR_ICONS = import.meta.glob('../assets/manager/*.svg', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const TILE_ICONS = import.meta.glob('../assets/launcher/*.svg', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+const MGR_ICONS = import.meta.glob('../assets/manager/*.svg', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
 const tileUrl = (id: string): string | undefined => TILE_ICONS[`../assets/launcher/${id}.svg`];
 const mgrUrl = (name: string): string | undefined => MGR_ICONS[`../assets/manager/${name}.svg`];
 
@@ -31,14 +51,40 @@ interface Tile {
 
 const TILES: Tile[] = [
   { id: 'schematic', name: 'Schematic Editor', desc: 'Edit the project schematic', enabled: true },
-  { id: 'symbols', name: 'Symbol Editor', desc: 'Edit global and/or project schematic symbol libraries', enabled: true },
+  {
+    id: 'symbols',
+    name: 'Symbol Editor',
+    desc: 'Edit global and/or project schematic symbol libraries',
+    enabled: true,
+  },
   { id: 'pcb', name: 'PCB Editor', desc: 'Edit the project PCB design' },
-  { id: 'footprints', name: 'Footprint Editor', desc: 'Edit global and/or project PCB footprint libraries', enabled: true },
+  {
+    id: 'footprints',
+    name: 'Footprint Editor',
+    desc: 'Edit global and/or project PCB footprint libraries',
+    enabled: true,
+  },
   { id: 'gerber', name: 'Gerber Viewer', desc: 'Preview Gerber files' },
-  { id: 'image', name: 'Image Converter', desc: 'Convert bitmap images to schematic symbols or PCB footprints' },
-  { id: 'calculator', name: 'Calculator Tools', desc: 'Show tools for calculating resistance, current capacity, etc.' },
-  { id: 'drawingsheet', name: 'Drawing Sheet Editor', desc: 'Edit drawing sheet borders and title blocks for use in schematics and PCB designs' },
-  { id: 'pcm', name: 'Plugin and Content Manager', desc: 'Manage downloadable packages from KiCad and 3rd party repositories' },
+  {
+    id: 'image',
+    name: 'Image Converter',
+    desc: 'Convert bitmap images to schematic symbols or PCB footprints',
+  },
+  {
+    id: 'calculator',
+    name: 'Calculator Tools',
+    desc: 'Show tools for calculating resistance, current capacity, etc.',
+  },
+  {
+    id: 'drawingsheet',
+    name: 'Drawing Sheet Editor',
+    desc: 'Edit drawing sheet borders and title blocks for use in schematics and PCB designs',
+  },
+  {
+    id: 'pcm',
+    name: 'Plugin and Content Manager',
+    desc: 'Manage downloadable packages from KiCad and 3rd party repositories',
+  },
 ];
 
 // KiCad project-manager left toolbar (toolbars_kicad_manager.cpp). "Browse
@@ -68,7 +114,11 @@ const TreeIcon = ({ name }: { name: string }): JSX.Element => {
 const basename = (p: string): string => p.split('/').pop()!.split('\\').pop()!;
 
 const fmtBytes = (n: number): string =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(0)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  n < 1024
+    ? `${n} B`
+    : n < 1024 * 1024
+      ? `${(n / 1024).toFixed(0)} KB`
+      : `${(n / 1024 / 1024).toFixed(1)} MB`;
 
 const fmtWhen = (ms: number): string => {
   const s = (Date.now() - ms) / 1000;
@@ -130,7 +180,7 @@ const emptySch = (uuid: string): string => `(kicad_sch
 // Project. Only the essentials KiCad always emits — the app derives the project
 // name from `meta.filename` and ties the root schematic via `sheets`.
 const projectJson = (name: string, rootUuid: string): string =>
-  JSON.stringify(
+  `${JSON.stringify(
     {
       board: {
         design_settings: { defaults: {}, rules: {}, track_widths: [], via_dimensions: [] },
@@ -158,7 +208,7 @@ const projectJson = (name: string, rootUuid: string): string =>
     },
     null,
     2,
-  ) + '\n';
+  )}\n`;
 
 // Build the three files KiCad's File > New Project writes from scratch, nested
 // under a folder named for the project (mirrors KiCad's project directory). The
@@ -168,7 +218,11 @@ const newProjectFiles = (name: string): PickedHomeFile[] => {
     crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const rootUuid = uuid();
   const dir = `${name}/`;
-  const mk = (path: string, text: string): PickedHomeFile => ({ name: path, text, bytes: enc.encode(text) });
+  const mk = (path: string, text: string): PickedHomeFile => ({
+    name: path,
+    text,
+    bytes: enc.encode(text),
+  });
   return [
     mk(`${dir}${name}.kicad_pro`, projectJson(name, rootUuid)),
     mk(`${dir}${name}.kicad_sch`, emptySch(rootUuid)),
@@ -180,15 +234,23 @@ const newProjectFiles = (name: string): PickedHomeFile[] => {
 const sanitizeProjectName = (s: string): string => s.replace(/[/\\:*?"<>|]/g, '').trim();
 
 const treeIconFor = (file: string): string =>
-  /\.kicad_pro$/i.test(file) ? 'project'
-  : /\.kicad_sch$/i.test(file) ? 'icon_eeschema_16'
-  : /\.kicad_pcb$/i.test(file) ? 'icon_pcbnew_16'
-  : /\.kicad_sym$/i.test(file) ? 'library'
-  : /\.kicad_mod$/i.test(file) ? 'module'
-  : /\.(step|stp|wrl|wings)$/i.test(file) ? 'three_d'
-  : /\.pdf$/i.test(file) ? 'file_pdf'
-  : /\.(txt|md|rpt|net)$/i.test(file) ? 'datasheet'
-  : 'directory_browser';
+  /\.kicad_pro$/i.test(file)
+    ? 'project'
+    : /\.kicad_sch$/i.test(file)
+      ? 'icon_eeschema_16'
+      : /\.kicad_pcb$/i.test(file)
+        ? 'icon_pcbnew_16'
+        : /\.kicad_sym$/i.test(file)
+          ? 'library'
+          : /\.kicad_mod$/i.test(file)
+            ? 'module'
+            : /\.(step|stp|wrl|wings)$/i.test(file)
+              ? 'three_d'
+              : /\.pdf$/i.test(file)
+                ? 'file_pdf'
+                : /\.(txt|md|rpt|net)$/i.test(file)
+                  ? 'datasheet'
+                  : 'directory_browser';
 
 /** A node in the project's on-disk directory tree. */
 interface DirNode {
@@ -212,12 +274,46 @@ const isHiddenFile = (base: string): boolean =>
 // (kicad/project_tree_pane.cpp). Extension strings from wildcards_and_files_ext.cpp.
 const ARCHIVE_EXTENSIONS = new Set([
   // always archived
-  'kicad_pro', 'kicad_prl', 'kicad_sch', 'kicad_mbs', 'kicad_sym', 'kicad_pcb',
-  'kicad_mod', 'kicad_dru', 'kicad_wks', 'kicad_jobset', 'json', 'wbk',
+  'kicad_pro',
+  'kicad_prl',
+  'kicad_sch',
+  'kicad_mbs',
+  'kicad_sym',
+  'kicad_pcb',
+  'kicad_mod',
+  'kicad_dru',
+  'kicad_wks',
+  'kicad_jobset',
+  'json',
+  'wbk',
   // extra files (aIncludeExtraFiles): legacy formats, 3D models, fab outputs…
-  'pro', 'sch', 'lib', 'dcm', 'cmp', 'brd', 'mod', 'stp', 'step', 'wrl',
-  'gbrjob', 'pos', 'drl', 'nc', 'xnc', 'd356', 'rpt', 'net', 'py', 'pdf',
-  'txt', 'cir', 'sub', 'model', 'ibs', 'pkg', 'cad',
+  'pro',
+  'sch',
+  'lib',
+  'dcm',
+  'cmp',
+  'brd',
+  'mod',
+  'stp',
+  'step',
+  'wrl',
+  'gbrjob',
+  'pos',
+  'drl',
+  'nc',
+  'xnc',
+  'd356',
+  'rpt',
+  'net',
+  'py',
+  'pdf',
+  'txt',
+  'cir',
+  'sub',
+  'model',
+  'ibs',
+  'pkg',
+  'cad',
 ]);
 // Extension-less files KiCad always archives (the library tables).
 const ARCHIVE_FILENAMES = new Set(['fp-lib-table', 'sym-lib-table', 'design-block-lib-table']);
@@ -239,7 +335,7 @@ const inArchiveAllowList = (name: string): boolean => {
 const isRootFileName = (name: string, projLower: string): boolean => {
   if (!projLower) return false;
   const base = name.toLowerCase().replace(/\.[^.]+$/, '');
-  return base === projLower || base.startsWith(projLower + '-');
+  return base === projLower || base.startsWith(`${projLower}-`);
 };
 
 // PROJECT_TREE::OnCompareItems ordering: directories first, then root files,
@@ -274,10 +370,18 @@ function buildDirTree(files: PickedHomeFile[], stripPrefix: string, projLower: s
       const isLast = i === parts.length - 1;
       let child = cur.children.find((c) => c.name === part);
       if (!child) {
-        child = { name: part, path: (cur.path ? cur.path + '/' : '') + part, isDir: !isLast, children: [] };
+        child = {
+          name: part,
+          path: (cur.path ? `${cur.path}/` : '') + part,
+          isDir: !isLast,
+          children: [],
+        };
         cur.children.push(child);
       }
-      if (isLast) { child.isDir = false; child.file = f; }
+      if (isLast) {
+        child.isDir = false;
+        child.file = f;
+      }
       cur = child;
     }
   }
@@ -295,7 +399,14 @@ function buildDirTree(files: PickedHomeFile[], stripPrefix: string, projLower: s
  * desktop app's project window. Until a project is opened, the bundled demo
  * project is shown.
  */
-export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymbolEditor, onOpenFootprintEditor, initialFiles }: {
+export function HomePage({
+  onOpenSchematic,
+  onOpenProject,
+  onOpenPcb,
+  onOpenSymbolEditor,
+  onOpenFootprintEditor,
+  initialFiles,
+}: {
   onOpenSchematic: () => void;
   onOpenProject?: (files: PickedHomeFile[], startFile?: string) => void;
   onOpenPcb?: (file: PickedHomeFile, files?: PickedHomeFile[]) => void;
@@ -329,13 +440,17 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   const [tplOpen, setTplOpen] = useState(false);
   const [tplSel, setTplSel] = useState<TemplateMeta | null>(null);
   const [tplName, setTplName] = useState('');
-  useEffect(() => { void loadTemplates().then(setTemplates); }, []);
+  useEffect(() => {
+    void loadTemplates().then(setTemplates);
+  }, []);
   // Project-tree pane width (px), draggable like KiCad's wxAUI sash.
   const [panelWidth, setPanelWidth] = useState(290);
   // Non-null while opening/saving a project — drives KiCad's "Load Schematic"
   // style progress overlay so the UI doesn't look frozen mid-load.
   const [loading, setLoading] = useState<string | null>(null);
-  const refreshSaved = (): void => { if (storageAvailable()) void listProjects().then(setSaved); };
+  const refreshSaved = (): void => {
+    if (storageAvailable()) void listProjects().then(setSaved);
+  };
   useEffect(refreshSaved, []);
 
   // Sign-in (or session restore): pull the user's cloud projects into the local
@@ -345,15 +460,23 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     if (!userId || !storageAvailable()) return;
     let cancelled = false;
     void syncAllProjects(userId)
-      .then(() => { if (!cancelled) refreshSaved(); })
+      .then(() => {
+        if (!cancelled) refreshSaved();
+      })
       .catch((e) => console.warn('Cloud sync failed:', e));
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   // Derive a project name from the .kicad_pro (else the root .kicad_sch, else folder).
   const projectNameOf = (files: PickedHomeFile[]): string => {
     const pro = files.find((f) => /\.kicad_pro$/i.test(f.name));
-    const src = pro?.name ?? files.find((f) => /\.kicad_sch$/i.test(f.name))?.name ?? files[0]?.name ?? 'Project';
+    const src =
+      pro?.name ??
+      files.find((f) => /\.kicad_sch$/i.test(f.name))?.name ??
+      files[0]?.name ??
+      'Project';
     return basename(src).replace(/\.(kicad_pro|kicad_sch|kicad_pcb)$/i, '');
   };
 
@@ -362,7 +485,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   // survives a save, archive, and reopen instead of collapsing to sch+pcb. The
   // storage layer gzips text ~10x, so keeping the libs is cheap. The project is
   // persisted to IndexedDB so it survives a reload with no login.
-  const ingest = async (files: { name: string; bytesOf: () => Promise<Uint8Array> }[], persist = true): Promise<void> => {
+  const ingest = async (
+    files: { name: string; bytesOf: () => Promise<Uint8Array> }[],
+    persist = true,
+  ): Promise<void> => {
     setLoading('Reading files…');
     await nextPaint(); // show the overlay before the main thread gets busy
     try {
@@ -385,12 +511,19 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
             // Reuse an existing record of the same name so reopening a folder
             // updates it rather than piling up duplicates.
             const existing = (await listProjects()).find((p) => p.name === name);
-            const pid = await saveProject(name, withBytes.map((f) => ({ name: f.name, bytes: f.bytes! })), existing?.id);
+            const pid = await saveProject(
+              name,
+              withBytes.map((f) => ({ name: f.name, bytes: f.bytes! })),
+              existing?.id,
+            );
             refreshSaved();
             // Mirror to the cloud when signed in (best-effort, non-blocking).
-            if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
+            if (userId)
+              void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
           }
-        } catch { /* storage disabled (private mode) — the app still works */ }
+        } catch {
+          /* storage disabled (private mode) — the app still works */
+        }
       }
     } finally {
       setLoading(null);
@@ -412,10 +545,17 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
       try {
         // Reuse an existing record of the same name (overwrite, don't duplicate).
         const existing = (await listProjects()).find((p) => p.name === name);
-        const pid = await saveProject(name, files.map((f) => ({ name: f.name, bytes: f.bytes! })), existing?.id);
+        const pid = await saveProject(
+          name,
+          files.map((f) => ({ name: f.name, bytes: f.bytes! })),
+          existing?.id,
+        );
         refreshSaved();
-        if (userId) void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
-      } catch { /* storage disabled (private mode) — the app still works */ }
+        if (userId)
+          void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
+      } catch {
+        /* storage disabled (private mode) — the app still works */
+      }
     }
   };
 
@@ -437,7 +577,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     await nextPaint();
     try {
       const loaded = await loadProject(id);
-      if (loaded) setPicked(loaded.files.map((f) => ({ name: f.name, text: dec.decode(f.bytes), bytes: f.bytes })));
+      if (loaded)
+        setPicked(
+          loaded.files.map((f) => ({ name: f.name, text: dec.decode(f.bytes), bytes: f.bytes })),
+        );
       await touchOpened(id); // resurface in Recent (ordered by last opened)
       refreshSaved();
     } finally {
@@ -454,10 +597,12 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
 
   const onPicked = async (list: FileList | null): Promise<void> => {
     if (!list || list.length === 0) return;
-    await ingest([...list].map((f) => ({
-      name: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
-      bytesOf: async () => new Uint8Array(await f.arrayBuffer()),
-    })));
+    await ingest(
+      [...list].map((f) => ({
+        name: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name,
+        bytesOf: async () => new Uint8Array(await f.arrayBuffer()),
+      })),
+    );
   };
 
   // Open Project: KiCad opens the .kicad_pro and pulls in the whole project.
@@ -468,8 +613,15 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   // cancel falls back to the classic webkitdirectory input, which has no such
   // blocklist. Multi-file selection and folder drag-and-drop cover the rest.
   const openProjectPicker = async (): Promise<void> => {
-    interface DirHandle { values: () => AsyncIterable<FsEntry> }
-    interface FsEntry { kind: string; name: string; getFile: () => Promise<File>; values: () => AsyncIterable<FsEntry> }
+    interface DirHandle {
+      values: () => AsyncIterable<FsEntry>;
+    }
+    interface FsEntry {
+      kind: string;
+      name: string;
+      getFile: () => Promise<File>;
+      values: () => AsyncIterable<FsEntry>;
+    }
     const w = window as unknown as { showDirectoryPicker?: () => Promise<DirHandle> };
     if (w.showDirectoryPicker) {
       try {
@@ -477,10 +629,19 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
         const files: { name: string; bytesOf: () => Promise<Uint8Array> }[] = [];
         // Recurse so footprint/3D-model subfolders (CM5IO.pretty, 3d_lib …)
         // populate the directory tree, not just the top level.
-        const walkHandle = async (handle: DirHandle, prefix: string, depth: number): Promise<void> => {
+        const walkHandle = async (
+          handle: DirHandle,
+          prefix: string,
+          depth: number,
+        ): Promise<void> => {
           for await (const entry of handle.values()) {
-            if (entry.kind === 'file') files.push({ name: prefix + entry.name, bytesOf: async () => new Uint8Array(await (await entry.getFile()).arrayBuffer()) });
-            else if (entry.kind === 'directory' && depth < 6) await walkHandle(entry, `${prefix}${entry.name}/`, depth + 1);
+            if (entry.kind === 'file')
+              files.push({
+                name: prefix + entry.name,
+                bytesOf: async () => new Uint8Array(await (await entry.getFile()).arrayBuffer()),
+              });
+            else if (entry.kind === 'directory' && depth < 6)
+              await walkHandle(entry, `${prefix}${entry.name}/`, depth + 1);
           }
         };
         await walkHandle(dir, '', 0);
@@ -499,24 +660,43 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   // works for Downloads/Desktop) and ingest every file found.
   const onDropProject = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault();
-    interface Entry { isFile: boolean; isDirectory: boolean; name: string; file: (ok: (f: File) => void, err: (e: unknown) => void) => void; createReader: () => { readEntries: (ok: (b: Entry[]) => void, err: () => void) => void } }
-    const readAll = (dir: Entry): Promise<Entry[]> => new Promise((res) => {
-      const reader = dir.createReader();
-      const all: Entry[] = [];
-      const next = (): void => reader.readEntries((batch) => {
-        if (batch.length === 0) res(all);
-        else { all.push(...batch); next(); }
-      }, () => res(all));
-      next();
-    });
+    interface Entry {
+      isFile: boolean;
+      isDirectory: boolean;
+      name: string;
+      file: (ok: (f: File) => void, err: (e: unknown) => void) => void;
+      createReader: () => { readEntries: (ok: (b: Entry[]) => void, err: () => void) => void };
+    }
+    const readAll = (dir: Entry): Promise<Entry[]> =>
+      new Promise((res) => {
+        const reader = dir.createReader();
+        const all: Entry[] = [];
+        const next = (): void =>
+          reader.readEntries(
+            (batch) => {
+              if (batch.length === 0) res(all);
+              else {
+                all.push(...batch);
+                next();
+              }
+            },
+            () => res(all),
+          );
+        next();
+      });
     const files: { name: string; bytesOf: () => Promise<Uint8Array> }[] = [];
     // Keep the relative path (prefix) so the directory tree reconstructs folders.
     const walk = async (entry: Entry, prefix: string, depth: number): Promise<void> => {
       if (entry.isFile) {
         const file = await new Promise<File>((res, rej) => entry.file(res, rej)).catch(() => null);
-        if (file) files.push({ name: prefix + file.name, bytesOf: async () => new Uint8Array(await file.arrayBuffer()) });
+        if (file)
+          files.push({
+            name: prefix + file.name,
+            bytesOf: async () => new Uint8Array(await file.arrayBuffer()),
+          });
       } else if (entry.isDirectory && depth < 6) {
-        for (const child of await readAll(entry)) await walk(child, `${prefix}${entry.name}/`, depth + 1);
+        for (const child of await readAll(entry))
+          await walk(child, `${prefix}${entry.name}/`, depth + 1);
       }
     };
     const entries = [...e.dataTransfer.items]
@@ -541,7 +721,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     if (!picked) return;
     // KiCad archives only its allow-listed file types (gerbers/backups/images
     // and other stray files are skipped), reading each as raw bytes.
-    const withBytes = picked.filter((f) => f.bytes && f.bytes.length > 0 && inArchiveAllowList(f.name));
+    const withBytes = picked.filter(
+      (f) => f.bytes && f.bytes.length > 0 && inArchiveAllowList(f.name),
+    );
     if (withBytes.length === 0) return;
     setLoading('Archiving project…');
     await nextPaint(); // paint the overlay before zipSync blocks the main thread
@@ -568,8 +750,11 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     const file = list?.[0];
     if (!file) return;
     let entries: Record<string, Uint8Array>;
-    try { entries = unzipSync(new Uint8Array(await file.arrayBuffer())); }
-    catch { return; /* not a valid zip */ }
+    try {
+      entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+    } catch {
+      return; /* not a valid zip */
+    }
     const files = Object.entries(entries)
       .filter(([name, data]) => !name.endsWith('/') && data.length > 0)
       .map(([name, data]) => ({ name, bytesOf: async () => data }));
@@ -578,12 +763,26 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
 
   const runMgrAction = (action: MgrAction): void => {
     switch (action) {
-      case 'open': void openProjectPicker(); break;
-      case 'new': setNewName(''); break;
-      case 'template': setTplSel(templates[0] ?? null); setTplName(''); setTplOpen(true); break;
-      case 'archive': void archiveProject(); break;
-      case 'unarchive': zipInputRef.current?.click(); break;
-      case 'refresh': refreshSaved(); break;
+      case 'open':
+        void openProjectPicker();
+        break;
+      case 'new':
+        setNewName('');
+        break;
+      case 'template':
+        setTplSel(templates[0] ?? null);
+        setTplName('');
+        setTplOpen(true);
+        break;
+      case 'archive':
+        void archiveProject();
+        break;
+      case 'unarchive':
+        zipInputRef.current?.click();
+        break;
+      case 'refresh':
+        refreshSaved();
+        break;
     }
   };
 
@@ -604,14 +803,21 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     document.body.style.cursor = 'col-resize';
   };
 
-  const proFile = useMemo(() => picked?.find((f) => /\.kicad_pro$/i.test(f.name)) ?? null, [picked]);
+  const proFile = useMemo(
+    () => picked?.find((f) => /\.kicad_pro$/i.test(f.name)) ?? null,
+    [picked],
+  );
 
   // The project name drives KiCad's root-file detection (which schematic shows,
   // and the sort weight). Falls back to the root .kicad_sch / first file.
   const projName = useMemo(() => (picked ? projectNameOf(picked) : ''), [picked]);
   const projLower = projName.toLowerCase();
   // KiCad's tree root shows the full .kicad_pro filename (m_root = fn.GetFullName()).
-  const rootLabel = proFile ? basename(proFile.name) : projName ? `${projName}.kicad_pro` : 'Project';
+  const rootLabel = proFile
+    ? basename(proFile.name)
+    : projName
+      ? `${projName}.kicad_pro`
+      : 'Project';
 
   const launchSchematic = (startFile?: string): void => {
     if (picked && onOpenProject) onOpenProject(picked, startFile);
@@ -637,13 +843,21 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
   const dirRoot = useMemo<DirNode | null>(() => {
     if (!picked) return null;
     const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
-    const firstSeg = anyPath.includes('/') ? anyPath.split('/')[0] + '/' : '';
-    const strip = firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg)) ? firstSeg : '';
+    const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
+    const strip =
+      firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
+        ? firstSeg
+        : '';
     return buildDirTree(picked, strip, projLower);
   }, [picked, proFile, projLower]);
 
   const toggleDir = (path: string): void =>
-    setExpanded((prev) => { const n = new Set(prev); if (n.has(path)) n.delete(path); else n.add(path); return n; });
+    setExpanded((prev) => {
+      const n = new Set(prev);
+      if (n.has(path)) n.delete(path);
+      else n.add(path);
+      return n;
+    });
 
   // Like KiCad's addItemToProjectTree: a schematic is only listed when its
   // basename matches the project (i.e. the root sheet). Sub-sheets are hidden
@@ -681,17 +895,24 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
     // editor it belongs to (a `.kicad_mod` to the Footprint Editor, a
     // `.kicad_sym` to the Symbol Editor, a board to pcbnew, a sheet to eeschema).
     const openFn =
-      isPcb && onOpenPcb && node.file ? () => onOpenPcb(node.file!, picked ?? undefined)
-      : isSch ? () => launchSchematic(basename(node.name))
-      : isSym && onOpenSymbolEditor && node.file ? () => onOpenSymbolEditor(picked ?? undefined, node.file!.name)
-      : isMod && onOpenFootprintEditor && node.file ? () => onOpenFootprintEditor(picked ?? undefined, node.file!.name)
-      : undefined;
-    const openTitle =
-      isPcb ? 'Double-click to open in the PCB Editor'
-      : isSch ? 'Double-click to open in the Schematic Editor'
-      : isSym ? 'Double-click to open in the Symbol Editor'
-      : isMod ? 'Double-click to open in the Footprint Editor'
-      : node.path;
+      isPcb && onOpenPcb && node.file
+        ? () => onOpenPcb(node.file!, picked ?? undefined)
+        : isSch
+          ? () => launchSchematic(basename(node.name))
+          : isSym && onOpenSymbolEditor && node.file
+            ? () => onOpenSymbolEditor(picked ?? undefined, node.file!.name)
+            : isMod && onOpenFootprintEditor && node.file
+              ? () => onOpenFootprintEditor(picked ?? undefined, node.file!.name)
+              : undefined;
+    const openTitle = isPcb
+      ? 'Double-click to open in the PCB Editor'
+      : isSch
+        ? 'Double-click to open in the Schematic Editor'
+        : isSym
+          ? 'Double-click to open in the Symbol Editor'
+          : isMod
+            ? 'Double-click to open in the Footprint Editor'
+            : node.path;
     // KiCad's project tree: single click selects, double click opens the file.
     return (
       <div
@@ -714,8 +935,21 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
       label: 'File',
       items: [
         { label: 'New Project…', action: () => setNewName(''), shortcut: 'Ctrl+N' },
-        { label: 'New Project from Template…', action: () => { setTplSel(templates[0] ?? null); setTplName(''); setTplOpen(true); }, disabled: templates.length === 0 },
-        { label: 'Open Project…', icon: 'open', action: () => void openProjectPicker(), shortcut: 'Ctrl+O' },
+        {
+          label: 'New Project from Template…',
+          action: () => {
+            setTplSel(templates[0] ?? null);
+            setTplName('');
+            setTplOpen(true);
+          },
+          disabled: templates.length === 0,
+        },
+        {
+          label: 'Open Project…',
+          icon: 'open',
+          action: () => void openProjectPicker(),
+          shortcut: 'Ctrl+O',
+        },
         { label: 'Select Project Files…', action: () => filesInputRef.current?.click() },
         { sep: true },
         { label: 'Archive Project…', action: () => void archiveProject(), disabled: !picked },
@@ -729,7 +963,11 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
       label: 'Tools',
       items: [
         { label: 'Edit Schematic', action: () => launchSchematic(), shortcut: 'Ctrl+E' },
-        { label: 'Edit Schematic Symbols', action: () => onOpenSymbolEditor?.(picked ?? undefined), shortcut: 'Ctrl+L' },
+        {
+          label: 'Edit Schematic Symbols',
+          action: () => onOpenSymbolEditor?.(picked ?? undefined),
+          shortcut: 'Ctrl+L',
+        },
       ],
     },
     { label: 'Help', items: [{ label: 'About ZiroEDA', action: () => {} }] },
@@ -744,7 +982,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
         style={{ display: 'none' }}
         // Non-standard but universally supported attribute: pick a whole folder.
         {...{ webkitdirectory: '' }}
-        onChange={(e) => { void onPicked(e.target.files); e.target.value = ''; }}
+        onChange={(e) => {
+          void onPicked(e.target.files);
+          e.target.value = '';
+        }}
       />
       <input
         ref={filesInputRef}
@@ -752,19 +993,29 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
         multiple
         accept=".kicad_pro,.kicad_sch,.kicad_pcb,.kicad_dru,.kicad_prl,.kicad_wks,.kicad_sym,.md,.txt"
         style={{ display: 'none' }}
-        onChange={(e) => { void onPicked(e.target.files); e.target.value = ''; }}
+        onChange={(e) => {
+          void onPicked(e.target.files);
+          e.target.value = '';
+        }}
       />
       <input
         ref={zipInputRef}
         type="file"
         accept=".zip"
         style={{ display: 'none' }}
-        onChange={(e) => { void onUnarchive(e.target.files); e.target.value = ''; }}
+        onChange={(e) => {
+          void onUnarchive(e.target.files);
+          e.target.value = '';
+        }}
       />
 
       <MenuBar
         menus={menus}
-        title={<><b>{picked && projName ? projName : 'No project'}</b>&nbsp;—&nbsp;ZiroEDA</>}
+        title={
+          <>
+            <b>{picked && projName ? projName : 'No project'}</b>&nbsp;—&nbsp;ZiroEDA
+          </>
+        }
         rightSlot={
           session ? (
             <div className="ze-account">
@@ -816,7 +1067,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                 >
                   <span
                     className={`twisty expandable${rootOpen ? ' open' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); setRootOpen((o) => !o); }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRootOpen((o) => !o);
+                    }}
                   />
                   <TreeIcon name="project" />
                   <span>{rootLabel}</span>
@@ -862,17 +1116,24 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
               // project manager). Symbol Editor is a library editor — standalone.
               const needsProject = t.id === 'schematic' || t.id === 'pcb';
               const implemented = t.id === 'schematic' || t.id === 'pcb' || !!t.enabled;
-              const enabled = implemented && (!needsProject || (t.id === 'schematic' ? hasSch : hasPcb));
-              const launch = t.id === 'pcb' ? launchPcb
-                : t.id === 'symbols' ? (): void => onOpenSymbolEditor?.(picked ?? undefined)
-                : t.id === 'footprints' ? (): void => onOpenFootprintEditor?.(picked ?? undefined)
-                : (): void => launchSchematic();
+              const enabled =
+                implemented && (!needsProject || (t.id === 'schematic' ? hasSch : hasPcb));
+              const launch =
+                t.id === 'pcb'
+                  ? launchPcb
+                  : t.id === 'symbols'
+                    ? (): void => onOpenSymbolEditor?.(picked ?? undefined)
+                    : t.id === 'footprints'
+                      ? (): void => onOpenFootprintEditor?.(picked ?? undefined)
+                      : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}
                   className="ze-launcher"
                   disabled={!enabled}
-                  title={!implemented ? t.desc : enabled ? t.desc : 'Open or create a project first'}
+                  title={
+                    !implemented ? t.desc : enabled ? t.desc : 'Open or create a project first'
+                  }
                   onClick={enabled ? launch : undefined}
                 >
                   <span className="ico">{tileIcon(t.id)}</span>
@@ -900,7 +1161,8 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                     <TreeIcon name="project" />
                     <span className="ze-recent-name">{p.name}</span>
                     <span className="ze-recent-meta">
-                      {p.fileCount} file{p.fileCount === 1 ? '' : 's'} · {fmtBytes(p.bytes)} · {fmtWhen(p.updatedAt)}
+                      {p.fileCount} file{p.fileCount === 1 ? '' : 's'} · {fmtBytes(p.bytes)} ·{' '}
+                      {fmtWhen(p.updatedAt)}
                     </span>
                     <button
                       className="ze-recent-del"
@@ -928,7 +1190,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               New Project
-              <span className="x" title="Cancel" onClick={() => setNewName(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setNewName(null)}>
+                ✕
+              </span>
             </div>
             <div className="ze-label-dialog-body">
               <div className="row">
@@ -946,11 +1210,14 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                 />
               </div>
               <div style={{ opacity: 0.6, fontSize: 12, paddingLeft: 66 }}>
-                Creates {sanitizeProjectName(newName) || 'untitled'}.kicad_pro, .kicad_sch and .kicad_pcb.
+                Creates {sanitizeProjectName(newName) || 'untitled'}.kicad_pro, .kicad_sch and
+                .kicad_pcb.
               </div>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setNewName(null)}>Cancel</button>
+              <button className="ze-btn" onClick={() => setNewName(null)}>
+                Cancel
+              </button>
               <button
                 className="ze-btn primary"
                 disabled={!sanitizeProjectName(newName)}
@@ -970,7 +1237,9 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
           <div className="ze-modal ze-template-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               New Project from Template
-              <span className="x" title="Cancel" onClick={() => setTplOpen(false)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setTplOpen(false)}>
+                ✕
+              </span>
             </div>
             <div className="ze-modal-body">
               <div className="ze-tpl-list">
@@ -979,7 +1248,10 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                     key={t.id}
                     className={`ze-tpl-card${tplSel?.id === t.id ? ' active' : ''}`}
                     onClick={() => setTplSel(t)}
-                    onDoubleClick={() => { setTplSel(t); if (sanitizeProjectName(tplName)) void createFromTpl(); }}
+                    onDoubleClick={() => {
+                      setTplSel(t);
+                      if (sanitizeProjectName(tplName)) void createFromTpl();
+                    }}
                     title={t.title}
                   >
                     {t.icon ? <img src={t.icon} alt="" /> : <span className="ze-tpl-noicon" />}
@@ -1007,12 +1279,23 @@ export function HomePage({ onOpenSchematic, onOpenProject, onOpenPcb, onOpenSymb
                   placeholder="untitled"
                   value={tplName}
                   onChange={(e) => setTplName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') void createFromTpl(); else if (e.key === 'Escape') setTplOpen(false); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void createFromTpl();
+                    else if (e.key === 'Escape') setTplOpen(false);
+                  }}
                 />
               </label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button className="ze-btn" onClick={() => setTplOpen(false)}>Cancel</button>
-                <button className="ze-btn primary" disabled={!tplSel || !sanitizeProjectName(tplName)} onClick={() => void createFromTpl()}>Create</button>
+                <button className="ze-btn" onClick={() => setTplOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="ze-btn primary"
+                  disabled={!tplSel || !sanitizeProjectName(tplName)}
+                  onClick={() => void createFromTpl()}
+                >
+                  Create
+                </button>
               </div>
             </div>
           </div>

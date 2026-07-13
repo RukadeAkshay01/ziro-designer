@@ -29,9 +29,15 @@ function place(libName: string, ref: string, x: number, y: number, uuid: string)
     (uuid "${uuid}"))`;
 }
 
-const LIBS = ['IN input', 'OUT output', 'PAS passive', 'PWRIN power_in', 'NC no_connect']
-  .map((s) => { const [n, t] = s.split(' '); return libDef(n!, t!); })
-  .join('\n') + libDef('GND', 'power_in', true) + libDef('VOUT', 'power_out', true);
+const LIBS =
+  ['IN input', 'OUT output', 'PAS passive', 'PWRIN power_in', 'NC no_connect']
+    .map((s) => {
+      const [n, t] = s.split(' ');
+      return libDef(n!, t!);
+    })
+    .join('\n') +
+  libDef('GND', 'power_in', true) +
+  libDef('VOUT', 'power_out', true);
 
 function sch(body: string) {
   const text = `(kicad_sch (version 20230121) (generator eeschema)
@@ -107,7 +113,7 @@ describe('runErc', () => {
     expect(codes(runErc(connected.doc, connected.libById))).toContain('no_connect_connected');
   });
 
-  it("flags an NC-type pin that is wired to anything (TestNoConnectPins)", () => {
+  it('flags an NC-type pin that is wired to anything (TestNoConnectPins)', () => {
     const { doc, libById } = sch(`
       ${place('NC', 'U1', 10, 10, 'u1')} ${wire(10, 10, 20, 10, 'w1')}`);
     const v = runErc(doc, libById);
@@ -141,7 +147,7 @@ describe('runErc', () => {
       (symbol (lib_id "T:DBL") (at 10 10 0) (unit 1)
         (property "Reference" "U1" (at 10 10 0)) (property "Value" "DBL" (at 10 10 0)) (uuid "u1"))
       ${wire(10, 10, 20, 10, 'w1')} ${wire(20, 10, 20, 20, 'w2')}`;
-    const doc = readSchematic(parse(text + ')'));
+    const doc = readSchematic(parse(`${text})`));
     const libById = new Map(doc.libSymbols.map((l) => [l.libId, l]));
     expect(codes(runErc(doc, libById))).not.toContain('pin_to_pin_error');
   });
@@ -150,7 +156,9 @@ describe('runErc', () => {
 describe('no_connect model round-trip', () => {
   it('parses, moves through edits, and serializes (no_connect (at ..))', () => {
     const { doc } = sch(place('IN', 'U1', 10, 10, 'u1'));
-    const next = addItems({ noConnects: [makeNoConnect({ x: mmToIU(10), y: mmToIU(10) })] }).apply(doc);
+    const next = addItems({ noConnects: [makeNoConnect({ x: mmToIU(10), y: mmToIU(10) })] }).apply(
+      doc,
+    );
     const text = serialize(writeSchematic(next));
     expect(text).toContain('(no_connect');
     expect(text).toContain('(at 10 10)');

@@ -1,9 +1,50 @@
-import { type Vec2 } from '@ziroeda/kimath';
+import type { Vec2 } from '@ziroeda/kimath';
 import { iuToMM } from '@ziroeda/common';
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { parse } from '@ziroeda/sexpr';
-import { readSchematic, serializeSchematic, deleteByIds, transformItems, computeNetlist, withCleanup, refId, editSymbolProperties, copySelectionText, parsePastedText, runErc, buildSheetTree, sheetFile, findRootFile, addItems, makeSheet, addSheetPin, replaceSheet, replaceTextBox, replaceTable, makeImage, makeTextBox, makeTable, History, type Schematic, type LibSymbol, type EditCommand, type SheetSide, type TransformOp, type LabelKind, type LabelShape, type SymbolEdit, type PastePayload, type ErcViolation, type SheetTreeNode } from '@ziroeda/eeschema';
-import { SchematicCanvas, type CanvasController, type LineMode, type PendingLabel } from './components/SchematicCanvas.js';
+import {
+  readSchematic,
+  serializeSchematic,
+  deleteByIds,
+  transformItems,
+  computeNetlist,
+  withCleanup,
+  refId,
+  editSymbolProperties,
+  copySelectionText,
+  parsePastedText,
+  runErc,
+  buildSheetTree,
+  sheetFile,
+  findRootFile,
+  addItems,
+  makeSheet,
+  addSheetPin,
+  replaceSheet,
+  replaceTextBox,
+  replaceTable,
+  makeImage,
+  makeTextBox,
+  makeTable,
+  History,
+  type Schematic,
+  type LibSymbol,
+  type EditCommand,
+  type SheetSide,
+  type TransformOp,
+  type LabelKind,
+  type LabelShape,
+  type SymbolEdit,
+  type PastePayload,
+  type ErcViolation,
+  type SheetTreeNode,
+} from '@ziroeda/eeschema';
+import {
+  SchematicCanvas,
+  type CanvasController,
+  type LineMode,
+  type PendingLabel,
+} from './components/SchematicCanvas.js';
 import { LabelDialog } from './components/LabelDialog.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
 import { ErcDialog } from './components/ErcDialog.js';
@@ -15,14 +56,19 @@ import { buildMenus, TOOL_HOTKEYS } from '../../ui/menus.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
 import { settings, gridSizeToIU } from '../../prefs/settings.js';
-import { useCommonSettings, useEeschemaSettings, useSchematicTheme } from '../../prefs/useSettings.js';
+import {
+  useCommonSettings,
+  useEeschemaSettings,
+  useSchematicTheme,
+} from '../../prefs/useSettings.js';
 import type { RenderOpts } from './render/renderer.js';
 import type { InputPrefs } from './components/SchematicCanvas.js';
 import '../../ui/shell.css';
 
 // What KiCad writes for File > New Schematic: an empty sheet on A4 paper.
 // Launching the editor without a project starts here (no bundled demo).
-const EMPTY_SCH = '(kicad_sch (version 20231120) (generator "ziroeda") (paper "A4")\n  (lib_symbols)\n)\n';
+const EMPTY_SCH =
+  '(kicad_sch (version 20231120) (generator "ziroeda") (paper "A4")\n  (lib_symbols)\n)\n';
 
 const RADIO_GROUPS: string[][] = [
   ['unitsInches', 'unitsMils', 'unitsMm'],
@@ -32,7 +78,18 @@ const RADIO_GROUPS: string[][] = [
 // Local view toggles; grid/crosshair/line-mode/hidden-pins live in the settings
 // store (Preferences) and are derived each render so the two stay in sync.
 const DEFAULT_TOGGLES = new Set(['unitsMm', 'showHierarchy', 'showProperties']);
-const SETTINGS_TOGGLES = new Set(['toggleGrid', 'toggleGridOverrides', 'toggleHiddenPins', 'crosshairSmall', 'crosshairFull', 'crosshair45', 'lineModeFree', 'lineMode90', 'lineMode45', 'annotateAuto']);
+const SETTINGS_TOGGLES = new Set([
+  'toggleGrid',
+  'toggleGridOverrides',
+  'toggleHiddenPins',
+  'crosshairSmall',
+  'crosshairFull',
+  'crosshair45',
+  'lineModeFree',
+  'lineMode90',
+  'lineMode45',
+  'annotateAuto',
+]);
 const PX_PER_MM_100 = 3.7795;
 
 // Right-toolbar tool ids that place a text label, mapped to the label kind.
@@ -45,18 +102,34 @@ const LABEL_TOOL_KINDS: Record<string, LabelKind> = {
 
 // KiCad's Selection Filter categories, laid out in two columns (row-major).
 const FILTER_CATS: [string, string][] = [
-  ['symbols', 'Symbols'], ['pins', 'Pins'],
-  ['wires', 'Wires'], ['labels', 'Labels'],
-  ['graphics', 'Graphics'], ['images', 'Images'],
-  ['text', 'Text'], ['other', 'Other items'],
+  ['symbols', 'Symbols'],
+  ['pins', 'Pins'],
+  ['wires', 'Wires'],
+  ['labels', 'Labels'],
+  ['graphics', 'Graphics'],
+  ['images', 'Images'],
+  ['text', 'Text'],
+  ['other', 'Other items'],
 ];
 
 /** A file picked from disk for a project open. */
-export interface PickedFile { name: string; text: string }
+export interface PickedFile {
+  name: string;
+  text: string;
+}
 
 const DEFAULT_FILE = 'untitled.kicad_sch';
 
-export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, initialProject, initialFile, placeRequest, onProjectChange, projectName }: {
+export function SchematicEditor({
+  onExitToHome,
+  onShowPcb,
+  onShowSymbolEditor,
+  initialProject,
+  initialFile,
+  placeRequest,
+  onProjectChange,
+  projectName,
+}: {
   onExitToHome: () => void;
   onShowPcb?: () => void;
   /** Open the Symbol Editor (the top toolbar's `symbolEditor` button). */
@@ -96,7 +169,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   // KiCad's "Load Schematic" progress: non-null while parsing/saving a project.
   const [loading, setLoading] = useState<string | null>(null);
   // Register the initial sheet's undo stack so returning to it keeps its history.
-  useEffect(() => { histories.current.set(DEFAULT_FILE, history.current); }, []);
+  useEffect(() => {
+    histories.current.set(DEFAULT_FILE, history.current);
+  }, []);
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
   // The item whose net is highlighted by the Highlight-Net tool (KiCad's
   // m_highlightedConn). Distinct from selection: plain selection is never a net
@@ -109,11 +184,31 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   const [pendingLabel, setPendingLabel] = useState<PendingLabel | null>(null);
   // Right-toolbar drawing state: a drawn sheet awaiting its name/file, a sheet-pin
   // click awaiting its name, an image chosen and following the cursor.
-  const [sheetDraw, setSheetDraw] = useState<{ at: Vec2; size: { w: number; h: number }; name: string; file: string } | null>(null);
-  const [sheetPinDraw, setSheetPinDraw] = useState<{ index: number; at: Vec2; side: SheetSide; name: string } | null>(null);
-  const [textBoxDraw, setTextBoxDraw] = useState<{ start: Vec2; end: Vec2; text: string; editIndex?: number } | null>(null);
+  const [sheetDraw, setSheetDraw] = useState<{
+    at: Vec2;
+    size: { w: number; h: number };
+    name: string;
+    file: string;
+  } | null>(null);
+  const [sheetPinDraw, setSheetPinDraw] = useState<{
+    index: number;
+    at: Vec2;
+    side: SheetSide;
+    name: string;
+  } | null>(null);
+  const [textBoxDraw, setTextBoxDraw] = useState<{
+    start: Vec2;
+    end: Vec2;
+    text: string;
+    editIndex?: number;
+  } | null>(null);
   const [tableDraw, setTableDraw] = useState<{ rows: number; cols: number } | null>(null);
-  const [tableEdit, setTableEdit] = useState<{ index: number; rows: number; cols: number; texts: string[] } | null>(null);
+  const [tableEdit, setTableEdit] = useState<{
+    index: number;
+    rows: number;
+    cols: number;
+    texts: string[];
+  } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ data: string } | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [localToggles, setLocalToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
@@ -129,9 +224,20 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     if (es.window.grid.show) t.add('toggleGrid');
     if (es.window.grid.overrides_enabled) t.add('toggleGridOverrides');
     if (es.appearance.show_hidden_pins) t.add('toggleHiddenPins');
-    t.add(es.window.cursor.crosshair === '45' ? 'crosshair45'
-      : es.window.cursor.crosshair === 'small' ? 'crosshairSmall' : 'crosshairFull');
-    t.add(es.drawing.line_mode === 0 ? 'lineModeFree' : es.drawing.line_mode === 2 ? 'lineMode45' : 'lineMode90');
+    t.add(
+      es.window.cursor.crosshair === '45'
+        ? 'crosshair45'
+        : es.window.cursor.crosshair === 'small'
+          ? 'crosshairSmall'
+          : 'crosshairFull',
+    );
+    t.add(
+      es.drawing.line_mode === 0
+        ? 'lineModeFree'
+        : es.drawing.line_mode === 2
+          ? 'lineMode45'
+          : 'lineMode90',
+    );
     if (es.annotation.automatic) t.add('annotateAuto');
     return t;
   }, [localToggles, es]);
@@ -179,7 +285,8 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       if (id === null) return additive ? prev : new Set();
       if (additive) {
         const next = new Set(prev);
-        if (next.has(id)) next.delete(id); else next.add(id);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
         return next;
       }
       return new Set([id]);
@@ -195,22 +302,25 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
 
   // Box-selection result (KiCad SelectMultiple): plain drags replace the
   // selection, shift-drags add, ctrl+shift-drags subtract.
-  const onSelectBox = useCallback((ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => {
-    setHighlightItem(null);
-    setSelection((prev) => {
-      if (subtractive) {
-        const next = new Set(prev);
-        for (const id of ids) next.delete(id);
-        return next;
-      }
-      if (additive) {
-        const next = new Set(prev);
-        for (const id of ids) next.add(id);
-        return next;
-      }
-      return new Set(ids);
-    });
-  }, []);
+  const onSelectBox = useCallback(
+    (ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => {
+      setHighlightItem(null);
+      setSelection((prev) => {
+        if (subtractive) {
+          const next = new Set(prev);
+          for (const id of ids) next.delete(id);
+          return next;
+        }
+        if (additive) {
+          const next = new Set(prev);
+          for (const id of ids) next.add(id);
+          return next;
+        }
+        return new Set(ids);
+      });
+    },
+    [],
+  );
 
   // Every edit runs through KiCad's post-commit cleanup (colinear wire merge),
   // as part of the same undoable step (SCHEMATIC::CleanUp / RecalculateConnections).
@@ -218,8 +328,8 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     setDoc((d) => (d ? history.current.execute(d, withCleanup(cmd)) : d));
   }, []);
 
-  const undo = useCallback(() => setDoc((d) => (d ? history.current.undo(d) ?? d : d)), []);
-  const redo = useCallback(() => setDoc((d) => (d ? history.current.redo(d) ?? d : d)), []);
+  const undo = useCallback(() => setDoc((d) => (d ? (history.current.undo(d) ?? d) : d)), []);
+  const redo = useCallback(() => setDoc((d) => (d ? (history.current.redo(d) ?? d) : d)), []);
 
   // Resolve the open dialog's target symbol against the current document.
   const propsSymbol = useMemo(() => {
@@ -253,79 +363,91 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     setPropsTarget(null);
   }, []);
 
-  const loadText = useCallback(async (text: string, name?: string) => {
-    setLoading('Loading schematic…');
-    await nextPaint();
-    try {
-      const next = { ...readSchematic(parse(text)), fileName: name ?? 'untitled.kicad_sch' };
-      const file = name ?? 'untitled.kicad_sch';
-      project.current = { docs: new Map([[file, next]]), root: file };
-      histories.current = new Map([[file, new History()]]);
-      history.current = histories.current.get(file)!;
-      setCurrentFile(file);
-      setCurrentPath('/');
-      setDoc(next);
-      resetTransient();
-      if (name) setFileName(name);
-      setError(null);
-      // Fit after React commits the new doc to the canvas.
-      requestAnimationFrame(() => controller.current?.zoomToFit());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(null);
-    }
-  }, [resetTransient]);
+  const loadText = useCallback(
+    async (text: string, name?: string) => {
+      setLoading('Loading schematic…');
+      await nextPaint();
+      try {
+        const next = { ...readSchematic(parse(text)), fileName: name ?? 'untitled.kicad_sch' };
+        const file = name ?? 'untitled.kicad_sch';
+        project.current = { docs: new Map([[file, next]]), root: file };
+        histories.current = new Map([[file, new History()]]);
+        history.current = histories.current.get(file)!;
+        setCurrentFile(file);
+        setCurrentPath('/');
+        setDoc(next);
+        resetTransient();
+        if (name) setFileName(name);
+        setError(null);
+        // Fit after React commits the new doc to the canvas.
+        requestAnimationFrame(() => controller.current?.zoomToFit());
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setLoading(null);
+      }
+    },
+    [resetTransient],
+  );
 
   // Open a whole KiCad project: parse every .kicad_sch, find the root (the
   // .kicad_pro's schematic, else the sheet nothing references), and show it.
-  const loadProject = useCallback(async (files: PickedFile[], startFile?: string) => {
-    setLoading('Loading schematic…');
-    await nextPaint(); // paint the overlay before the (synchronous) sheet parse
-    try {
-    const docs = new Map<string, Schematic>();
-    const problems: string[] = [];
-    let proName: string | undefined;
-    for (const f of files) {
-      const base = f.name.split('/').pop()!.split('\\').pop()!;
-      if (/\.kicad_pro$/i.test(base)) { proName = base; continue; }
-      if (!/\.kicad_sch$/i.test(base)) continue;
+  const loadProject = useCallback(
+    async (files: PickedFile[], startFile?: string) => {
+      setLoading('Loading schematic…');
+      await nextPaint(); // paint the overlay before the (synchronous) sheet parse
       try {
-        docs.set(base, { ...readSchematic(parse(f.text)), fileName: base });
-      } catch (e) {
-        problems.push(`${base}: ${e instanceof Error ? e.message : String(e)}`);
+        const docs = new Map<string, Schematic>();
+        const problems: string[] = [];
+        let proName: string | undefined;
+        for (const f of files) {
+          const base = f.name.split('/').pop()!.split('\\').pop()!;
+          if (/\.kicad_pro$/i.test(base)) {
+            proName = base;
+            continue;
+          }
+          if (!/\.kicad_sch$/i.test(base)) continue;
+          try {
+            docs.set(base, { ...readSchematic(parse(f.text)), fileName: base });
+          } catch (e) {
+            problems.push(`${base}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+        if (docs.size === 0) {
+          setError(problems[0] ?? 'No .kicad_sch files in the selection');
+          return;
+        }
+        const root = findRootFile(docs, proName);
+        project.current = { docs, root };
+        // Home-page tree clicks land on the clicked sheet, else the root.
+        const startBase = startFile?.split('/').pop()?.split('\\').pop();
+        const start = startBase && docs.has(startBase) ? startBase : root;
+        const wantRoot = proName?.replace(/\.kicad_pro$/i, '.kicad_sch');
+        if (wantRoot && !docs.has(wantRoot) && start === root)
+          problems.push(
+            `root schematic ${wantRoot} is not in the selection — opened ${root} instead`,
+          );
+        histories.current = new Map([[start, new History()]]);
+        history.current = histories.current.get(start)!;
+        setCurrentFile(start);
+        // Home-tree opens the root; deeper instances are entered from the canvas.
+        setCurrentPath('/');
+        setDoc(docs.get(start)!);
+        resetTransient();
+        setFileName(start);
+        setError(problems.length ? `Some sheets failed to load: ${problems.join('; ')}` : null);
+        requestAnimationFrame(() => controller.current?.zoomToFit());
+      } finally {
+        setLoading(null);
       }
-    }
-    if (docs.size === 0) {
-      setError(problems[0] ?? 'No .kicad_sch files in the selection');
-      return;
-    }
-    const root = findRootFile(docs, proName);
-    project.current = { docs, root };
-    // Home-page tree clicks land on the clicked sheet, else the root.
-    const startBase = startFile?.split('/').pop()?.split('\\').pop();
-    const start = startBase && docs.has(startBase) ? startBase : root;
-    const wantRoot = proName?.replace(/\.kicad_pro$/i, '.kicad_sch');
-    if (wantRoot && !docs.has(wantRoot) && start === root)
-      problems.push(`root schematic ${wantRoot} is not in the selection — opened ${root} instead`);
-    histories.current = new Map([[start, new History()]]);
-    history.current = histories.current.get(start)!;
-    setCurrentFile(start);
-    // Home-tree opens the root; deeper instances are entered from the canvas.
-    setCurrentPath('/');
-    setDoc(docs.get(start)!);
-    resetTransient();
-    setFileName(start);
-    setError(problems.length ? `Some sheets failed to load: ${problems.join('; ')}` : null);
-    requestAnimationFrame(() => controller.current?.zoomToFit());
-    } finally {
-      setLoading(null);
-    }
-  }, [resetTransient]);
+    },
+    [resetTransient],
+  );
 
   // A project handed over from the home page's Open Project picker.
   useEffect(() => {
-    if (initialProject && initialProject.length > 0) void loadProject(initialProject, initialFile ?? undefined);
+    if (initialProject && initialProject.length > 0)
+      void loadProject(initialProject, initialFile ?? undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProject]);
 
@@ -339,7 +461,11 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       docs.set(currentFile, doc);
       const files: PickedFile[] = [];
       for (const [file, d] of docs) {
-        try { files.push({ name: file, text: serializeSchematic(d) }); } catch { /* skip a bad sheet */ }
+        try {
+          files.push({ name: file, text: serializeSchematic(d) });
+        } catch {
+          /* skip a bad sheet */
+        }
       }
       if (files.length) onProjectChange(files);
     }, 900);
@@ -358,59 +484,95 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
   // Switch the visible sheet (KiCad's Enter Sheet / hierarchy navigation): stash
   // the edited current sheet back into the project, swap in the target document
   // and its own undo history.
-  const switchSheet = useCallback((path: string, file: string) => {
-    // Always record which instance is active (path is unique per instance).
-    setCurrentPath(path);
-    // Two instances of the same file share one document — nothing to swap, just
-    // the active path changed.
-    if (!doc || file === currentFile) return;
-    const proj = project.current;
-    proj.docs.set(currentFile, doc);
-    const target = proj.docs.get(file);
-    if (!target) { setError(`Sheet file not in project: ${file}`); return; }
-    if (!histories.current.has(file)) histories.current.set(file, new History());
-    history.current = histories.current.get(file)!;
-    setCurrentFile(file);
-    setDoc(target);
-    resetTransient();
-    requestAnimationFrame(() => controller.current?.zoomToFit());
-  }, [doc, currentFile, resetTransient]);
+  const switchSheet = useCallback(
+    (path: string, file: string) => {
+      // Always record which instance is active (path is unique per instance).
+      setCurrentPath(path);
+      // Two instances of the same file share one document — nothing to swap, just
+      // the active path changed.
+      if (!doc || file === currentFile) return;
+      const proj = project.current;
+      proj.docs.set(currentFile, doc);
+      const target = proj.docs.get(file);
+      if (!target) {
+        setError(`Sheet file not in project: ${file}`);
+        return;
+      }
+      if (!histories.current.has(file)) histories.current.set(file, new History());
+      history.current = histories.current.get(file)!;
+      setCurrentFile(file);
+      setDoc(target);
+      resetTransient();
+      requestAnimationFrame(() => controller.current?.zoomToFit());
+    },
+    [doc, currentFile, resetTransient],
+  );
 
   // KiCad's Properties action: symbols have a full properties dialog; a text box
   // reopens its text editor (double-click = edit).
-  const onEditItem = useCallback((id: string, kind: 'symbol' | 'line' | 'junction' | 'noconnect' | 'label' | 'sheet' | 'busentry' | 'image' | 'graphic' | 'textbox' | 'table') => {
-    if (kind === 'symbol') setPropsTarget(id);
-    if (kind === 'textbox' && doc) {
-      const idx = doc.textBoxes.findIndex((tb, i) => refId('textbox', tb.uuid, i) === id);
-      if (idx !== -1) {
-        const tb = doc.textBoxes[idx]!;
-        setTextBoxDraw({ start: tb.start, end: tb.end, text: tb.text, editIndex: idx });
+  const onEditItem = useCallback(
+    (
+      id: string,
+      kind:
+        | 'symbol'
+        | 'line'
+        | 'junction'
+        | 'noconnect'
+        | 'label'
+        | 'sheet'
+        | 'busentry'
+        | 'image'
+        | 'graphic'
+        | 'textbox'
+        | 'table',
+    ) => {
+      if (kind === 'symbol') setPropsTarget(id);
+      if (kind === 'textbox' && doc) {
+        const idx = doc.textBoxes.findIndex((tb, i) => refId('textbox', tb.uuid, i) === id);
+        if (idx !== -1) {
+          const tb = doc.textBoxes[idx]!;
+          setTextBoxDraw({ start: tb.start, end: tb.end, text: tb.text, editIndex: idx });
+        }
       }
-    }
-    if (kind === 'table' && doc) {
-      const idx = doc.tables.findIndex((t, i) => refId('table', t.uuid, i) === id);
-      if (idx !== -1) {
-        const t = doc.tables[idx]!;
-        setTableEdit({ index: idx, rows: t.rowHeights.length, cols: t.columnCount, texts: t.cells.map((c) => c.text) });
+      if (kind === 'table' && doc) {
+        const idx = doc.tables.findIndex((t, i) => refId('table', t.uuid, i) === id);
+        if (idx !== -1) {
+          const t = doc.tables[idx]!;
+          setTableEdit({
+            index: idx,
+            rows: t.rowHeights.length,
+            cols: t.columnCount,
+            texts: t.cells.map((c) => c.text),
+          });
+        }
       }
-    }
-    // Double-clicking a sheet enters it (KiCad's Enter Sheet).
-    if (kind === 'sheet' && doc) {
-      const idx = doc.sheets.findIndex((sh, i) => refId('sheet', sh.uuid, i) === id);
-      if (idx !== -1) {
-        const sh = doc.sheets[idx]!;
-        const file = sheetFile(sh);
-        // Descend from the current instance path (KiCad's SCH_SHEET_PATH push).
-        if (file) switchSheet(`${currentPath}${sh.uuid || `i${idx}`}/`, file);
+      // Double-clicking a sheet enters it (KiCad's Enter Sheet).
+      if (kind === 'sheet' && doc) {
+        const idx = doc.sheets.findIndex((sh, i) => refId('sheet', sh.uuid, i) === id);
+        if (idx !== -1) {
+          const sh = doc.sheets[idx]!;
+          const file = sheetFile(sh);
+          // Descend from the current instance path (KiCad's SCH_SHEET_PATH push).
+          if (file) switchSheet(`${currentPath}${sh.uuid || `i${idx}`}/`, file);
+        }
       }
-    }
-  }, [doc, currentPath, switchSheet]);
+    },
+    [doc, currentPath, switchSheet],
+  );
 
-
-  const openFile = useCallback((file: File) => {
-    if (!/\.kicad_sch$/i.test(file.name)) { setError(`Not a .kicad_sch file: ${file.name}`); return; }
-    file.text().then((t) => void loadText(t, file.name)).catch((e) => setError(String(e)));
-  }, [loadText]);
+  const openFile = useCallback(
+    (file: File) => {
+      if (!/\.kicad_sch$/i.test(file.name)) {
+        setError(`Not a .kicad_sch file: ${file.name}`);
+        return;
+      }
+      file
+        .text()
+        .then((t) => void loadText(t, file.name))
+        .catch((e) => setError(String(e)));
+    },
+    [loadText],
+  );
 
   const promptOpen = useCallback(() => fileInputRef.current?.click(), []);
 
@@ -421,7 +583,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       const url = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = currentFile !== DEFAULT_FILE ? currentFile : fileName ?? `${d.titleBlock?.title ?? 'schematic'}.kicad_sch`;
+      a.download =
+        currentFile !== DEFAULT_FILE
+          ? currentFile
+          : (fileName ?? `${d.titleBlock?.title ?? 'schematic'}.kicad_sch`);
       a.click();
       URL.revokeObjectURL(url);
       return d;
@@ -481,10 +646,16 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       let best = Infinity;
       const consider = (p: Vec2): void => {
         const d = (p.x - cursor.x) ** 2 + (p.y - cursor.y) ** 2;
-        if (d < best) { best = d; refPoint = p; }
+        if (d < best) {
+          best = d;
+          refPoint = p;
+        }
       };
       payload.batch.symbols.forEach((s) => consider(s.at));
-      payload.batch.lines.forEach((l) => { consider(l.start); consider(l.end); });
+      payload.batch.lines.forEach((l) => {
+        consider(l.start);
+        consider(l.end);
+      });
       payload.batch.junctions.forEach((j) => consider(j.at));
       payload.batch.labels.forEach((l) => consider(l.at));
     }
@@ -512,57 +683,78 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     setSelection(new Set(v.items));
   }, []);
 
-  const lineMode: LineMode = es.drawing.line_mode === 0 ? 'free' : es.drawing.line_mode === 2 ? '45' : '90';
+  const lineMode: LineMode =
+    es.drawing.line_mode === 0 ? 'free' : es.drawing.line_mode === 2 ? '45' : '90';
 
   // Display + input options handed to the canvas, straight from the settings
   // (Preferences > Display Options / Grids / Mouse and Touchpad).
-  const renderOpts = useMemo<RenderOpts>(() => ({
-    showHiddenPins: es.appearance.show_hidden_pins,
-    showHiddenFields: es.appearance.show_hidden_fields,
-    showPageLimits: es.appearance.show_page_limits,
-    selectionThicknessMils: es.selection.thickness,
-    highlightThicknessMils: es.selection.highlight_thickness,
-    grid: {
-      show: es.window.grid.show,
-      sizeIU: gridSizeToIU(es.window.grid.sizes[es.window.grid.last_size_idx] ?? '50 mil'),
-      style: es.window.grid.style,
-      lineWidthPx: es.window.grid.line_width,
-      minSpacingPx: es.window.grid.min_spacing,
-      overrides: {
-        enabled: es.window.grid.overrides_enabled,
-        ...(es.window.grid.overrides.connected.enabled ? { connected: gridSizeToIU(es.window.grid.overrides.connected.size) } : {}),
-        ...(es.window.grid.overrides.wires.enabled ? { wires: gridSizeToIU(es.window.grid.overrides.wires.size) } : {}),
-        ...(es.window.grid.overrides.text.enabled ? { text: gridSizeToIU(es.window.grid.overrides.text.size) } : {}),
-        ...(es.window.grid.overrides.graphics.enabled ? { graphics: gridSizeToIU(es.window.grid.overrides.graphics.size) } : {}),
+  const renderOpts = useMemo<RenderOpts>(
+    () => ({
+      showHiddenPins: es.appearance.show_hidden_pins,
+      showHiddenFields: es.appearance.show_hidden_fields,
+      showPageLimits: es.appearance.show_page_limits,
+      selectionThicknessMils: es.selection.thickness,
+      highlightThicknessMils: es.selection.highlight_thickness,
+      grid: {
+        show: es.window.grid.show,
+        sizeIU: gridSizeToIU(es.window.grid.sizes[es.window.grid.last_size_idx] ?? '50 mil'),
+        style: es.window.grid.style,
+        lineWidthPx: es.window.grid.line_width,
+        minSpacingPx: es.window.grid.min_spacing,
+        overrides: {
+          enabled: es.window.grid.overrides_enabled,
+          ...(es.window.grid.overrides.connected.enabled
+            ? { connected: gridSizeToIU(es.window.grid.overrides.connected.size) }
+            : {}),
+          ...(es.window.grid.overrides.wires.enabled
+            ? { wires: gridSizeToIU(es.window.grid.overrides.wires.size) }
+            : {}),
+          ...(es.window.grid.overrides.text.enabled
+            ? { text: gridSizeToIU(es.window.grid.overrides.text.size) }
+            : {}),
+          ...(es.window.grid.overrides.graphics.enabled
+            ? { graphics: gridSizeToIU(es.window.grid.overrides.graphics.size) }
+            : {}),
+        },
       },
-    },
-  }), [es]);
+    }),
+    [es],
+  );
 
-  const inputPrefs = useMemo<InputPrefs>(() => ({
-    zoomSpeed: common.input.zoom_speed,
-    zoomSpeedAuto: common.input.zoom_speed_auto,
-    centerOnZoom: common.input.center_on_zoom,
-    reverseZoom: common.input.reverse_scroll_zoom,
-    scrollModZoom: common.input.scroll_modifier_zoom,
-    scrollModPanH: common.input.scroll_modifier_pan_h,
-    scrollModPanV: common.input.scroll_modifier_pan_v,
-    reverseScrollPanH: common.input.reverse_scroll_pan_h,
-    horizontalPan: common.input.horizontal_pan,
-    mouseLeft: common.input.mouse_left as InputPrefs['mouseLeft'],
-    mouseMiddle: common.input.mouse_middle as InputPrefs['mouseMiddle'],
-    mouseRight: common.input.mouse_right as InputPrefs['mouseRight'],
-    autoStartWires: es.drawing.auto_start_wires,
-    crosshair: es.window.cursor.crosshair,
-    alwaysShowCrosshair: es.window.cursor.always_show_cursor,
-  }), [common, es]);
+  const inputPrefs = useMemo<InputPrefs>(
+    () => ({
+      zoomSpeed: common.input.zoom_speed,
+      zoomSpeedAuto: common.input.zoom_speed_auto,
+      centerOnZoom: common.input.center_on_zoom,
+      reverseZoom: common.input.reverse_scroll_zoom,
+      scrollModZoom: common.input.scroll_modifier_zoom,
+      scrollModPanH: common.input.scroll_modifier_pan_h,
+      scrollModPanV: common.input.scroll_modifier_pan_v,
+      reverseScrollPanH: common.input.reverse_scroll_pan_h,
+      horizontalPan: common.input.horizontal_pan,
+      mouseLeft: common.input.mouse_left as InputPrefs['mouseLeft'],
+      mouseMiddle: common.input.mouse_middle as InputPrefs['mouseMiddle'],
+      mouseRight: common.input.mouse_right as InputPrefs['mouseRight'],
+      autoStartWires: es.drawing.auto_start_wires,
+      crosshair: es.window.cursor.crosshair,
+      alwaysShowCrosshair: es.window.cursor.always_show_cursor,
+    }),
+    [common, es],
+  );
 
   // Selecting a placement tool reopens its chooser/dialog (clears any attached item).
   const onToolSelect = useCallback((id: string) => {
     // The Image tool opens a file picker; the image then follows the cursor
     // (SCH_ACTIONS::placeImage).
-    if (id === 'image') { imageInputRef.current?.click(); return; }
+    if (id === 'image') {
+      imageInputRef.current?.click();
+      return;
+    }
     // Table tool: prompt for the grid size, then place the table (SCH_TABLE).
-    if (id === 'table') { setTableDraw({ rows: 2, cols: 2 }); return; }
+    if (id === 'table') {
+      setTableDraw({ rows: 2, cols: 2 });
+      return;
+    }
     setActiveTool(id);
     setPlaceLib(null);
     setPendingLabel(null);
@@ -584,7 +776,7 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
 
   const commitTextBox = useCallback(() => {
     setTextBoxDraw((tbd) => {
-      if (!tbd || !tbd.text.trim()) return tbd;
+      if (!tbd?.text.trim()) return tbd;
       if (tbd.editIndex !== undefined && doc) {
         const orig = doc.textBoxes[tbd.editIndex];
         if (orig) runCommand(replaceTextBox(tbd.editIndex, { ...orig, text: tbd.text }));
@@ -619,13 +811,16 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     });
   }, [doc, runCommand]);
 
-  const onImagePlaced = useCallback((at: Vec2) => {
-    setPendingImage((img) => {
-      if (img) runCommand(addItems({ images: [makeImage(at, img.data)] }));
-      return null;
-    });
-    setActiveTool('select');
-  }, [runCommand]);
+  const onImagePlaced = useCallback(
+    (at: Vec2) => {
+      setPendingImage((img) => {
+        if (img) runCommand(addItems({ images: [makeImage(at, img.data)] }));
+        return null;
+      });
+      setActiveTool('select');
+    },
+    [runCommand],
+  );
 
   // The image file picker: read the chosen bitmap as base64 and attach it to the cursor.
   const onImageFile = useCallback((file: File) => {
@@ -639,31 +834,48 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     reader.readAsDataURL(file);
   }, []);
 
-  const onTopAction = useCallback((id: string) => {
-    // mirrorV = MirrorVertically (KiCad SYM_MIRROR_X); mirrorH = MirrorHorizontally (SYM_MIRROR_Y).
-    const TX: Record<string, TransformOp> = { rotateCCW: 'rotateCCW', rotateCW: 'rotateCW', mirrorV: 'mirrorX', mirrorH: 'mirrorY' };
-    if (id === 'zoomFit' || id === 'zoomFitObjects') controller.current?.zoomToFit();
-    else if (id === 'zoomIn') controller.current?.zoomIn();
-    else if (id === 'zoomOut') controller.current?.zoomOut();
-    else if (id === 'undo') undo();
-    else if (id === 'redo') redo();
-    else if (id === 'open') promptOpen();
-    else if (id === 'save') save();
-    else if (id === 'erc') runErcNow();
-    else if (id === 'showPcbNew') onShowPcb?.();
-    else if (id === 'symbolEditor') onShowSymbolEditor?.();
-    else if (id === 'openPreferences') setPrefsOpen(true);
-    else if (TX[id]) setSelection((sel) => { if (sel.size > 0) runCommand(transformItems(sel, TX[id]!)); return sel; });
-  }, [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb, onShowSymbolEditor]);
+  const onTopAction = useCallback(
+    (id: string) => {
+      // mirrorV = MirrorVertically (KiCad SYM_MIRROR_X); mirrorH = MirrorHorizontally (SYM_MIRROR_Y).
+      const TX: Record<string, TransformOp> = {
+        rotateCCW: 'rotateCCW',
+        rotateCW: 'rotateCW',
+        mirrorV: 'mirrorX',
+        mirrorH: 'mirrorY',
+      };
+      if (id === 'zoomFit' || id === 'zoomFitObjects') controller.current?.zoomToFit();
+      else if (id === 'zoomIn') controller.current?.zoomIn();
+      else if (id === 'zoomOut') controller.current?.zoomOut();
+      else if (id === 'undo') undo();
+      else if (id === 'redo') redo();
+      else if (id === 'open') promptOpen();
+      else if (id === 'save') save();
+      else if (id === 'erc') runErcNow();
+      else if (id === 'showPcbNew') onShowPcb?.();
+      else if (id === 'symbolEditor') onShowSymbolEditor?.();
+      else if (id === 'openPreferences') setPrefsOpen(true);
+      else if (TX[id])
+        setSelection((sel) => {
+          if (sel.size > 0) runCommand(transformItems(sel, TX[id]!));
+          return sel;
+        });
+    },
+    [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb, onShowSymbolEditor],
+  );
 
-  const menus = useMemo(() => buildMenus({ tool: onToolSelect, action: onTopAction }), [onToolSelect, onTopAction]);
+  const menus = useMemo(
+    () => buildMenus({ tool: onToolSelect, action: onTopAction }),
+    [onToolSelect, onTopAction],
+  );
 
   const onLeftToggle = useCallback((id: string) => {
     if (SETTINGS_TOGGLES.has(id)) {
       settings.updateEeschema((s) => {
         if (id === 'toggleGrid') s.window.grid.show = !s.window.grid.show;
-        else if (id === 'toggleGridOverrides') s.window.grid.overrides_enabled = !s.window.grid.overrides_enabled;
-        else if (id === 'toggleHiddenPins') s.appearance.show_hidden_pins = !s.appearance.show_hidden_pins;
+        else if (id === 'toggleGridOverrides')
+          s.window.grid.overrides_enabled = !s.window.grid.overrides_enabled;
+        else if (id === 'toggleHiddenPins')
+          s.appearance.show_hidden_pins = !s.appearance.show_hidden_pins;
         else if (id === 'crosshairSmall') s.window.cursor.crosshair = 'small';
         else if (id === 'crosshairFull') s.window.cursor.crosshair = 'full';
         else if (id === 'crosshair45') s.window.cursor.crosshair = '45';
@@ -677,8 +889,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     setLocalToggles((prev) => {
       const next = new Set(prev);
       const group = RADIO_GROUPS.find((g) => g.includes(id));
-      if (group) { for (const g of group) next.delete(g); next.add(id); }
-      else if (next.has(id)) next.delete(id);
+      if (group) {
+        for (const g of group) next.delete(g);
+        next.add(id);
+      } else if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
@@ -699,7 +913,8 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
         promptOpen();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        if (e.shiftKey) redo(); else undo();
+        if (e.shiftKey) redo();
+        else undo();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
@@ -709,10 +924,16 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       } else if (e.key === 'Escape') {
         if (propsTarget !== null) setPropsTarget(null);
         else if (pastePending) setPastePending(null);
-        else if (pendingImage) { setPendingImage(null); setActiveTool('select'); }
-        else if (pendingLabel) { setPendingLabel(null); setActiveTool('select'); }
-        else if (activeTool !== 'select') { setActiveTool('select'); setPlaceLib(null); }
-        else if (selection.size > 0) setSelection(new Set());
+        else if (pendingImage) {
+          setPendingImage(null);
+          setActiveTool('select');
+        } else if (pendingLabel) {
+          setPendingLabel(null);
+          setActiveTool('select');
+        } else if (activeTool !== 'select') {
+          setActiveTool('select');
+          setPlaceLib(null);
+        } else if (selection.size > 0) setSelection(new Set());
         // "<ESC> clears net highlighting": with nothing else pending, the next
         // Escape clears the highlighted net (eeschema input.esc_clears_net_highlight).
         else if (settings.eeschema.input.esc_clears_net_highlight) setHighlightItem(null);
@@ -723,13 +944,18 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       } else if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         // KiCad single-key tool hotkeys (A=symbol, W=wire, …). Skip while typing.
         const tgt = e.target as HTMLElement | null;
-        const typing = !!tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT' || tgt.isContentEditable);
+        const typing =
+          !!tgt &&
+          (tgt.tagName === 'INPUT' ||
+            tgt.tagName === 'TEXTAREA' ||
+            tgt.tagName === 'SELECT' ||
+            tgt.isContentEditable);
         if (typing) return;
         // E = Properties (KiCad SCH_ACTIONS::properties) on a single selected symbol.
         if (e.key.toLowerCase() === 'e' && selection.size === 1) {
           const id = [...selection][0]!;
           setDoc((d) => {
-            if (d && d.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) {
+            if (d?.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) {
               e.preventDefault();
               setPropsTarget(id);
             }
@@ -738,12 +964,28 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           return;
         }
         const toolId = TOOL_HOTKEYS[e.key.toLowerCase()];
-        if (toolId) { e.preventDefault(); onToolSelect(toolId); }
+        if (toolId) {
+          e.preventDefault();
+          onToolSelect(toolId);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [undo, redo, save, promptOpen, selection, runCommand, activeTool, onToolSelect, pendingLabel, propsTarget, pastePending, duplicateSelection]);
+  }, [
+    undo,
+    redo,
+    save,
+    promptOpen,
+    selection,
+    runCommand,
+    activeTool,
+    onToolSelect,
+    pendingLabel,
+    propsTarget,
+    pastePending,
+    duplicateSelection,
+  ]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
   const fmt = (iu: number): string => {
@@ -752,17 +994,22 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
     if (units === 'mils') return `${(mm / 0.0254).toFixed(2)}`;
     return `${(mm / 25.4).toFixed(4)}`;
   };
-  const zoomPct = Math.round((scale * 10000 * dpr) / PX_PER_MM_100 * 100);
+  const zoomPct = Math.round(((scale * 10000 * dpr) / PX_PER_MM_100) * 100);
 
   // A load failure before any document exists is fatal; once a document is open,
   // a bad Open just shows a dismissible banner and leaves the current sheet intact.
   if (!doc) {
-    return error
-      ? <pre style={{ color: 'crimson', padding: 16 }}>Failed to load schematic: {error}</pre>
-      : <div className="ze-app"><LoadingOverlay label={loading ?? 'Loading schematic…'} /></div>;
+    return error ? (
+      <pre style={{ color: 'crimson', padding: 16 }}>Failed to load schematic: {error}</pre>
+    ) : (
+      <div className="ze-app">
+        <LoadingOverlay label={loading ?? 'Loading schematic…'} />
+      </div>
+    );
   }
 
-  const title = currentFile !== DEFAULT_FILE ? currentFile : fileName ?? doc.titleBlock?.title ?? 'Root';
+  const _title =
+    currentFile !== DEFAULT_FILE ? currentFile : (fileName ?? doc.titleBlock?.title ?? 'Root');
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -784,14 +1031,22 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
         type="file"
         accept=".kicad_sch"
         style={{ display: 'none' }}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) openFile(f); e.target.value = ''; }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) openFile(f);
+          e.target.value = '';
+        }}
       />
       <input
         ref={imageInputRef}
         type="file"
         accept="image/*"
         style={{ display: 'none' }}
-        onChange={(e) => { const f = e.target.files?.[0]; if (f) onImageFile(f); e.target.value = ''; }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onImageFile(f);
+          e.target.value = '';
+        }}
       />
       {error && (
         <div className="ze-error-banner" onClick={() => setError(null)} title="Dismiss">
@@ -800,62 +1055,92 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       )}
       <MenuBar
         menus={menus}
-        leftSlot={<div className="ze-home-link" onClick={onExitToHome} title="Back to project manager">⌂ ZiroEDA</div>}
-        title={<><b>{projectName || 'No project'}</b>&nbsp;—&nbsp;Schematic Editor</>}
+        leftSlot={
+          <div className="ze-home-link" onClick={onExitToHome} title="Back to project manager">
+            ⌂ ZiroEDA
+          </div>
+        }
+        title={
+          <>
+            <b>{projectName || 'No project'}</b>&nbsp;—&nbsp;Schematic Editor
+          </>
+        }
       />
 
       <Toolbar entries={TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       <div className="ze-body">
         {(toggles.has('showProperties') || toggles.has('showHierarchy')) && (
-        <div className="ze-leftdock">
-          {toggles.has('showProperties') && (
-          <div className="ze-panel grow">
-            <div className="ze-panel-header">Properties</div>
-            <div className="ze-panel-body">
-              <div className="ze-muted">{selection.size === 0 ? 'No objects selected' : `${selection.size} item(s) selected`}</div>
-            </div>
-          </div>
-          )}
-          {toggles.has('showHierarchy') && (
-          <div className="ze-panel grow">
-            <div className="ze-panel-header">Schematic Hierarchy</div>
-            <div className="ze-panel-body">
-              {sheetTree && renderSheetNode(sheetTree, 0, currentPath, switchSheet)}
-            </div>
-          </div>
-          )}
-          {toggles.has('showProperties') && (
-          <div className="ze-panel">
-            <div className="ze-panel-header">Selection Filter</div>
-            <div className="ze-panel-body">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selFilter.size === FILTER_CATS.length}
-                  onChange={() => setSelFilter((p) => (p.size === FILTER_CATS.length ? new Set() : new Set(FILTER_CATS.map((c) => c[0]))))}
-                />
-                All items
-              </label>
-              <div className="ze-selfilter">
-                {FILTER_CATS.map(([key, label]) => (
-                  <label key={key}>
+          <div className="ze-leftdock">
+            {toggles.has('showProperties') && (
+              <div className="ze-panel grow">
+                <div className="ze-panel-header">Properties</div>
+                <div className="ze-panel-body">
+                  <div className="ze-muted">
+                    {selection.size === 0
+                      ? 'No objects selected'
+                      : `${selection.size} item(s) selected`}
+                  </div>
+                </div>
+              </div>
+            )}
+            {toggles.has('showHierarchy') && (
+              <div className="ze-panel grow">
+                <div className="ze-panel-header">Schematic Hierarchy</div>
+                <div className="ze-panel-body">
+                  {sheetTree && renderSheetNode(sheetTree, 0, currentPath, switchSheet)}
+                </div>
+              </div>
+            )}
+            {toggles.has('showProperties') && (
+              <div className="ze-panel">
+                <div className="ze-panel-header">Selection Filter</div>
+                <div className="ze-panel-body">
+                  <label>
                     <input
                       type="checkbox"
-                      checked={selFilter.has(key)}
-                      onChange={() => setSelFilter((p) => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n; })}
+                      checked={selFilter.size === FILTER_CATS.length}
+                      onChange={() =>
+                        setSelFilter((p) =>
+                          p.size === FILTER_CATS.length
+                            ? new Set()
+                            : new Set(FILTER_CATS.map((c) => c[0])),
+                        )
+                      }
                     />
-                    {label}
+                    All items
                   </label>
-                ))}
+                  <div className="ze-selfilter">
+                    {FILTER_CATS.map(([key, label]) => (
+                      <label key={key}>
+                        <input
+                          type="checkbox"
+                          checked={selFilter.has(key)}
+                          onChange={() =>
+                            setSelFilter((p) => {
+                              const n = new Set(p);
+                              n.has(key) ? n.delete(key) : n.add(key);
+                              return n;
+                            })
+                          }
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
-          )}
-        </div>
         )}
 
-        <Toolbar entries={LEFT_TOOLBAR} orientation="vertical" side="left" toggled={toggles} onActivate={onLeftToggle} />
+        <Toolbar
+          entries={LEFT_TOOLBAR}
+          orientation="vertical"
+          side="left"
+          toggled={toggles}
+          onActivate={onLeftToggle}
+        />
 
         <div className="ze-canvas-wrap">
           <SchematicCanvas
@@ -884,7 +1169,10 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
             pastePending={pastePending}
             onPasteDone={onPasteDone}
             ercMarkers={ercResult?.filter((v) =>
-              v.severity === 'error' ? es.appearance.show_erc_errors : es.appearance.show_erc_warnings)}
+              v.severity === 'error'
+                ? es.appearance.show_erc_errors
+                : es.appearance.show_erc_warnings,
+            )}
             onCommand={runCommand}
             onCursorMove={setCursor}
             onScaleChange={setScale}
@@ -899,23 +1187,42 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           )}
         </div>
 
-        <Toolbar entries={RIGHT_TOOLBAR} orientation="vertical" side="right" activeTool={activeTool} onActivate={onToolSelect} />
+        <Toolbar
+          entries={RIGHT_TOOLBAR}
+          orientation="vertical"
+          side="right"
+          activeTool={activeTool}
+          onActivate={onToolSelect}
+        />
       </div>
 
       <div className="ze-statusbar">
-        <span className="cell">Z {Number.isFinite(zoomPct) ? (zoomPct / 100).toFixed(2) : '1.00'}</span>
-        <span className="cell">X {cursor ? fmt(cursor.x) : '—'}  Y {cursor ? fmt(cursor.y) : '—'}</span>
         <span className="cell">
-          dx {cursor ? fmt(cursor.x) : '—'}  dy {cursor ? fmt(cursor.y) : '—'}  dist {cursor ? fmt(Math.hypot(cursor.x, cursor.y)) : '—'}
+          Z {Number.isFinite(zoomPct) ? (zoomPct / 100).toFixed(2) : '1.00'}
         </span>
-        <span className="cell">grid {(() => {
-          const iu = renderOpts.grid.sizeIU;
-          const mm = iuToMM(iu);
-          return units === 'mm' ? mm.toFixed(4) : units === 'mils' ? (mm / 0.0254).toFixed(0) : (mm / 25.4).toFixed(4);
-        })()}</span>
+        <span className="cell">
+          X {cursor ? fmt(cursor.x) : '—'} Y {cursor ? fmt(cursor.y) : '—'}
+        </span>
+        <span className="cell">
+          dx {cursor ? fmt(cursor.x) : '—'} dy {cursor ? fmt(cursor.y) : '—'} dist{' '}
+          {cursor ? fmt(Math.hypot(cursor.x, cursor.y)) : '—'}
+        </span>
+        <span className="cell">
+          grid {(() => {
+            const iu = renderOpts.grid.sizeIU;
+            const mm = iuToMM(iu);
+            return units === 'mm'
+              ? mm.toFixed(4)
+              : units === 'mils'
+                ? (mm / 0.0254).toFixed(0)
+                : (mm / 25.4).toFixed(4);
+          })()}
+        </span>
         <span className="cell">{highlightName ? `Net: ${highlightName}` : ''}</span>
         <span className="cell grow">{units}</span>
-        <span className="cell" title="build">{__BUILD_STAMP__}</span>
+        <span className="cell" title="build">
+          {__BUILD_STAMP__}
+        </span>
       </div>
 
       {(activeTool === 'placeSymbol' || activeTool === 'placePower') && !placeLib && (
@@ -946,7 +1253,9 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
       {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && (
         <LabelDialog
           kind={LABEL_TOOL_KINDS[activeTool]!}
-          onOk={(text: string, shape: LabelShape) => setPendingLabel({ kind: LABEL_TOOL_KINDS[activeTool]!, text, shape })}
+          onOk={(text: string, shape: LabelShape) =>
+            setPendingLabel({ kind: LABEL_TOOL_KINDS[activeTool]!, text, shape })
+          }
           onCancel={() => setActiveTool('select')}
         />
       )}
@@ -957,22 +1266,69 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               Sheet Properties
-              <span className="x" title="Cancel" onClick={() => setSheetDraw(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setSheetDraw(null)}>
+                ✕
+              </span>
             </div>
-            <div className="ze-label-dialog-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label className="row"><span>Sheet name</span>
-                <input className="ze-search" autoFocus value={sheetDraw.name}
+            <div
+              className="ze-label-dialog-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <label className="row">
+                <span>Sheet name</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  value={sheetDraw.name}
                   onChange={(e) => setSheetDraw({ ...sheetDraw, name: e.target.value })}
-                  onKeyDown={(e) => e.stopPropagation()} /></label>
-              <label className="row"><span>File name</span>
-                <input className="ze-search" value={sheetDraw.file}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </label>
+              <label className="row">
+                <span>File name</span>
+                <input
+                  className="ze-search"
+                  value={sheetDraw.file}
                   onChange={(e) => setSheetDraw({ ...sheetDraw, file: e.target.value })}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') { runCommand(addItems({ sheets: [makeSheet(sheetDraw.at, sheetDraw.size, sheetDraw.name, sheetDraw.file)] })); setSheetDraw(null); } }} /></label>
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                      runCommand(
+                        addItems({
+                          sheets: [
+                            makeSheet(sheetDraw.at, sheetDraw.size, sheetDraw.name, sheetDraw.file),
+                          ],
+                        }),
+                      );
+                      setSheetDraw(null);
+                    }
+                  }}
+                />
+              </label>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setSheetDraw(null)}>Cancel</button>
-              <button className="ze-btn primary" disabled={!sheetDraw.name.trim()}
-                onClick={() => { runCommand(addItems({ sheets: [makeSheet(sheetDraw.at, sheetDraw.size, sheetDraw.name.trim(), sheetDraw.file.trim())] })); setSheetDraw(null); }}>
+              <button className="ze-btn" onClick={() => setSheetDraw(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!sheetDraw.name.trim()}
+                onClick={() => {
+                  runCommand(
+                    addItems({
+                      sheets: [
+                        makeSheet(
+                          sheetDraw.at,
+                          sheetDraw.size,
+                          sheetDraw.name.trim(),
+                          sheetDraw.file.trim(),
+                        ),
+                      ],
+                    }),
+                  );
+                  setSheetDraw(null);
+                }}
+              >
                 OK
               </button>
             </div>
@@ -986,29 +1342,64 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               Sheet Pin
-              <span className="x" title="Cancel" onClick={() => setSheetPinDraw(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setSheetPinDraw(null)}>
+                ✕
+              </span>
             </div>
             <div className="ze-label-dialog-body">
-              <label className="row"><span>Pin name</span>
-                <input className="ze-search" autoFocus value={sheetPinDraw.name}
+              <label className="row">
+                <span>Pin name</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  value={sheetPinDraw.name}
                   onChange={(e) => setSheetPinDraw({ ...sheetPinDraw, name: e.target.value })}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     if (e.key === 'Enter' && sheetPinDraw.name.trim() && doc) {
                       const sh = doc.sheets[sheetPinDraw.index];
-                      if (sh) runCommand(replaceSheet(sheetPinDraw.index, addSheetPin(sh, sheetPinDraw.name.trim(), sheetPinDraw.at, sheetPinDraw.side)));
+                      if (sh)
+                        runCommand(
+                          replaceSheet(
+                            sheetPinDraw.index,
+                            addSheetPin(
+                              sh,
+                              sheetPinDraw.name.trim(),
+                              sheetPinDraw.at,
+                              sheetPinDraw.side,
+                            ),
+                          ),
+                        );
                       setSheetPinDraw(null);
                     }
-                  }} /></label>
+                  }}
+                />
+              </label>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setSheetPinDraw(null)}>Cancel</button>
-              <button className="ze-btn primary" disabled={!sheetPinDraw.name.trim()}
+              <button className="ze-btn" onClick={() => setSheetPinDraw(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!sheetPinDraw.name.trim()}
                 onClick={() => {
                   const sh = doc.sheets[sheetPinDraw.index];
-                  if (sh) runCommand(replaceSheet(sheetPinDraw.index, addSheetPin(sh, sheetPinDraw.name.trim(), sheetPinDraw.at, sheetPinDraw.side)));
+                  if (sh)
+                    runCommand(
+                      replaceSheet(
+                        sheetPinDraw.index,
+                        addSheetPin(
+                          sh,
+                          sheetPinDraw.name.trim(),
+                          sheetPinDraw.at,
+                          sheetPinDraw.side,
+                        ),
+                      ),
+                    );
                   setSheetPinDraw(null);
-                }}>
+                }}
+              >
                 OK
               </button>
             </div>
@@ -1022,21 +1413,38 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               Text Box Properties
-              <span className="x" title="Cancel" onClick={() => setTextBoxDraw(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setTextBoxDraw(null)}>
+                ✕
+              </span>
             </div>
             <div className="ze-label-dialog-body">
-              <label className="row" style={{ alignItems: 'flex-start' }}><span>Text</span>
-                <textarea className="ze-search" autoFocus rows={4} style={{ resize: 'vertical', minWidth: 260 }}
+              <label className="row" style={{ alignItems: 'flex-start' }}>
+                <span>Text</span>
+                <textarea
+                  className="ze-search"
+                  autoFocus
+                  rows={4}
+                  style={{ resize: 'vertical', minWidth: 260 }}
                   value={textBoxDraw.text}
                   onChange={(e) => setTextBoxDraw({ ...textBoxDraw, text: e.target.value })}
                   onKeyDown={(e) => {
                     e.stopPropagation();
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitTextBox();
-                  }} /></label>
+                  }}
+                />
+              </label>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setTextBoxDraw(null)}>Cancel</button>
-              <button className="ze-btn primary" disabled={!textBoxDraw.text.trim()} onClick={commitTextBox}>OK</button>
+              <button className="ze-btn" onClick={() => setTextBoxDraw(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!textBoxDraw.text.trim()}
+                onClick={commitTextBox}
+              >
+                OK
+              </button>
             </div>
           </div>
         </div>
@@ -1048,21 +1456,53 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               Insert Table
-              <span className="x" title="Cancel" onClick={() => setTableDraw(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setTableDraw(null)}>
+                ✕
+              </span>
             </div>
-            <div className="ze-label-dialog-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label className="row"><span>Rows</span>
-                <input className="ze-search" type="number" min={1} max={50} autoFocus value={tableDraw.rows}
+            <div
+              className="ze-label-dialog-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <label className="row">
+                <span>Rows</span>
+                <input
+                  className="ze-search"
+                  type="number"
+                  min={1}
+                  max={50}
+                  autoFocus
+                  value={tableDraw.rows}
                   onChange={(e) => setTableDraw({ ...tableDraw, rows: Number(e.target.value) })}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') commitTable(); }} /></label>
-              <label className="row"><span>Columns</span>
-                <input className="ze-search" type="number" min={1} max={50} value={tableDraw.cols}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') commitTable();
+                  }}
+                />
+              </label>
+              <label className="row">
+                <span>Columns</span>
+                <input
+                  className="ze-search"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={tableDraw.cols}
                   onChange={(e) => setTableDraw({ ...tableDraw, cols: Number(e.target.value) })}
-                  onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') commitTable(); }} /></label>
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') commitTable();
+                  }}
+                />
+              </label>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setTableDraw(null)}>Cancel</button>
-              <button className="ze-btn primary" onClick={commitTable}>OK</button>
+              <button className="ze-btn" onClick={() => setTableDraw(null)}>
+                Cancel
+              </button>
+              <button className="ze-btn primary" onClick={commitTable}>
+                OK
+              </button>
             </div>
           </div>
         </div>
@@ -1074,20 +1514,46 @@ export function SchematicEditor({ onExitToHome, onShowPcb, onShowSymbolEditor, i
           <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
             <div className="ze-modal-header">
               Edit Table
-              <span className="x" title="Cancel" onClick={() => setTableEdit(null)}>✕</span>
+              <span className="x" title="Cancel" onClick={() => setTableEdit(null)}>
+                ✕
+              </span>
             </div>
             <div className="ze-label-dialog-body">
-              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${tableEdit.cols}, 1fr)`, gap: 4 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${tableEdit.cols}, 1fr)`,
+                  gap: 4,
+                }}
+              >
                 {tableEdit.texts.map((txt, i) => (
-                  <input key={i} className="ze-search" value={txt} style={{ minWidth: 80 }}
-                    onChange={(e) => setTableEdit((te) => te ? { ...te, texts: te.texts.map((t, j) => j === i ? e.target.value : t) } : te)}
-                    onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitTableEdit(); }} />
+                  <input
+                    key={i}
+                    className="ze-search"
+                    value={txt}
+                    style={{ minWidth: 80 }}
+                    onChange={(e) =>
+                      setTableEdit((te) =>
+                        te
+                          ? { ...te, texts: te.texts.map((t, j) => (j === i ? e.target.value : t)) }
+                          : te,
+                      )
+                    }
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commitTableEdit();
+                    }}
+                  />
                 ))}
               </div>
             </div>
             <div className="ze-modal-footer">
-              <button className="ze-btn" onClick={() => setTableEdit(null)}>Cancel</button>
-              <button className="ze-btn primary" onClick={commitTableEdit}>OK</button>
+              <button className="ze-btn" onClick={() => setTableEdit(null)}>
+                Cancel
+              </button>
+              <button className="ze-btn primary" onClick={commitTableEdit}>
+                OK
+              </button>
             </div>
           </div>
         </div>

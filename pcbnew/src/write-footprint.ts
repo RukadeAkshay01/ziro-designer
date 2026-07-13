@@ -37,15 +37,19 @@ function mm(iu: number): string {
 }
 
 const atNode = (p: Vec2, angle = 0): SList =>
-  angle ? list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(angle)))
-        : list(atom('at'), atom(mm(p.x)), atom(mm(p.y)));
+  angle
+    ? list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(angle)))
+    : list(atom('at'), atom(mm(p.x)), atom(mm(p.y)));
 
 // ----- canonical item builders (used only for edited / new items) -------------
 
 /** `(pad "n" <type> <shape> (at ..) (size ..) [(drill ..)] (layers ..) …)`. */
 export function buildPadNode(pad: PcbPad): SList {
   const items: SNode[] = [
-    atom('pad'), str(pad.number), atom(pad.type), atom(pad.shape),
+    atom('pad'),
+    str(pad.number),
+    atom(pad.type),
+    atom(pad.shape),
     atNode(pad.at, pad.angle),
     list(atom('size'), atom(mm(pad.size.x)), atom(mm(pad.size.y))),
   ];
@@ -54,14 +58,19 @@ export function buildPadNode(pad: PcbPad): SList {
     const d: SNode[] = [atom('drill')];
     if (pad.drill.oblong) d.push(atom('oval'));
     if (pad.drill.w > 0) d.push(atom(mm(pad.drill.w)));
-    if (pad.drill.oblong && pad.drill.h > 0 && pad.drill.h !== pad.drill.w) d.push(atom(mm(pad.drill.h)));
-    if (pad.drill.offset) d.push(list(atom('offset'), atom(mm(pad.drill.offset.x)), atom(mm(pad.drill.offset.y))));
+    if (pad.drill.oblong && pad.drill.h > 0 && pad.drill.h !== pad.drill.w)
+      d.push(atom(mm(pad.drill.h)));
+    if (pad.drill.offset)
+      d.push(list(atom('offset'), atom(mm(pad.drill.offset.x)), atom(mm(pad.drill.offset.y))));
     items.push({ kind: 'list', items: d });
   }
   items.push({ kind: 'list', items: [atom('layers'), ...pad.layers.map((l) => str(l))] });
-  if (pad.roundrectRatio !== undefined) items.push(list(atom('roundrect_rratio'), atom(mm(pad.roundrectRatio))));
-  if (pad.chamferRatio !== undefined) items.push(list(atom('chamfer_ratio'), atom(mm(pad.chamferRatio))));
-  if (pad.chamfer && pad.chamfer.length > 0) items.push({ kind: 'list', items: [atom('chamfer'), ...pad.chamfer.map((c) => atom(c))] });
+  if (pad.roundrectRatio !== undefined)
+    items.push(list(atom('roundrect_rratio'), atom(mm(pad.roundrectRatio))));
+  if (pad.chamferRatio !== undefined)
+    items.push(list(atom('chamfer_ratio'), atom(mm(pad.chamferRatio))));
+  if (pad.chamfer && pad.chamfer.length > 0)
+    items.push({ kind: 'list', items: [atom('chamfer'), ...pad.chamfer.map((c) => atom(c))] });
   if (pad.uuid) items.push(list(atom('uuid'), str(pad.uuid)));
   return { kind: 'list', items };
 }
@@ -70,18 +79,35 @@ export function buildPadNode(pad: PcbPad): SList {
 export function buildShapeNode(shape: PcbShape): SList {
   const tag = `fp_${shape.kind}`;
   const items: SNode[] = [atom(tag)];
-  const pt = (name: string, p: Vec2 | undefined): void => { if (p) items.push(list(atom(name), atom(mm(p.x)), atom(mm(p.y)))); };
+  const pt = (name: string, p: Vec2 | undefined): void => {
+    if (p) items.push(list(atom(name), atom(mm(p.x)), atom(mm(p.y))));
+  };
   if (shape.kind === 'circle') {
     pt('center', shape.center);
     pt('end', shape.end);
   } else if (shape.kind === 'arc') {
-    pt('start', shape.start); pt('mid', shape.mid); pt('end', shape.end);
+    pt('start', shape.start);
+    pt('mid', shape.mid);
+    pt('end', shape.end);
   } else if (shape.kind === 'poly' || shape.kind === 'curve') {
-    items.push({ kind: 'list', items: [atom('pts'), ...(shape.pts ?? []).map((p) => list(atom('xy'), atom(mm(p.x)), atom(mm(p.y))))] });
+    items.push({
+      kind: 'list',
+      items: [
+        atom('pts'),
+        ...(shape.pts ?? []).map((p) => list(atom('xy'), atom(mm(p.x)), atom(mm(p.y)))),
+      ],
+    });
   } else {
-    pt('start', shape.start); pt('end', shape.end);
+    pt('start', shape.start);
+    pt('end', shape.end);
   }
-  items.push(list(atom('stroke'), list(atom('width'), atom(mm(shape.width))), list(atom('type'), atom('solid'))));
+  items.push(
+    list(
+      atom('stroke'),
+      list(atom('width'), atom(mm(shape.width))),
+      list(atom('type'), atom('solid')),
+    ),
+  );
   if (shape.fill) items.push(list(atom('fill'), atom('solid')));
   items.push(list(atom('layer'), str(shape.layer)));
   if (shape.uuid) items.push(list(atom('uuid'), str(shape.uuid)));
@@ -91,18 +117,24 @@ export function buildShapeNode(shape: PcbShape): SList {
 /** `(fp_text <kind> "text" (at ..) (layer ..) [(hide yes)] (effects (font (size h w) [(thickness t)]))) `. */
 export function buildTextNode(text: PcbTextItem): SList {
   const items: SNode[] = [
-    atom('fp_text'), atom(text.kind), str(text.text),
+    atom('fp_text'),
+    atom(text.kind),
+    str(text.text),
     atNode(text.at, text.angle),
     list(atom('layer'), str(text.layer)),
   ];
   if (text.hide) items.push(list(atom('hide'), atom('yes')));
   // (size h w): height first, matching the reader's {x: w, y: h} <-> file order.
-  const font: SNode[] = [atom('font'), list(atom('size'), atom(mm(text.size.y)), atom(mm(text.size.x)))];
+  const font: SNode[] = [
+    atom('font'),
+    list(atom('size'), atom(mm(text.size.y)), atom(mm(text.size.x))),
+  ];
   if (text.thickness !== undefined) font.push(list(atom('thickness'), atom(mm(text.thickness))));
   if (text.bold) font.push(list(atom('bold'), atom('yes')));
   if (text.italic) font.push(list(atom('italic'), atom('yes')));
   const effects: SNode[] = [atom('effects'), { kind: 'list', items: font }];
-  if (text.justify && text.justify.length > 0) effects.push({ kind: 'list', items: [atom('justify'), ...text.justify.map((j) => atom(j))] });
+  if (text.justify && text.justify.length > 0)
+    effects.push({ kind: 'list', items: [atom('justify'), ...text.justify.map((j) => atom(j))] });
   items.push({ kind: 'list', items: effects });
   if (text.uuid) items.push(list(atom('uuid'), str(text.uuid)));
   return { kind: 'list', items };
@@ -112,8 +144,10 @@ export function buildTextNode(text: PcbTextItem): SList {
 
 /** A modelled child node: pass the untouched source through, rebuild when source-less. */
 const padNode = (p: PcbPad): SList => (p.source.items.length > 0 ? p.source : buildPadNode(p));
-const shapeNode = (s: PcbShape): SList => (s.source.items.length > 0 ? s.source : buildShapeNode(s));
-const textNode = (t: PcbTextItem): SList => (t.source.items.length > 0 ? t.source : buildTextNode(t));
+const shapeNode = (s: PcbShape): SList =>
+  s.source.items.length > 0 ? s.source : buildShapeNode(s);
+const textNode = (t: PcbTextItem): SList =>
+  t.source.items.length > 0 ? t.source : buildTextNode(t);
 
 const GRAPHIC_HEADS = new Set(['fp_line', 'fp_arc', 'fp_circle', 'fp_rect', 'fp_poly', 'fp_curve']);
 
@@ -121,7 +155,10 @@ const GRAPHIC_HEADS = new Set(['fp_line', 'fp_arc', 'fp_circle', 'fp_rect', 'fp_
 function isTextSource(it: SList): boolean {
   const h = head(it);
   if (h === 'fp_text') return true;
-  if (h === 'property') { const k = arg(it, 0); return k === 'Reference' || k === 'Value'; }
+  if (h === 'property') {
+    const k = arg(it, 0);
+    return k === 'Reference' || k === 'Value';
+  }
   return false;
 }
 
@@ -136,24 +173,38 @@ function isTextSource(it: SList): boolean {
 export function writeFootprintNode(fp: PcbFootprint): SList {
   const src = fp.source;
   const out: SNode[] = [];
-  let pi = 0, si = 0, ti = 0; // next model pad / shape / text to emit
+  let pi = 0,
+    si = 0,
+    ti = 0; // next model pad / shape / text to emit
 
   if (src.items.length > 0) {
     for (const it of src.items) {
-      if (!isList(it)) { out.push(it); continue; }
+      if (!isList(it)) {
+        out.push(it);
+        continue;
+      }
       const h = head(it);
-      if (h === 'pad') { if (pi < fp.pads.length) out.push(padNode(fp.pads[pi]!)); pi++; }
-      else if (GRAPHIC_HEADS.has(h ?? '')) { if (si < fp.shapes.length) out.push(shapeNode(fp.shapes[si]!)); si++; }
-      else if (isTextSource(it)) { if (ti < fp.texts.length) out.push(textNode(fp.texts[ti]!)); ti++; }
-      else out.push(it);
+      if (h === 'pad') {
+        if (pi < fp.pads.length) out.push(padNode(fp.pads[pi]!));
+        pi++;
+      } else if (GRAPHIC_HEADS.has(h ?? '')) {
+        if (si < fp.shapes.length) out.push(shapeNode(fp.shapes[si]!));
+        si++;
+      } else if (isTextSource(it)) {
+        if (ti < fp.texts.length) out.push(textNode(fp.texts[ti]!));
+        ti++;
+      } else out.push(it);
     }
   } else {
     // No source (a footprint built from scratch): emit the canonical header.
-    out.push(atom('footprint'), str(fp.lib),
+    out.push(
+      atom('footprint'),
+      str(fp.lib),
       list(atom('version'), atom(String(FOOTPRINT_FILE_VERSION))),
       list(atom('generator'), str('pcbnew')),
       list(atom('generator_version'), str('9.0')),
-      list(atom('layer'), str(fp.layer || 'F.Cu')));
+      list(atom('layer'), str(fp.layer || 'F.Cu')),
+    );
   }
 
   // Append newly added items (model has more than the source held), by group.

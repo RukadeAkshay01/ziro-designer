@@ -5,7 +5,12 @@
 import { describe, it, expect } from 'vitest';
 import { parse, serialize } from '@ziroeda/sexpr/src/index.js';
 import { readSchematic, writeSchematic } from '@ziroeda/eeschema';
-import { buildSheetTree, findRootFile, sheetFile, sheetName } from '@ziroeda/eeschema/src/project.js';
+import {
+  buildSheetTree,
+  findRootFile,
+  sheetFile,
+  sheetName,
+} from '@ziroeda/eeschema/src/project.js';
 import { moveItems } from '@ziroeda/eeschema/src/tools/move.js';
 import { runErc } from '@ziroeda/eeschema/src/connectivity/erc.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
@@ -40,7 +45,9 @@ describe('SCH_SHEET model', () => {
 
   it('round-trips unchanged and moves as one rigid part', () => {
     const d = doc(SHEET);
-    expect(serialize(writeSchematic(d))).toBe(serialize(writeSchematic(readSchematic(writeSchematic(d)))));
+    expect(serialize(writeSchematic(d))).toBe(
+      serialize(writeSchematic(readSchematic(writeSchematic(d)))),
+    );
 
     const delta = { x: mmToIU(10), y: mmToIU(-5) };
     const moved = moveItems(new Set(['sh-1']), delta).apply(d);
@@ -74,8 +81,10 @@ describe('project hierarchy (SCH_SHEET_LIST equivalent)', () => {
   const amp = doc('');
   const reg = doc('');
   const docs = new Map([
-    ['main.kicad_sch', root], ['power.kicad_sch', power],
-    ['amp.kicad_sch', amp], ['reg.kicad_sch', reg],
+    ['main.kicad_sch', root],
+    ['power.kicad_sch', power],
+    ['amp.kicad_sch', amp],
+    ['reg.kicad_sch', reg],
   ]);
 
   it('finds the root from the .kicad_pro name, or as the unreferenced sheet', () => {
@@ -101,7 +110,13 @@ describe('project hierarchy (SCH_SHEET_LIST equivalent)', () => {
         (property "Sheetname" "ampli_ht_vertical" (at 0 0 0)) (property "Sheetfile" "ampli_ht.kicad_sch" (at 0 0 0)))
       (sheet (at 50 10) (size 20 20) (uuid "h")
         (property "Sheetname" "ampli_ht_horizontal" (at 0 0 0)) (property "Sheetfile" "ampli_ht.kicad_sch" (at 0 0 0)))`);
-    const tree = buildSheetTree(new Map([['complex.kicad_sch', rootTwice], ['ampli_ht.kicad_sch', doc('')]]), 'complex.kicad_sch');
+    const tree = buildSheetTree(
+      new Map([
+        ['complex.kicad_sch', rootTwice],
+        ['ampli_ht.kicad_sch', doc('')],
+      ]),
+      'complex.kicad_sch',
+    );
     expect(tree.children.map((c) => c.file)).toEqual(['ampli_ht.kicad_sch', 'ampli_ht.kicad_sch']); // same file
     expect(tree.children.map((c) => c.path)).toEqual(['/v/', '/h/']); // distinct paths
     expect(new Set(tree.children.map((c) => c.path)).size).toBe(2);

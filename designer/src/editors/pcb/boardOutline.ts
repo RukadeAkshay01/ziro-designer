@@ -8,12 +8,15 @@
  * on the board, Y flipped (KiCad Y is down, GL Y is up).
  */
 import earcut from 'earcut';
-import { type Vec2 } from '@ziroeda/kimath';
+import type { Vec2 } from '@ziroeda/kimath';
 import { tessellateArc, type Board } from '@ziroeda/pcbnew';
 
 const MM = 10000; // internal units per millimetre
 
-export interface Pt { x: number; y: number }
+export interface Pt {
+  x: number;
+  y: number;
+}
 
 export interface BoardOutline {
   /** Closed loops (mm, centred 3D frame). loops[0] = outer, the rest are holes. */
@@ -24,7 +27,12 @@ export interface BoardOutline {
   tris: number[];
 }
 
-interface Box { minX: number; minY: number; maxX: number; maxY: number }
+interface Box {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -41,7 +49,12 @@ function circleLoop(center: Vec2, radius: number): Vec2[] {
 
 // Rect (two opposite corners) -> 4-corner loop.
 function rectLoop(a: Vec2, b: Vec2): Vec2[] {
-  return [{ x: a.x, y: a.y }, { x: b.x, y: a.y }, { x: b.x, y: b.y }, { x: a.x, y: b.y }];
+  return [
+    { x: a.x, y: a.y },
+    { x: b.x, y: a.y },
+    { x: b.x, y: b.y },
+    { x: a.x, y: b.y },
+  ];
 }
 
 // Signed area (shoelace) — sign gives winding, magnitude ranks outer vs holes.
@@ -60,7 +73,8 @@ function signedArea(loop: Pt[]): number {
  * endpoints within `tol` (KiCad's ConnectBoardShapes / close-enough join).
  */
 function chainLoops(polys: Vec2[][], tol: number): Vec2[][] {
-  const near = (a: Vec2, b: Vec2): boolean => Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+  const near = (a: Vec2, b: Vec2): boolean =>
+    Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
   const remaining = polys.filter((p) => p.length >= 2).map((p) => p.slice());
   const loops: Vec2[][] = [];
 
@@ -97,7 +111,11 @@ function chainLoops(polys: Vec2[][], tol: number): Vec2[][] {
 /** Build the triangulated board outline (mm, centred 3D frame). `drills` (also
  * centred 3D mm) are subtracted from the surface so holes are real voids — the
  * board loops (for the walls) keep only the perimeter + Edge.Cuts cutouts. */
-export function buildBoardOutline(board: Board, box: Box, drills: { x: number; y: number; r: number }[] = []): BoardOutline {
+export function buildBoardOutline(
+  board: Board,
+  box: Box,
+  drills: { x: number; y: number; r: number }[] = [],
+): BoardOutline {
   const cx = (box.minX + box.maxX) / 2;
   const cy = (box.minY + box.maxY) / 2;
   const to3d = (p: Vec2): Pt => ({ x: (p.x - cx) / MM, y: -(p.y - cy) / MM });
@@ -107,15 +125,27 @@ export function buildBoardOutline(board: Board, box: Box, drills: { x: number; y
   );
 
   const closed: Vec2[][] = []; // circle/rect/poly are loops already
-  const open: Vec2[][] = [];   // line/arc/curve are polylines to chain
+  const open: Vec2[][] = []; // line/arc/curve are polylines to chain
   for (const s of shapes) {
     switch (s.kind) {
-      case 'line': if (s.start && s.end) open.push([s.start, s.end]); break;
-      case 'arc': if (s.start && s.mid && s.end) open.push(tessellateArc(s.start, s.mid, s.end)); break;
-      case 'curve': if (s.start && s.end) open.push([s.start, ...(s.pts ?? []), s.end]); break;
-      case 'circle': if (s.center && s.end) closed.push(circleLoop(s.center, dist(s.center, s.end))); break;
-      case 'rect': if (s.start && s.end) closed.push(rectLoop(s.start, s.end)); break;
-      case 'poly': if (s.pts && s.pts.length >= 3) closed.push(s.pts); break;
+      case 'line':
+        if (s.start && s.end) open.push([s.start, s.end]);
+        break;
+      case 'arc':
+        if (s.start && s.mid && s.end) open.push(tessellateArc(s.start, s.mid, s.end));
+        break;
+      case 'curve':
+        if (s.start && s.end) open.push([s.start, ...(s.pts ?? []), s.end]);
+        break;
+      case 'circle':
+        if (s.center && s.end) closed.push(circleLoop(s.center, dist(s.center, s.end)));
+        break;
+      case 'rect':
+        if (s.start && s.end) closed.push(rectLoop(s.start, s.end));
+        break;
+      case 'poly':
+        if (s.pts && s.pts.length >= 3) closed.push(s.pts);
+        break;
     }
   }
 
@@ -126,7 +156,9 @@ export function buildBoardOutline(board: Board, box: Box, drills: { x: number; y
   }
 
   // Largest-area loop is the outer boundary; the rest are cutouts.
-  const loops = loopsIU.map((l) => l.map(to3d)).sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
+  const loops = loopsIU
+    .map((l) => l.map(to3d))
+    .sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
   const outer = loops[0]!;
   const holes = loops.slice(1);
 
@@ -134,7 +166,10 @@ export function buildBoardOutline(board: Board, box: Box, drills: { x: number; y
   const drillRings = drills.map((d) => {
     const n = Math.max(10, Math.min(48, Math.round(d.r * 120)));
     const ring: Pt[] = [];
-    for (let i = 0; i < n; i++) { const a = (2 * Math.PI * i) / n; ring.push({ x: d.x + d.r * Math.cos(a), y: d.y + d.r * Math.sin(a) }); }
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * i) / n;
+      ring.push({ x: d.x + d.r * Math.cos(a), y: d.y + d.r * Math.sin(a) });
+    }
     return ring;
   });
 

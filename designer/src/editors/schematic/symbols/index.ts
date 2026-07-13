@@ -45,6 +45,9 @@ function loadLibrary(name: string): Promise<Map<string, LibSymbol>> {
 }
 
 /** Load one symbol by library and name (fetches+caches the library on demand). */
-export async function loadSymbol(library: string, symbolName: string): Promise<LibSymbol | undefined> {
+export async function loadSymbol(
+  library: string,
+  symbolName: string,
+): Promise<LibSymbol | undefined> {
   return (await loadLibrary(library)).get(symbolName);
 }

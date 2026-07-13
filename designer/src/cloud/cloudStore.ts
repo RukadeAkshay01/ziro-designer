@@ -24,7 +24,10 @@ const BUCKET = (import.meta.env.VITE_SUPABASE_STORAGE_BUCKET as string | undefin
 // Max inline payload (base64) when NOT using Storage — protects the DB.
 const INLINE_CAP = 4 * 1024 * 1024;
 
-interface FileRef { name: string; gzB64?: string }
+interface FileRef {
+  name: string;
+  gzB64?: string;
+}
 interface Row {
   id: string;
   user_id?: string;
@@ -64,17 +67,27 @@ export async function cloudGet(id: string): Promise<SyncableProject | null> {
   if (error) throw error;
   if (!data) return null;
   const r = data as Row;
-  const meta = { id: r.id, name: r.name, createdAt: new Date(r.created_at).getTime(), updatedAt: new Date(r.updated_at).getTime() };
+  const meta = {
+    id: r.id,
+    name: r.name,
+    createdAt: new Date(r.created_at).getTime(),
+    updatedAt: new Date(r.updated_at).getTime(),
+  };
   const inline = r.files.length === 0 || r.files[0]!.gzB64 !== undefined;
-  if (inline || !BUCKET) return { ...meta, files: (r.files as { name: string; gzB64: string }[]) ?? [] };
+  if (inline || !BUCKET)
+    return { ...meta, files: (r.files as { name: string; gzB64: string }[]) ?? [] };
 
   // Storage-backed: download each blob and re-encode to the gzB64 shape.
   const userId = r.user_id ?? '';
-  const files = await Promise.all(r.files.map(async (f) => {
-    const { data: blob, error: e } = await supabase!.storage.from(BUCKET).download(objPath(userId, id, f.name));
-    if (e || !blob) return { name: f.name, gzB64: '' };
-    return { name: f.name, gzB64: bytesToB64(new Uint8Array(await blob.arrayBuffer())) };
-  }));
+  const files = await Promise.all(
+    r.files.map(async (f) => {
+      const { data: blob, error: e } = await supabase!.storage
+        .from(BUCKET)
+        .download(objPath(userId, id, f.name));
+      if (e || !blob) return { name: f.name, gzB64: '' };
+      return { name: f.name, gzB64: bytesToB64(new Uint8Array(await blob.arrayBuffer())) };
+    }),
+  );
   return { ...meta, files };
 }
 
@@ -82,17 +95,26 @@ export async function cloudGet(id: string): Promise<SyncableProject | null> {
 export async function cloudUpsert(userId: string, p: SyncableProject): Promise<void> {
   if (!supabase) return;
   const base = {
-    id: p.id, user_id: userId, name: p.name,
+    id: p.id,
+    user_id: userId,
+    name: p.name,
     created_at: new Date(p.createdAt).toISOString(),
     updated_at: new Date(p.updatedAt).toISOString(),
   };
 
   if (BUCKET) {
     // Blobs → Storage; the row keeps only the file names.
-    await Promise.all(p.files.map((f) =>
-      supabase!.storage.from(BUCKET).upload(objPath(userId, p.id, f.name), b64ToBytes(f.gzB64), { upsert: true, contentType: 'application/gzip' }),
-    ));
-    const { error } = await supabase.from('projects').upsert({ ...base, files: p.files.map((f) => ({ name: f.name })) });
+    await Promise.all(
+      p.files.map((f) =>
+        supabase!.storage.from(BUCKET).upload(objPath(userId, p.id, f.name), b64ToBytes(f.gzB64), {
+          upsert: true,
+          contentType: 'application/gzip',
+        }),
+      ),
+    );
+    const { error } = await supabase
+      .from('projects')
+      .upsert({ ...base, files: p.files.map((f) => ({ name: f.name })) });
     if (error) throw error;
     return;
   }
@@ -101,7 +123,9 @@ export async function cloudUpsert(userId: string, p: SyncableProject): Promise<v
   // can't fill the database — it stays local-only until Storage is configured.
   const total = p.files.reduce((n, f) => n + f.gzB64.length, 0);
   if (total > INLINE_CAP) {
-    console.warn(`Cloud sync skipped for "${p.name}": ${(total / 1048576).toFixed(1)} MB exceeds the inline cap. Configure VITE_SUPABASE_STORAGE_BUCKET to sync large projects.`);
+    console.warn(
+      `Cloud sync skipped for "${p.name}": ${(total / 1048576).toFixed(1)} MB exceeds the inline cap. Configure VITE_SUPABASE_STORAGE_BUCKET to sync large projects.`,
+    );
     return;
   }
   const { error } = await supabase.from('projects').upsert({ ...base, files: p.files });
@@ -111,10 +135,16 @@ export async function cloudUpsert(userId: string, p: SyncableProject): Promise<v
 export async function cloudDelete(id: string): Promise<void> {
   if (!supabase) return;
   if (BUCKET) {
-    const { data } = await supabase.from('projects').select('user_id, files').eq('id', id).maybeSingle();
+    const { data } = await supabase
+      .from('projects')
+      .select('user_id, files')
+      .eq('id', id)
+      .maybeSingle();
     const r = data as Pick<Row, 'user_id' | 'files'> | null;
     if (r?.user_id && r.files?.length) {
-      await supabase.storage.from(BUCKET).remove(r.files.map((f) => objPath(r.user_id!, id, f.name)));
+      await supabase.storage
+        .from(BUCKET)
+        .remove(r.files.map((f) => objPath(r.user_id!, id, f.name)));
     }
   }
   const { error } = await supabase.from('projects').delete().eq('id', id);

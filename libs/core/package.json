@@ -9,5 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": { "@ziroeda/kimath": "workspace:*" }
+  "dependencies": {
+    "@ziroeda/kimath": "workspace:*"
+  }
 }

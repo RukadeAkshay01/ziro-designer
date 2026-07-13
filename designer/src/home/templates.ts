@@ -41,12 +41,23 @@ function renameRel(rel: string, base: string, projectName: string): string {
   const fileName = parts[parts.length - 1]!;
   const ext = fileName.includes('.') ? fileName.split('.').pop()!.toLowerCase() : '';
   const inPretty = parts.some((p) => /\.pretty$/i.test(p));
-  const keep = inPretty || ext === 'kicad_wks' || ext === 'lib' || ext === 'dcm'
-    || fileName === 'fp-lib-table' || fileName === 'sym-lib-table';
+  const keep =
+    inPretty ||
+    ext === 'kicad_wks' ||
+    ext === 'lib' ||
+    ext === 'dcm' ||
+    fileName === 'fp-lib-table' ||
+    fileName === 'sym-lib-table';
   const newName = keep ? fileName : fileName.split(base).join(projectName);
-  const dirs = parts.slice(0, -1).map((seg) =>
-    seg === base ? projectName : seg.startsWith(base + '-') ? projectName + seg.slice(base.length) : seg,
-  );
+  const dirs = parts
+    .slice(0, -1)
+    .map((seg) =>
+      seg === base
+        ? projectName
+        : seg.startsWith(`${base}-`)
+          ? projectName + seg.slice(base.length)
+          : seg,
+    );
   return [...dirs, newName].join('/');
 }
 
@@ -57,7 +68,10 @@ const encodeRel = (rel: string): string => rel.split('/').map(encodeURIComponent
  * nest everything under a folder named for the project (mirrors KiCad's copy).
  * Contents are copied verbatim, like KiCad — only names change.
  */
-export async function createFromTemplate(t: TemplateMeta, projectName: string): Promise<PickedHomeFile[]> {
+export async function createFromTemplate(
+  t: TemplateMeta,
+  projectName: string,
+): Promise<PickedHomeFile[]> {
   const out: PickedHomeFile[] = [];
   for (const rel of t.files) {
     const res = await fetch(`/templates/${encodeURIComponent(t.id)}/${encodeRel(rel)}`);

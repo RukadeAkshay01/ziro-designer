@@ -51,7 +51,10 @@ function strokeEquivalent(a: SchLine, b: SchLine): boolean {
  * the merged span [start,end]; otherwise null. `aCheckJunctions` mirrors KiCad.
  */
 function mergeOverlap(
-  first: SchLine, second: SchLine, junctions: readonly SchJunction[], checkJunctions: boolean,
+  first: SchLine,
+  second: SchLine,
+  junctions: readonly SchJunction[],
+  checkJunctions: boolean,
 ): { start: Vec2; end: Vec2 } | null {
   if (first === second || !sameLayer(first, second)) return null;
 
@@ -99,8 +102,9 @@ function mergeOverlap(
   } else {
     const dx = leftmostEnd.x - leftmostStart.x;
     const dy = leftmostEnd.y - leftmostStart.y;
-    colinear = (otherStart.y - leftmostStart.y) * dx === (otherStart.x - leftmostStart.x) * dy
-      && (otherEnd.y - leftmostStart.y) * dx === (otherEnd.x - leftmostStart.x) * dy;
+    colinear =
+      (otherStart.y - leftmostStart.y) * dx === (otherStart.x - leftmostStart.x) * dy &&
+      (otherEnd.y - leftmostStart.y) * dx === (otherEnd.x - leftmostStart.x) * dy;
   }
   if (!colinear) return null;
 
@@ -133,9 +137,19 @@ function onSegInterior(p: Vec2, a: Vec2, b: Vec2): boolean {
   return dot > 0 && dot < len2;
 }
 
-function gcd(a: number, b: number): number { a = Math.abs(a); b = Math.abs(b); while (b) { [a, b] = [b, a % b]; } return a || 1; }
+function gcd(a: number, b: number): number {
+  a = Math.abs(a);
+  b = Math.abs(b);
+  while (b) {
+    [a, b] = [b, a % b];
+  }
+  return a || 1;
+}
 /** Canonical direction key for a segment leaving `p` toward `q` (reduced integer vector). */
-function dirKey(dx: number, dy: number): string { const g = gcd(dx, dy); return `${dx / g},${dy / g}`; }
+function dirKey(dx: number, dy: number): string {
+  const g = gcd(dx, dy);
+  return `${dx / g},${dy / g}`;
+}
 
 /**
  * Whether a junction dot is needed at `p` (ignoring existing junctions), ported
@@ -159,7 +173,14 @@ function junctionNeeded(lines: readonly SchLine[], p: Vec2): boolean {
 }
 
 /** True if any junction or third-wire endpoint sits strictly inside span [s,e]. */
-function vertexInside(lines: readonly SchLine[], junctions: readonly SchJunction[], a: SchLine, b: SchLine, s: Vec2, e: Vec2): boolean {
+function vertexInside(
+  lines: readonly SchLine[],
+  junctions: readonly SchJunction[],
+  a: SchLine,
+  b: SchLine,
+  s: Vec2,
+  e: Vec2,
+): boolean {
   for (const j of junctions) if (onSegInterior(j.at, s, e)) return true;
   for (const l of lines) {
     if (l === a || l === b) continue;
@@ -177,21 +198,34 @@ function vertexInside(lines: readonly SchLine[], junctions: readonly SchJunction
  */
 export function mergeColinearWires(sch: Schematic): Schematic {
   let lines: SchLine[] = sch.lines.slice();
-  let junctions: SchJunction[] = sch.junctions.slice();
+  const junctions: SchJunction[] = sch.junctions.slice();
   let changed = true;
   let any = false;
-  const mark = () => { changed = true; any = true; };
+  const mark = () => {
+    changed = true;
+    any = true;
+  };
 
   while (changed) {
     changed = false;
 
     // 1. Drop zero-length wires/buses.
-    const zi = lines.findIndex((l) => (l.kind === 'wire' || l.kind === 'bus') && eq(l.start, l.end));
-    if (zi >= 0) { lines.splice(zi, 1); mark(); continue; }
+    const zi = lines.findIndex(
+      (l) => (l.kind === 'wire' || l.kind === 'bus') && eq(l.start, l.end),
+    );
+    if (zi >= 0) {
+      lines.splice(zi, 1);
+      mark();
+      continue;
+    }
 
     // 2. Junctions: add where needed, remove where no longer needed (auto-managed).
     const ji = junctions.findIndex((j) => !junctionNeeded(lines, j.at));
-    if (ji >= 0) { junctions.splice(ji, 1); mark(); continue; }
+    if (ji >= 0) {
+      junctions.splice(ji, 1);
+      mark();
+      continue;
+    }
     const need = new Set(junctions.map((j) => `${j.at.x},${j.at.y}`));
     let added = false;
     for (const l of lines) {
@@ -204,7 +238,10 @@ export function mergeColinearWires(sch: Schematic): Schematic {
         }
       }
     }
-    if (added) { mark(); continue; }
+    if (added) {
+      mark();
+      continue;
+    }
 
     // 3. Merge two colinear same-layer wires when nothing (junction/third end) lies
     //    between them (mergeOverlap already refuses to bridge a junction touch-point).
@@ -217,9 +254,14 @@ export function mergeColinearWires(sch: Schematic): Schematic {
         if (second.kind !== 'wire' && second.kind !== 'bus') continue;
         if (!sameLayer(first, second) || !strokeEquivalent(first, second)) continue;
 
-        const dup = (eq(first.start, second.start) && eq(first.end, second.end))
-          || (eq(first.start, second.end) && eq(first.end, second.start));
-        if (dup) { lines.splice(b, 1); merged = true; break outer; }
+        const dup =
+          (eq(first.start, second.start) && eq(first.end, second.end)) ||
+          (eq(first.start, second.end) && eq(first.end, second.start));
+        if (dup) {
+          lines.splice(b, 1);
+          merged = true;
+          break outer;
+        }
 
         const span = mergeOverlap(first, second, junctions, true);
         if (span && !vertexInside(lines, junctions, first, second, span.start, span.end)) {
@@ -231,7 +273,9 @@ export function mergeColinearWires(sch: Schematic): Schematic {
         }
       }
     }
-    if (merged) { mark(); continue; }
+    if (merged) {
+      mark();
+    }
   }
 
   return any ? { ...sch, lines, junctions } : sch;

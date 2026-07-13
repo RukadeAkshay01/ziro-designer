@@ -6,7 +6,7 @@
 
 import { BOARD_ITEM } from './board_item.js';
 import { FlipLayer, type PCB_LAYER_ID } from './layer_ids.js';
-import { EDA_TEXT, GR_TEXT_H_ALIGN_T } from '@ziroeda/common/src/eda_text.js';
+import { EDA_TEXT, type GR_TEXT_H_ALIGN_T } from '@ziroeda/common/src/eda_text.js';
 import { EDA_ANGLE, ANGLE_180 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import { RotatePoint } from '@ziroeda/kimath/src/trigo.js';
 import { MIRRORVAL, FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
@@ -25,10 +25,16 @@ export class PCB_TEXT extends BOARD_ITEM {
     this.m_eda = new EDA_TEXT(opts);
   }
 
-  GetText(): string { return this.m_eda.GetText(); }
+  GetText(): string {
+    return this.m_eda.GetText();
+  }
 
-  GetPosition(): VECTOR2I { return this.m_eda.GetTextPos(); }
-  SetPosition(aPos: VECTOR2I): void { this.m_eda.SetTextPos(aPos); }
+  GetPosition(): VECTOR2I {
+    return this.m_eda.GetTextPos();
+  }
+  SetPosition(aPos: VECTOR2I): void {
+    this.m_eda.SetTextPos(aPos);
+  }
 
   Move(aMoveVector: VECTOR2I): void {
     const p = this.m_eda.GetTextPos();
@@ -44,10 +50,12 @@ export class PCB_TEXT extends BOARD_ITEM {
   Mirror(aCentre: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void {
     const pos = this.m_eda.GetTextPos();
     if (aFlipDirection === FLIP_DIRECTION.TOP_BOTTOM) {
-      if (this.m_eda.GetTextAngle().equals(ANGLE_VERTICAL)) this.m_eda.SetHorizJustify(-this.m_eda.GetHorizJustify() as GR_TEXT_H_ALIGN_T);
+      if (this.m_eda.GetTextAngle().equals(ANGLE_VERTICAL))
+        this.m_eda.SetHorizJustify(-this.m_eda.GetHorizJustify() as GR_TEXT_H_ALIGN_T);
       this.m_eda.SetTextY(MIRRORVAL(pos.y, aCentre.y));
     } else {
-      if (this.m_eda.GetTextAngle().equals(ANGLE_HORIZONTAL)) this.m_eda.SetHorizJustify(-this.m_eda.GetHorizJustify() as GR_TEXT_H_ALIGN_T);
+      if (this.m_eda.GetTextAngle().equals(ANGLE_HORIZONTAL))
+        this.m_eda.SetHorizJustify(-this.m_eda.GetHorizJustify() as GR_TEXT_H_ALIGN_T);
       this.m_eda.SetTextX(MIRRORVAL(pos.x, aCentre.x));
     }
   }
@@ -66,5 +74,7 @@ export class PCB_TEXT extends BOARD_ITEM {
     this.m_eda.SetMirrored(!this.m_eda.IsMirrored()); // board text is side-specific
   }
 
-  HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean { return this.m_eda.TextHitTest(aPosition, aAccuracy); }
+  HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean {
+    return this.m_eda.TextHitTest(aPosition, aAccuracy);
+  }
 }

@@ -42,22 +42,34 @@ export class SymbolLibraryManager {
   /** Bumped on every mutation so React can subscribe cheaply. */
   revision = 0;
 
-  private touch(): void { this.revision++; }
+  private touch(): void {
+    this.revision++;
+  }
 
   libraryNames(): string[] {
     return [...this.libs.keys()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }
 
-  library(name: string): ManagedLibrary | undefined { return this.libs.get(name); }
-  libraryExists(name: string): boolean { return this.libs.has(name); }
+  library(name: string): ManagedLibrary | undefined {
+    return this.libs.get(name);
+  }
+  libraryExists(name: string): boolean {
+    return this.libs.has(name);
+  }
 
   /** Register a bundled global library by name (content fetched on demand). */
   addGlobalLibrary(name: string, symbolNames: string[]): void {
     if (this.libs.has(name)) return;
     this.libs.set(name, {
-      name, fileName: `${name}.kicad_sym`, scope: 'global', loaded: false,
-      pendingNames: symbolNames, symbols: new Map(), original: new Map(),
-      modified: new Set(), libModified: false,
+      name,
+      fileName: `${name}.kicad_sym`,
+      scope: 'global',
+      loaded: false,
+      pendingNames: symbolNames,
+      symbols: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: false,
     });
     this.touch();
   }
@@ -65,8 +77,15 @@ export class SymbolLibraryManager {
   /** Add a project library from already-loaded file text. */
   addProjectLibrary(name: string, fileName: string, text: string): void {
     const lib: ManagedLibrary = {
-      name, fileName, scope: 'project', loaded: true, pendingNames: [],
-      symbols: new Map(), original: new Map(), modified: new Set(), libModified: false,
+      name,
+      fileName,
+      scope: 'project',
+      loaded: true,
+      pendingNames: [],
+      symbols: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: false,
     };
     for (const sym of readSymbolLib(parse(text))) {
       lib.symbols.set(sym.libId, sym);
@@ -79,8 +98,15 @@ export class SymbolLibraryManager {
   /** Create a new, empty library (ACTIONS::newLibrary). */
   createLibrary(name: string): ManagedLibrary {
     const lib: ManagedLibrary = {
-      name, fileName: `${name}.kicad_sym`, scope: 'project', loaded: true, pendingNames: [],
-      symbols: new Map(), original: new Map(), modified: new Set(), libModified: true,
+      name,
+      fileName: `${name}.kicad_sym`,
+      scope: 'project',
+      loaded: true,
+      pendingNames: [],
+      symbols: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: true,
     };
     this.libs.set(name, lib);
     this.touch();
@@ -133,8 +159,9 @@ export class SymbolLibraryManager {
     const lib = this.libs.get(libName);
     if (!lib) return;
     // Preserve file order through the rename.
-    const entries = [...lib.symbols.entries()].map(([k, v]) =>
-      (k === oldName ? [sym.libId, sym] : [k, v]) as [string, LibSymbol]);
+    const entries = [...lib.symbols.entries()].map(
+      ([k, v]) => (k === oldName ? [sym.libId, sym] : [k, v]) as [string, LibSymbol],
+    );
     lib.symbols = new Map(entries);
     lib.modified.delete(oldName);
     lib.modified.add(sym.libId);
@@ -186,7 +213,7 @@ export class SymbolLibraryManager {
    */
   saveLibraryText(libName: string): string | undefined {
     const lib = this.libs.get(libName);
-    if (!lib || !lib.loaded) return undefined;
+    if (!lib?.loaded) return undefined;
     const text = serializeSymbolLib([...lib.symbols.values()]);
     lib.original = new Map(lib.symbols);
     lib.modified.clear();

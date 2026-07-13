@@ -19,8 +19,14 @@
  *    pad.cpp; zone fills sit directly under their layer's tracks.
  */
 
-import { type Vec2 } from '@ziroeda/kimath';
-import { tessellateArc, type Board, type PcbPad, type PcbShape, type PcbTextItem } from '@ziroeda/pcbnew';
+import type { Vec2 } from '@ziroeda/kimath';
+import {
+  tessellateArc,
+  type Board,
+  type PcbPad,
+  type PcbShape,
+  type PcbTextItem,
+} from '@ziroeda/pcbnew';
 import { PCB_PAINT_ORDER, PCB_SPECIAL, layerColor, PCB_BACKGROUND } from './pcbTheme.js';
 import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
@@ -129,7 +135,7 @@ function expandLayers(list: string[], copperNames: string[]): string[] {
   for (const l of list) {
     if (l === '*.Cu') out.push(...copperNames);
     else if (l === 'F&B.Cu') out.push('F.Cu', 'B.Cu');
-    else if (l.startsWith('*.')) out.push('F' + l.slice(1), 'B' + l.slice(1));
+    else if (l.startsWith('*.')) out.push(`F${l.slice(1)}`, `B${l.slice(1)}`);
     else out.push(l);
   }
   return out;
@@ -194,7 +200,9 @@ function addPadShape(path: Path2D, pad: PcbPad): void {
           for (let i = 1; i < prim.pts.length; i++) sub.lineTo(prim.pts[i]!.x, prim.pts[i]!.y);
           sub.closePath();
         } else if (prim.kind === 'gr_circle' && prim.center) {
-          const r = prim.end ? Math.hypot(prim.end.x - prim.center.x, prim.end.y - prim.center.y) : 0;
+          const r = prim.end
+            ? Math.hypot(prim.end.x - prim.center.x, prim.end.y - prim.center.y)
+            : 0;
           if (r > 0) {
             sub.moveTo(prim.center.x + r, prim.center.y);
             sub.arc(prim.center.x, prim.center.y, r, 0, Math.PI * 2);
@@ -372,7 +380,10 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
     .sort((a, b) => cuOrder(a.name) - cuOrder(b.name))
     .map((l) => l.name);
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const grow = (x: number, y: number, pad = 0): void => {
     if (x - pad < minX) minX = x - pad;
     if (y - pad < minY) minY = y - pad;
@@ -450,7 +461,11 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
         b.hasPads = true;
       }
       if (pad.drill && pad.type === 'thru_hole') {
-        addHole(scene.padHoleWalls, pad, { ...pad.drill, w: pad.drill.w + 0.1 * MM, h: pad.drill.h + 0.1 * MM });
+        addHole(scene.padHoleWalls, pad, {
+          ...pad.drill,
+          w: pad.drill.w + 0.1 * MM,
+          h: pad.drill.h + 0.1 * MM,
+        });
         addHole(scene.padHolesPlated, pad, pad.drill);
       }
       grow(pad.at.x, pad.at.y, Math.max(pad.size.x, pad.size.y) / 2);
@@ -465,7 +480,11 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
   return scene;
 }
 
-const addHole = (path: Path2D, pad: PcbPad, drill: { oblong: boolean; w: number; h: number; offset?: Vec2 }): void => {
+const addHole = (
+  path: Path2D,
+  pad: PcbPad,
+  drill: { oblong: boolean; w: number; h: number; offset?: Vec2 },
+): void => {
   const m = new DOMMatrix().translate(pad.at.x, pad.at.y).rotate(-pad.angle);
   const sub = new Path2D();
   const ox = drill.offset?.x ?? 0;
@@ -511,9 +530,20 @@ const strokeAll = (ctx: CanvasRenderingContext2D, map: Map<number, Path2D>, minP
 // (builtin_color_themes.h). The board origin (0,0) is the page's top-left.
 
 const PAPER_MM: Record<string, [number, number]> = {
-  A5: [210, 148], A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841],
-  A: [279.4, 215.9], B: [431.8, 279.4], C: [558.8, 431.8], D: [863.6, 558.8], E: [1117.6, 863.6],
-  USLetter: [279.4, 215.9], USLegal: [355.6, 215.9], USLedger: [431.8, 279.4],
+  A5: [210, 148],
+  A4: [297, 210],
+  A3: [420, 297],
+  A2: [594, 420],
+  A1: [841, 594],
+  A0: [1189, 841],
+  A: [279.4, 215.9],
+  B: [431.8, 279.4],
+  C: [558.8, 431.8],
+  D: [863.6, 558.8],
+  E: [1117.6, 863.6],
+  USLetter: [279.4, 215.9],
+  USLegal: [355.6, 215.9],
+  USLedger: [431.8, 279.4],
 };
 
 const paperSizeIU = (paper: string | undefined): { w: number; h: number } | null => {
@@ -573,7 +603,10 @@ export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo)
   const page = paperSizeIU(info.paper);
   if (!page) return;
   const M = 10 * MM;
-  const L = M, T = M, R = page.w - M, B = page.h - M;
+  const L = M,
+    T = M,
+    R = page.w - M,
+    B = page.h - M;
   const color = DRAWINGSHEET_COLOR;
   ctx.strokeStyle = color;
   ctx.lineWidth = 0.15 * MM;
@@ -587,12 +620,16 @@ export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo)
   const step = 50 * MM;
   ctx.beginPath();
   for (let x = L + step; x < R - i2; x += step) {
-    ctx.moveTo(x, T); ctx.lineTo(x, T + i2);
-    ctx.moveTo(x, B); ctx.lineTo(x, B - i2);
+    ctx.moveTo(x, T);
+    ctx.lineTo(x, T + i2);
+    ctx.moveTo(x, B);
+    ctx.lineTo(x, B - i2);
   }
   for (let y = T + step; y < B - i2; y += step) {
-    ctx.moveTo(L, y); ctx.lineTo(L + i2, y);
-    ctx.moveTo(R, y); ctx.lineTo(R - i2, y);
+    ctx.moveTo(L, y);
+    ctx.lineTo(L + i2, y);
+    ctx.moveTo(R, y);
+    ctx.lineTo(R - i2, y);
   }
   ctx.stroke();
   let n = 1;
@@ -614,9 +651,14 @@ export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo)
   const ry = (d: number): number => B - d * MM;
   ctx.strokeRect(rx(110), ry(34), 108 * MM, 32 * MM);
   ctx.beginPath();
-  for (const yy of [5.5, 8.5, 12.5, 18.5]) { ctx.moveTo(rx(110), ry(yy)); ctx.lineTo(rx(2), ry(yy)); }
-  ctx.moveTo(rx(90), ry(8.5)); ctx.lineTo(rx(90), ry(5.5));
-  ctx.moveTo(rx(26), ry(8.5)); ctx.lineTo(rx(26), ry(2));
+  for (const yy of [5.5, 8.5, 12.5, 18.5]) {
+    ctx.moveTo(rx(110), ry(yy));
+    ctx.lineTo(rx(2), ry(yy));
+  }
+  ctx.moveTo(rx(90), ry(8.5));
+  ctx.lineTo(rx(90), ry(5.5));
+  ctx.moveTo(rx(26), ry(8.5));
+  ctx.lineTo(rx(26), ry(2));
   ctx.stroke();
 
   // Field layout + weights are the KiCad default worksheet

@@ -44,7 +44,12 @@ function includeUnit(b: BBox, unit: LibSymbolUnit, origin: Vec2, t: Transform): 
   for (const g of unit.graphics) {
     switch (g.kind) {
       case 'rectangle':
-        for (const c of [g.start, { x: g.end.x, y: g.start.y }, g.end, { x: g.start.x, y: g.end.y }])
+        for (const c of [
+          g.start,
+          { x: g.end.x, y: g.start.y },
+          g.end,
+          { x: g.start.x, y: g.end.y },
+        ])
           includePoint(b, localToWorld(origin, t, c));
         break;
       case 'polyline':
@@ -87,8 +92,16 @@ export function labelBox(l: SchLabel): BBox {
   const at = l.at;
   const left = justify?.includes('right') ? at.x - w : at.x;
   const right = justify?.includes('right') ? at.x : at.x + w;
-  const top = justify?.includes('bottom') ? at.y - h : justify?.includes('top') ? at.y : at.y - h / 2;
-  const bottom = justify?.includes('bottom') ? at.y : justify?.includes('top') ? at.y + h : at.y + h / 2;
+  const top = justify?.includes('bottom')
+    ? at.y - h
+    : justify?.includes('top')
+      ? at.y
+      : at.y - h / 2;
+  const bottom = justify?.includes('bottom')
+    ? at.y
+    : justify?.includes('top')
+      ? at.y + h
+      : at.y + h / 2;
   return { minX: left, minY: top, maxX: right, maxY: bottom };
 }
 

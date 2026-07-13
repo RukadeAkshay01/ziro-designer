@@ -27,15 +27,35 @@ import { atom, str, isList, head, type SList, type SNode } from '@ziroeda/sexpr/
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { arcCenter, rotatePcb } from './read-board.js';
 import { footprintBBox } from './edit-footprint.js';
-import type { Board, PcbFootprint, PcbTrack, PcbArcTrack, PcbVia, PcbShape, PcbTextItem, PcbZone } from './types.js';
+import type {
+  Board,
+  PcbFootprint,
+  PcbTrack,
+  PcbArcTrack,
+  PcbVia,
+  PcbShape,
+  PcbTextItem,
+  PcbZone,
+} from './types.js';
 import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
 // ----- item ids ---------------------------------------------------------------
 
 export type BoardItemKind = 'track' | 'arc' | 'via' | 'footprint' | 'zone' | 'shape' | 'text';
-export interface BoardItemRef { kind: BoardItemKind; index: number }
+export interface BoardItemRef {
+  kind: BoardItemKind;
+  index: number;
+}
 
-const KINDS: ReadonlySet<string> = new Set<BoardItemKind>(['track', 'arc', 'via', 'footprint', 'zone', 'shape', 'text']);
+const KINDS: ReadonlySet<string> = new Set<BoardItemKind>([
+  'track',
+  'arc',
+  'via',
+  'footprint',
+  'zone',
+  'shape',
+  'text',
+]);
 
 export const boardItemId = (kind: BoardItemKind, index: number): string => `${kind}:${index}`;
 
@@ -54,7 +74,8 @@ export function parseBoardItemId(id: string): BoardItemRef | null {
 
 /** Distance from `p` to segment `a`–`b` (KiCad TestSegmentHit's core). */
 const distToSeg = (p: Vec2, a: Vec2, b: Vec2): number => {
-  const dx = b.x - a.x, dy = b.y - a.y;
+  const dx = b.x - a.x,
+    dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
   if (len2 === 0) return Math.hypot(p.x - a.x, p.y - a.y);
   let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
@@ -75,19 +96,40 @@ const ccwSpan = (from: number, to: number): number => {
 
 // ----- bounding box -----------------------------------------------------------
 
-export interface BoardBBox { minX: number; minY: number; maxX: number; maxY: number }
+export interface BoardBBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 const growBox = (b: BoardBBox, p: Vec2): void => {
-  if (p.x < b.minX) b.minX = p.x; if (p.y < b.minY) b.minY = p.y;
-  if (p.x > b.maxX) b.maxX = p.x; if (p.y > b.maxY) b.maxY = p.y;
+  if (p.x < b.minX) b.minX = p.x;
+  if (p.y < b.minY) b.minY = p.y;
+  if (p.x > b.maxX) b.maxX = p.x;
+  if (p.y > b.maxY) b.maxY = p.y;
 };
-const emptyBox = (): BoardBBox => ({ minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+const emptyBox = (): BoardBBox => ({
+  minX: Infinity,
+  minY: Infinity,
+  maxX: -Infinity,
+  maxY: -Infinity,
+});
 const isEmpty = (b: BoardBBox): boolean => b.minX > b.maxX;
-const inflate = (b: BoardBBox, d: number): BoardBBox => ({ minX: b.minX - d, minY: b.minY - d, maxX: b.maxX + d, maxY: b.maxY + d });
-const bboxArea = (b: BoardBBox): number => (isEmpty(b) ? Infinity : (b.maxX - b.minX) * (b.maxY - b.minY));
-const boxContainsPt = (b: BoardBBox, p: Vec2): boolean => p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
-const boxContainsBox = (o: BoardBBox, i: BoardBBox): boolean => o.minX <= i.minX && o.minY <= i.minY && o.maxX >= i.maxX && o.maxY >= i.maxY;
-const boxIntersects = (a: BoardBBox, b: BoardBBox): boolean => a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+const inflate = (b: BoardBBox, d: number): BoardBBox => ({
+  minX: b.minX - d,
+  minY: b.minY - d,
+  maxX: b.maxX + d,
+  maxY: b.maxY + d,
+});
+const bboxArea = (b: BoardBBox): number =>
+  isEmpty(b) ? Infinity : (b.maxX - b.minX) * (b.maxY - b.minY);
+const boxContainsPt = (b: BoardBBox, p: Vec2): boolean =>
+  p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
+const boxContainsBox = (o: BoardBBox, i: BoardBBox): boolean =>
+  o.minX <= i.minX && o.minY <= i.minY && o.maxX >= i.maxX && o.maxY >= i.maxY;
+const boxIntersects = (a: BoardBBox, b: BoardBBox): boolean =>
+  a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
 
 /** Every explicit point of a shape (endpoints/centre/pts), plus a circle's extent. */
 const shapePoints = (s: PcbShape): Vec2[] => {
@@ -128,32 +170,48 @@ export function boardItemBBox(board: Board, id: string): BoardBBox | null {
   if (!ref) return null;
   switch (ref.kind) {
     case 'track': {
-      const t = board.tracks[ref.index]; if (!t) return null;
-      const b = emptyBox(); growBox(b, t.start); growBox(b, t.end); return inflate(b, t.width / 2);
+      const t = board.tracks[ref.index];
+      if (!t) return null;
+      const b = emptyBox();
+      growBox(b, t.start);
+      growBox(b, t.end);
+      return inflate(b, t.width / 2);
     }
     case 'arc': {
-      const a = board.arcs[ref.index]; if (!a) return null;
-      const b = emptyBox(); growBox(b, a.start); growBox(b, a.mid); growBox(b, a.end); return inflate(b, a.width / 2);
+      const a = board.arcs[ref.index];
+      if (!a) return null;
+      const b = emptyBox();
+      growBox(b, a.start);
+      growBox(b, a.mid);
+      growBox(b, a.end);
+      return inflate(b, a.width / 2);
     }
     case 'via': {
-      const v = board.vias[ref.index]; if (!v) return null;
+      const v = board.vias[ref.index];
+      if (!v) return null;
       const r = v.size / 2;
       return { minX: v.at.x - r, minY: v.at.y - r, maxX: v.at.x + r, maxY: v.at.y + r };
     }
     case 'footprint': {
-      const f = board.footprints[ref.index]; if (!f) return null;
+      const f = board.footprints[ref.index];
+      if (!f) return null;
       return footprintBBox(f);
     }
     case 'zone': {
-      const z = board.zones[ref.index]; if (!z) return null;
-      const b = zoneBBox(z); return isEmpty(b) ? null : b;
+      const z = board.zones[ref.index];
+      if (!z) return null;
+      const b = zoneBBox(z);
+      return isEmpty(b) ? null : b;
     }
     case 'shape': {
-      const s = board.shapes[ref.index]; if (!s) return null;
-      const b = shapeBBox(s); return isEmpty(b) ? null : b;
+      const s = board.shapes[ref.index];
+      if (!s) return null;
+      const b = shapeBBox(s);
+      return isEmpty(b) ? null : b;
     }
     case 'text': {
-      const t = board.texts[ref.index]; return t ? textBBox(t) : null;
+      const t = board.texts[ref.index];
+      return t ? textBBox(t) : null;
     }
   }
 }
@@ -161,7 +219,14 @@ export function boardItemBBox(board: Board, id: string): BoardBBox | null {
 // ----- per-item hit tests -----------------------------------------------------
 
 /** PCB_ARC::HitTest — endpoint short-circuit, radial band, then angle in sweep. */
-const arcHit = (start: Vec2, mid: Vec2, end: Vec2, width: number, pos: Vec2, tol: number): boolean => {
+const arcHit = (
+  start: Vec2,
+  mid: Vec2,
+  end: Vec2,
+  width: number,
+  pos: Vec2,
+  tol: number,
+): boolean => {
   const maxDist = tol + width / 2;
   if (dist(start, pos) <= maxDist || dist(end, pos) <= maxDist) return true;
   const c = arcCenter(start, mid, end);
@@ -182,19 +247,27 @@ const arcHit = (start: Vec2, mid: Vec2, end: Vec2, width: number, pos: Vec2, tol
 const shapeHit = (s: PcbShape, pos: Vec2, tol: number): boolean => {
   const t = tol + s.width / 2;
   if (s.kind === 'line' && s.start && s.end) return distToSeg(pos, s.start, s.end) <= t;
-  if (s.kind === 'arc' && s.start && s.mid && s.end) return arcHit(s.start, s.mid, s.end, s.width, pos, tol);
+  if (s.kind === 'arc' && s.start && s.mid && s.end)
+    return arcHit(s.start, s.mid, s.end, s.width, pos, tol);
   if (s.kind === 'circle' && s.center && s.end) {
     const r = dist(s.center, s.end);
     const d = dist(s.center, pos);
     return s.fill ? d <= r + t : Math.abs(d - r) <= t;
   }
   if (s.kind === 'rect' && s.start && s.end) {
-    const x0 = Math.min(s.start.x, s.end.x), x1 = Math.max(s.start.x, s.end.x);
-    const y0 = Math.min(s.start.y, s.end.y), y1 = Math.max(s.start.y, s.end.y);
+    const x0 = Math.min(s.start.x, s.end.x),
+      x1 = Math.max(s.start.x, s.end.x);
+    const y0 = Math.min(s.start.y, s.end.y),
+      y1 = Math.max(s.start.y, s.end.y);
     if (pos.x < x0 - t || pos.x > x1 + t || pos.y < y0 - t || pos.y > y1 + t) return false;
     if (s.fill) return true;
     // Unfilled: only the border is live.
-    const near = Math.min(Math.abs(pos.x - x0), Math.abs(pos.x - x1), Math.abs(pos.y - y0), Math.abs(pos.y - y1));
+    const near = Math.min(
+      Math.abs(pos.x - x0),
+      Math.abs(pos.x - x1),
+      Math.abs(pos.y - y0),
+      Math.abs(pos.y - y1),
+    );
     return near <= t;
   }
   // poly / curve: nearest edge, plus interior when filled.
@@ -209,17 +282,21 @@ const shapeHit = (s: PcbShape, pos: Vec2, tol: number): boolean => {
 const pointInPolygon = (p: Vec2, poly: Vec2[]): boolean => {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]!, b = poly[j]!;
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    const a = poly[i]!,
+      b = poly[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x)
+      inside = !inside;
   }
   return inside;
 };
 
 const zoneHit = (z: PcbZone, pos: Vec2, tol: number): boolean => {
-  for (const f of z.fills) for (const poly of f.polys) {
-    if (poly.length >= 3 && pointInPolygon(pos, poly)) return true;
-    for (let i = 1; i < poly.length; i++) if (distToSeg(pos, poly[i - 1]!, poly[i]!) <= tol) return true;
-  }
+  for (const f of z.fills)
+    for (const poly of f.polys) {
+      if (poly.length >= 3 && pointInPolygon(pos, poly)) return true;
+      for (let i = 1; i < poly.length; i++)
+        if (distToSeg(pos, poly[i - 1]!, poly[i]!) <= tol) return true;
+    }
   return false;
 };
 
@@ -228,7 +305,8 @@ const zoneHit = (z: PcbZone, pos: Vec2, tol: number): boolean => {
 /** Ordering weight for disambiguation — small items beat large containers, so a
  *  track over a footprint/zone wins (approximates GENERAL_COLLECTOR's preference
  *  for connected/smaller items in PCB_SELECTION_TOOL::guessSelectionCandidates). */
-const typeRank = (kind: BoardItemKind): number => (kind === 'zone' ? 2 : kind === 'footprint' ? 1 : 0);
+const typeRank = (kind: BoardItemKind): number =>
+  kind === 'zone' ? 2 : kind === 'footprint' ? 1 : 0;
 
 /**
  * Every board item hit at `pos` within `tol`, best candidate first (smallest,
@@ -244,18 +322,30 @@ export function boardHitCandidates(board: Board, pos: Vec2, tol: number): string
     hits.push({ id, kind, area: b ? bboxArea(b) : Infinity });
   };
 
-  board.vias.forEach((v, i) => { if (dist(pos, v.at) <= tol + v.size / 2) add('via', i); });
-  board.tracks.forEach((t, i) => { if (distToSeg(pos, t.start, t.end) <= tol + t.width / 2) add('track', i); });
-  board.arcs.forEach((a, i) => { if (arcHit(a.start, a.mid, a.end, a.width, pos, tol)) add('arc', i); });
-  board.texts.forEach((t, i) => { if (boxContainsPt(inflate(textBBox(t), tol), pos)) add('text', i); });
-  board.shapes.forEach((s, i) => { if (shapeHit(s, pos, tol)) add('shape', i); });
-  board.zones.forEach((z, i) => { if (zoneHit(z, pos, tol)) add('zone', i); });
+  board.vias.forEach((v, i) => {
+    if (dist(pos, v.at) <= tol + v.size / 2) add('via', i);
+  });
+  board.tracks.forEach((t, i) => {
+    if (distToSeg(pos, t.start, t.end) <= tol + t.width / 2) add('track', i);
+  });
+  board.arcs.forEach((a, i) => {
+    if (arcHit(a.start, a.mid, a.end, a.width, pos, tol)) add('arc', i);
+  });
+  board.texts.forEach((t, i) => {
+    if (boxContainsPt(inflate(textBBox(t), tol), pos)) add('text', i);
+  });
+  board.shapes.forEach((s, i) => {
+    if (shapeHit(s, pos, tol)) add('shape', i);
+  });
+  board.zones.forEach((z, i) => {
+    if (zoneHit(z, pos, tol)) add('zone', i);
+  });
   board.footprints.forEach((f, i) => {
     const b = footprintBBox(f);
     if (b && boxContainsPt(inflate(b, tol), pos)) add('footprint', i);
   });
 
-  hits.sort((a, b) => (typeRank(a.kind) - typeRank(b.kind)) || (a.area - b.area));
+  hits.sort((a, b) => typeRank(a.kind) - typeRank(b.kind) || a.area - b.area);
   return hits.map((h) => h.id);
 }
 
@@ -268,19 +358,36 @@ export function hitTestBoard(board: Board, pos: Vec2, tol: number): string | nul
 
 /** Do segments a-b and c-d intersect? (orientation test.) */
 const segSeg = (a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean => {
-  const o = (p: Vec2, q: Vec2, r: Vec2): number => Math.sign((q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y));
-  const o1 = o(a, b, c), o2 = o(a, b, d), o3 = o(c, d, a), o4 = o(c, d, b);
+  const o = (p: Vec2, q: Vec2, r: Vec2): number =>
+    Math.sign((q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y));
+  const o1 = o(a, b, c),
+    o2 = o(a, b, d),
+    o3 = o(c, d, a),
+    o4 = o(c, d, b);
   if (o1 !== o2 && o3 !== o4) return true;
   const onSeg = (p: Vec2, q: Vec2, r: Vec2): boolean =>
-    Math.min(p.x, r.x) <= q.x && q.x <= Math.max(p.x, r.x) && Math.min(p.y, r.y) <= q.y && q.y <= Math.max(p.y, r.y);
-  return (o1 === 0 && onSeg(a, c, b)) || (o2 === 0 && onSeg(a, d, b)) || (o3 === 0 && onSeg(c, a, d)) || (o4 === 0 && onSeg(c, b, d));
+    Math.min(p.x, r.x) <= q.x &&
+    q.x <= Math.max(p.x, r.x) &&
+    Math.min(p.y, r.y) <= q.y &&
+    q.y <= Math.max(p.y, r.y);
+  return (
+    (o1 === 0 && onSeg(a, c, b)) ||
+    (o2 === 0 && onSeg(a, d, b)) ||
+    (o3 === 0 && onSeg(c, a, d)) ||
+    (o4 === 0 && onSeg(c, b, d))
+  );
 };
 
 /** Does segment a-b intersect (or lie inside) `r`? */
 const segInRect = (r: BoardBBox, a: Vec2, b: Vec2): boolean => {
   if (boxContainsPt(r, a) || boxContainsPt(r, b)) return true;
-  const c1 = { x: r.minX, y: r.minY }, c2 = { x: r.maxX, y: r.minY }, c3 = { x: r.maxX, y: r.maxY }, c4 = { x: r.minX, y: r.maxY };
-  return segSeg(a, b, c1, c2) || segSeg(a, b, c2, c3) || segSeg(a, b, c3, c4) || segSeg(a, b, c4, c1);
+  const c1 = { x: r.minX, y: r.minY },
+    c2 = { x: r.maxX, y: r.minY },
+    c3 = { x: r.maxX, y: r.maxY },
+    c4 = { x: r.minX, y: r.maxY };
+  return (
+    segSeg(a, b, c1, c2) || segSeg(a, b, c2, c3) || segSeg(a, b, c3, c4) || segSeg(a, b, c4, c1)
+  );
 };
 
 /** Does the circle (centre, radius) intersect rect `r`? (nearest-point test.) */
@@ -293,8 +400,8 @@ const circleInRect = (r: BoardBBox, c: Vec2, radius: number): boolean => {
 /** Does rect `r` cross polygon `poly` (edge crossing, or one contains the other)? */
 const polyInRect = (r: BoardBBox, poly: Vec2[]): boolean => {
   if (poly.length < 2) return false;
-  for (const p of poly) if (boxContainsPt(r, p)) return true;           // a vertex inside the rect
-  if (pointInPolygon({ x: r.minX, y: r.minY }, poly)) return true;      // rect inside the polygon
+  for (const p of poly) if (boxContainsPt(r, p)) return true; // a vertex inside the rect
+  if (pointInPolygon({ x: r.minX, y: r.minY }, poly)) return true; // rect inside the polygon
   for (let i = 0; i < poly.length; i++) {
     if (segInRect(r, poly[i]!, poly[(i + 1) % poly.length]!)) return true;
   }
@@ -309,11 +416,23 @@ const polyInRect = (r: BoardBBox, poly: Vec2[]): boolean => {
  * a via by its circle, an arc/footprint/graphic by geometry-or-bbox.
  */
 export function boardItemsInBox(
-  board: Board, x0: number, y0: number, x1: number, y1: number, contained: boolean,
+  board: Board,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  contained: boolean,
 ): string[] {
-  const rect: BoardBBox = { minX: Math.min(x0, x1), minY: Math.min(y0, y1), maxX: Math.max(x0, x1), maxY: Math.max(y0, y1) };
+  const rect: BoardBBox = {
+    minX: Math.min(x0, x1),
+    minY: Math.min(y0, y1),
+    maxX: Math.max(x0, x1),
+    maxY: Math.max(y0, y1),
+  };
   const out: string[] = [];
-  const push = (kind: BoardItemKind, i: number): void => { out.push(boardItemId(kind, i)); };
+  const push = (kind: BoardItemKind, i: number): void => {
+    out.push(boardItemId(kind, i));
+  };
   // Item's bbox is fully inside the rect (the shared `contained` fast path).
   const bboxContained = (kind: BoardItemKind, i: number): boolean => {
     const b = boardItemBBox(board, boardItemId(kind, i));
@@ -322,11 +441,12 @@ export function boardItemsInBox(
 
   board.tracks.forEach((t, i) => {
     const hit = contained
-      ? boxContainsPt(rect, t.start) && boxContainsPt(rect, t.end)   // PCB_TRACK: endpoints
+      ? boxContainsPt(rect, t.start) && boxContainsPt(rect, t.end) // PCB_TRACK: endpoints
       : segInRect(rect, t.start, t.end);
     if (hit) push('track', i);
   });
-  board.arcs.forEach((a, i) => {                                     // PCB_ARC: bbox of s/m/e + w/2
+  board.arcs.forEach((_a, i) => {
+    // PCB_ARC: bbox of s/m/e + w/2
     const b = boardItemBBox(board, boardItemId('arc', i))!;
     if (contained ? boxContainsBox(rect, b) : boxIntersects(rect, b)) push('arc', i);
   });
@@ -334,13 +454,20 @@ export function boardItemsInBox(
     const hit = contained ? bboxContained('via', i) : circleInRect(rect, v.at, v.size / 2);
     if (hit) push('via', i);
   });
-  board.footprints.forEach((_, i) => {                              // FOOTPRINT: bbox contain/intersect
+  board.footprints.forEach((_, i) => {
+    // FOOTPRINT: bbox contain/intersect
     const b = boardItemBBox(board, boardItemId('footprint', i));
     if (b && (contained ? boxContainsBox(rect, b) : boxIntersects(rect, b))) push('footprint', i);
   });
   board.shapes.forEach((s, i) => {
-    if (contained) { if (bboxContained('shape', i)) push('shape', i); return; }
-    if (s.kind === 'line' && s.start && s.end) { if (segInRect(rect, s.start, s.end)) push('shape', i); return; }
+    if (contained) {
+      if (bboxContained('shape', i)) push('shape', i);
+      return;
+    }
+    if (s.kind === 'line' && s.start && s.end) {
+      if (segInRect(rect, s.start, s.end)) push('shape', i);
+      return;
+    }
     const b = boardItemBBox(board, boardItemId('shape', i));
     if (b && boxIntersects(rect, b)) push('shape', i);
   });
@@ -349,7 +476,10 @@ export function boardItemsInBox(
     if (contained ? boxContainsBox(rect, b) : boxIntersects(rect, b)) push('text', i);
   });
   board.zones.forEach((z, i) => {
-    if (contained) { if (bboxContained('zone', i)) push('zone', i); return; }
+    if (contained) {
+      if (bboxContained('zone', i)) push('zone', i);
+      return;
+    }
     if (z.fills.some((f) => f.polys.some((p) => polyInRect(rect, p)))) push('zone', i);
   });
   return out;
@@ -374,7 +504,10 @@ const mm = (iu: number): string => {
 function patchChild(src: SList, name: string, node: SList): SList {
   let replaced = false;
   const items = src.items.map((it) => {
-    if (!replaced && isList(it) && head(it) === name) { replaced = true; return node; }
+    if (!replaced && isList(it) && head(it) === name) {
+      replaced = true;
+      return node;
+    }
     return it;
   });
   if (!replaced) items.push(node);
@@ -382,24 +515,29 @@ function patchChild(src: SList, name: string, node: SList): SList {
 }
 
 const atNode = (p: Vec2, angle = 0): SList =>
-  angle ? list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(angle)))
-        : list(atom('at'), atom(mm(p.x)), atom(mm(p.y)));
+  angle
+    ? list(atom('at'), atom(mm(p.x)), atom(mm(p.y)), atom(String(angle)))
+    : list(atom('at'), atom(mm(p.x)), atom(mm(p.y)));
 const xyNode = (name: string, p: Vec2): SList => list(atom(name), atom(mm(p.x)), atom(mm(p.y)));
 const ptsNode = (pts: Vec2[]): SList => ({
-  kind: 'list', items: [atom('pts'), ...pts.map((p) => list(atom('xy'), atom(mm(p.x)), atom(mm(p.y))))],
+  kind: 'list',
+  items: [atom('pts'), ...pts.map((p) => list(atom('xy'), atom(mm(p.x)), atom(mm(p.y))))],
 });
 
 const add = (p: Vec2, d: Vec2): Vec2 => ({ x: p.x + d.x, y: p.y + d.y });
 
 const moveTrack = (t: PcbTrack, d: Vec2): PcbTrack => {
-  const start = add(t.start, d), end = add(t.end, d);
+  const start = add(t.start, d),
+    end = add(t.end, d);
   let src = patchChild(t.source, 'start', xyNode('start', start));
   src = patchChild(src, 'end', xyNode('end', end));
   return { ...t, start, end, source: src };
 };
 
 const moveArc = (a: PcbArcTrack, d: Vec2): PcbArcTrack => {
-  const start = add(a.start, d), mid = add(a.mid, d), end = add(a.end, d);
+  const start = add(a.start, d),
+    mid = add(a.mid, d),
+    end = add(a.end, d);
   let src = patchChild(a.source, 'start', xyNode('start', start));
   src = patchChild(src, 'mid', xyNode('mid', mid));
   src = patchChild(src, 'end', xyNode('end', end));
@@ -420,11 +558,26 @@ const moveText = (t: PcbTextItem, d: Vec2): PcbTextItem => {
 const moveShape = (s: PcbShape, d: Vec2): PcbShape => {
   let src = s.source;
   const next: PcbShape = { ...s };
-  if (s.center) { next.center = add(s.center, d); src = patchChild(src, 'center', xyNode('center', next.center)); }
-  if (s.start) { next.start = add(s.start, d); src = patchChild(src, 'start', xyNode('start', next.start)); }
-  if (s.end) { next.end = add(s.end, d); src = patchChild(src, 'end', xyNode('end', next.end)); }
-  if (s.mid) { next.mid = add(s.mid, d); src = patchChild(src, 'mid', xyNode('mid', next.mid)); }
-  if (s.pts) { next.pts = s.pts.map((p) => add(p, d)); src = patchChild(src, 'pts', ptsNode(next.pts)); }
+  if (s.center) {
+    next.center = add(s.center, d);
+    src = patchChild(src, 'center', xyNode('center', next.center));
+  }
+  if (s.start) {
+    next.start = add(s.start, d);
+    src = patchChild(src, 'start', xyNode('start', next.start));
+  }
+  if (s.end) {
+    next.end = add(s.end, d);
+    src = patchChild(src, 'end', xyNode('end', next.end));
+  }
+  if (s.mid) {
+    next.mid = add(s.mid, d);
+    src = patchChild(src, 'mid', xyNode('mid', next.mid));
+  }
+  if (s.pts) {
+    next.pts = s.pts.map((p) => add(p, d));
+    src = patchChild(src, 'pts', ptsNode(next.pts));
+  }
   next.source = src;
   return next;
 };
@@ -467,7 +620,9 @@ export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Ve
     vias: board.vias.map((v, i) => (idx.via.has(i) ? moveVia(v, delta) : v)),
     shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? moveShape(s, delta) : s)),
     texts: board.texts.map((t, i) => (idx.text.has(i) ? moveText(t, delta) : t)),
-    footprints: board.footprints.map((f, i) => (idx.footprint.has(i) ? moveFootprint(f, delta) : f)),
+    footprints: board.footprints.map((f, i) =>
+      idx.footprint.has(i) ? moveFootprint(f, delta) : f,
+    ),
   };
 }
 
@@ -476,10 +631,18 @@ export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Ve
 /** Split a selection id set into per-kind index sets. */
 function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<number>> {
   const idx: Record<BoardItemKind, Set<number>> = {
-    track: new Set(), arc: new Set(), via: new Set(), footprint: new Set(),
-    zone: new Set(), shape: new Set(), text: new Set(),
+    track: new Set(),
+    arc: new Set(),
+    via: new Set(),
+    footprint: new Set(),
+    zone: new Set(),
+    shape: new Set(),
+    text: new Set(),
   };
-  for (const id of ids) { const r = parseBoardItemId(id); if (r) idx[r.kind].add(r.index); }
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r) idx[r.kind].add(r.index);
+  }
   return idx;
 }
 
@@ -518,12 +681,21 @@ export function boardSelectionBBox(board: Board, ids: ReadonlySet<string>): Boar
   const b = emptyBox();
   for (const id of ids) {
     const ib = boardItemBBox(board, id);
-    if (ib && !isEmpty(ib)) { growBox(b, { x: ib.minX, y: ib.minY }); growBox(b, { x: ib.maxX, y: ib.maxY }); }
+    if (ib && !isEmpty(ib)) {
+      growBox(b, { x: ib.minX, y: ib.minY });
+      growBox(b, { x: ib.maxX, y: ib.maxY });
+    }
   }
   return isEmpty(b) ? null : b;
 }
 
-const rotShapeCoords = <T extends { center?: Vec2; start?: Vec2; end?: Vec2; mid?: Vec2; pts?: Vec2[] }>(s: T, c: Vec2, deg: number): Partial<T> => {
+const rotShapeCoords = <
+  T extends { center?: Vec2; start?: Vec2; end?: Vec2; mid?: Vec2; pts?: Vec2[] },
+>(
+  s: T,
+  c: Vec2,
+  deg: number,
+): Partial<T> => {
   const n: { center?: Vec2; start?: Vec2; end?: Vec2; mid?: Vec2; pts?: Vec2[] } = {};
   if (s.center) n.center = rotAbout(s.center, c, deg);
   if (s.start) n.start = rotAbout(s.start, c, deg);
@@ -540,20 +712,33 @@ const rotShapeCoords = <T extends { center?: Vec2; start?: Vec2; end?: Vec2; mid
  * rotate by patching their `(at … angle)` anchor (children stay local, so the
  * writer re-bakes them); their model-absolute child coords rotate too.
  */
-export function rotateBoardItems(board: Board, ids: ReadonlySet<string>, ccw: boolean, center?: Vec2): Board {
+export function rotateBoardItems(
+  board: Board,
+  ids: ReadonlySet<string>,
+  ccw: boolean,
+  center?: Vec2,
+): Board {
   if (ids.size === 0) return board;
-  const c = center ?? (() => { const b = boardSelectionBBox(board, ids); return b ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } : { x: 0, y: 0 }; })();
+  const c =
+    center ??
+    (() => {
+      const b = boardSelectionBBox(board, ids);
+      return b ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } : { x: 0, y: 0 };
+    })();
   const deg = ccw ? 90 : -90;
   const idx = indicesByKind(ids);
 
   const rotTrack = (t: PcbTrack): PcbTrack => {
-    const start = rotAbout(t.start, c, deg), end = rotAbout(t.end, c, deg);
+    const start = rotAbout(t.start, c, deg),
+      end = rotAbout(t.end, c, deg);
     let src = patchChild(t.source, 'start', xyNode('start', start));
     src = patchChild(src, 'end', xyNode('end', end));
     return { ...t, start, end, source: src };
   };
   const rotArc = (a: PcbArcTrack): PcbArcTrack => {
-    const start = rotAbout(a.start, c, deg), mid = rotAbout(a.mid, c, deg), end = rotAbout(a.end, c, deg);
+    const start = rotAbout(a.start, c, deg),
+      mid = rotAbout(a.mid, c, deg),
+      end = rotAbout(a.end, c, deg);
     let src = patchChild(a.source, 'start', xyNode('start', start));
     src = patchChild(src, 'mid', xyNode('mid', mid));
     src = patchChild(src, 'end', xyNode('end', end));
@@ -564,7 +749,8 @@ export function rotateBoardItems(board: Board, ids: ReadonlySet<string>, ccw: bo
     return { ...v, at, source: patchChild(v.source, 'at', atNode(at)) };
   };
   const rotText = (t: PcbTextItem): PcbTextItem => {
-    const at = rotAbout(t.at, c, deg), angle = norm360(t.angle + deg);
+    const at = rotAbout(t.at, c, deg),
+      angle = norm360(t.angle + deg);
     return { ...t, at, angle, source: patchChild(t.source, 'at', atNode(at, angle)) };
   };
   const rotShape = (s: PcbShape): PcbShape => {
@@ -578,11 +764,22 @@ export function rotateBoardItems(board: Board, ids: ReadonlySet<string>, ccw: bo
     return { ...next, source: src };
   };
   const rotFootprint = (f: PcbFootprint): PcbFootprint => {
-    const at = rotAbout(f.at, c, deg), angle = norm360(f.angle + deg);
+    const at = rotAbout(f.at, c, deg),
+      angle = norm360(f.angle + deg);
     return {
-      ...f, at, angle,
-      pads: f.pads.map((p) => ({ ...p, at: rotAbout(p.at, c, deg), angle: norm360(p.angle + deg) })),
-      texts: f.texts.map((t) => ({ ...t, at: rotAbout(t.at, c, deg), angle: norm360(t.angle + deg) })),
+      ...f,
+      at,
+      angle,
+      pads: f.pads.map((p) => ({
+        ...p,
+        at: rotAbout(p.at, c, deg),
+        angle: norm360(p.angle + deg),
+      })),
+      texts: f.texts.map((t) => ({
+        ...t,
+        at: rotAbout(t.at, c, deg),
+        angle: norm360(t.angle + deg),
+      })),
       shapes: f.shapes.map((s) => ({ ...s, ...rotShapeCoords(s, c, deg) })),
       source: patchChild(f.source, 'at', atNode(at, angle)),
     };
@@ -620,13 +817,26 @@ function cloneItem<T extends { uuid?: string; source: SList }>(item: T): T {
  * (so the caller can select them / attach them to the cursor). Zones aren't
  * duplicated yet (see moveBoardItems).
  */
-export function duplicateBoardItems(board: Board, ids: ReadonlySet<string>, delta: Vec2): { board: Board; ids: string[] } {
+export function duplicateBoardItems(
+  board: Board,
+  ids: ReadonlySet<string>,
+  delta: Vec2,
+): { board: Board; ids: string[] } {
   if (ids.size === 0) return { board, ids: [] };
   const idx = indicesByKind(ids);
-  const tracks = [...board.tracks], arcs = [...board.arcs], vias = [...board.vias];
-  const footprints = [...board.footprints], shapes = [...board.shapes], texts = [...board.texts];
+  const tracks = [...board.tracks],
+    arcs = [...board.arcs],
+    vias = [...board.vias];
+  const footprints = [...board.footprints],
+    shapes = [...board.shapes],
+    texts = [...board.texts];
   const newIds: string[] = [];
-  const dup = <T extends { uuid?: string; source: SList }>(arr: T[], src: T[], sel: Set<number>, kind: BoardItemKind): void => {
+  const dup = <T extends { uuid?: string; source: SList }>(
+    arr: T[],
+    src: T[],
+    sel: Set<number>,
+    kind: BoardItemKind,
+  ): void => {
     for (const i of [...sel].sort((a, b) => a - b)) {
       const orig = src[i];
       if (!orig) continue;

@@ -20,7 +20,11 @@ import type { LibSymbol, SchSymbol, Schematic, Vec2 } from '../types.js';
 import { refId } from './hittest.js';
 import { newUuid } from './build.js';
 
-function unitMatches(unit: number, bodyStyle: number, u: { unit: number; bodyStyle: number }): boolean {
+function unitMatches(
+  unit: number,
+  bodyStyle: number,
+  u: { unit: number; bodyStyle: number },
+): boolean {
   return (u.unit === 0 || u.unit === unit) && (u.bodyStyle === 0 || u.bodyStyle === bodyStyle);
 }
 
@@ -73,10 +77,17 @@ export function planMove(
       for (const p of symbolPinPositions(s, libById.get(s.libId))) points.add(key(p));
   });
   sch.lines.forEach((l, i) => {
-    if (ids.has(refId('line', l.uuid, i))) { points.add(key(l.start)); points.add(key(l.end)); }
+    if (ids.has(refId('line', l.uuid, i))) {
+      points.add(key(l.start));
+      points.add(key(l.end));
+    }
   });
-  sch.junctions.forEach((j, i) => { if (ids.has(refId('junction', j.uuid, i))) points.add(key(j.at)); });
-  sch.labels.forEach((l, i) => { if (ids.has(refId('label', l.uuid, i))) points.add(key(l.at)); });
+  sch.junctions.forEach((j, i) => {
+    if (ids.has(refId('junction', j.uuid, i))) points.add(key(j.at));
+  });
+  sch.labels.forEach((l, i) => {
+    if (ids.has(refId('label', l.uuid, i))) points.add(key(l.at));
+  });
 
   const wireStart = new Set<string>();
   const wireEnd = new Set<string>();

@@ -13,18 +13,31 @@
 
 import { BOARD_CONNECTED_ITEM } from './board_connected_item.js';
 import { FlipLayer, type PCB_LAYER_ID } from './layer_ids.js';
-import { VECTOR2I, SquaredEuclideanNorm } from '@ziroeda/kimath/src/math/vector2.js';
-import { EDA_ANGLE, ANGLE_0 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
+import { type VECTOR2I, SquaredEuclideanNorm } from '@ziroeda/kimath/src/math/vector2.js';
+import { type EDA_ANGLE, ANGLE_0 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import { RotatePoint } from '@ziroeda/kimath/src/trigo.js';
-import { MIRROR, FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
+import { MIRROR, type FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
 
-export enum PAD_SHAPE { CIRCLE, RECTANGLE, OVAL, TRAPEZOID, ROUNDRECT, CHAMFERED_RECT, CUSTOM }
-export enum PAD_ATTRIB { PTH, SMD, CONN, NPTH }
+export enum PAD_SHAPE {
+  CIRCLE,
+  RECTANGLE,
+  OVAL,
+  TRAPEZOID,
+  ROUNDRECT,
+  CHAMFERED_RECT,
+  CUSTOM,
+}
+export enum PAD_ATTRIB {
+  PTH,
+  SMD,
+  CONN,
+  NPTH,
+}
 
 export class PAD extends BOARD_CONNECTED_ITEM {
   protected m_pos: VECTOR2I;
   protected m_number: string;
-  protected m_orient: EDA_ANGLE;      // board-frame absolute orientation
+  protected m_orient: EDA_ANGLE; // board-frame absolute orientation
   protected m_size: VECTOR2I;
   protected m_shape: PAD_SHAPE;
   protected m_attribute: PAD_ATTRIB;
@@ -34,9 +47,16 @@ export class PAD extends BOARD_CONNECTED_ITEM {
   /** roundrect corner radius (absolute IU) — derived from ratio for hit-test. */
 
   constructor(opts: {
-    number?: string; pos: VECTOR2I; orient?: EDA_ANGLE; size: VECTOR2I;
-    shape: PAD_SHAPE; attribute: PAD_ATTRIB; layers: PCB_LAYER_ID[];
-    netCode?: number; roundRectRadiusRatio?: number; chamferRatio?: number;
+    number?: string;
+    pos: VECTOR2I;
+    orient?: EDA_ANGLE;
+    size: VECTOR2I;
+    shape: PAD_SHAPE;
+    attribute: PAD_ATTRIB;
+    layers: PCB_LAYER_ID[];
+    netCode?: number;
+    roundRectRadiusRatio?: number;
+    chamferRatio?: number;
   }) {
     super(opts.layers[0] ?? 'F.Cu', opts.netCode ?? 0);
     this.m_number = opts.number ?? '';
@@ -50,16 +70,34 @@ export class PAD extends BOARD_CONNECTED_ITEM {
     this.m_chamferRatio = opts.chamferRatio ?? 0;
   }
 
-  GetNumber(): string { return this.m_number; }
-  GetOrientation(): EDA_ANGLE { return this.m_orient; }
-  SetOrientation(a: EDA_ANGLE): void { this.m_orient = a; }
-  GetSize(): VECTOR2I { return this.m_size; }
-  GetShape(): PAD_SHAPE { return this.m_shape; }
-  GetAttribute(): PAD_ATTRIB { return this.m_attribute; }
-  GetLayerSet(): PCB_LAYER_ID[] { return this.m_layerSet; }
+  GetNumber(): string {
+    return this.m_number;
+  }
+  GetOrientation(): EDA_ANGLE {
+    return this.m_orient;
+  }
+  SetOrientation(a: EDA_ANGLE): void {
+    this.m_orient = a;
+  }
+  GetSize(): VECTOR2I {
+    return this.m_size;
+  }
+  GetShape(): PAD_SHAPE {
+    return this.m_shape;
+  }
+  GetAttribute(): PAD_ATTRIB {
+    return this.m_attribute;
+  }
+  GetLayerSet(): PCB_LAYER_ID[] {
+    return this.m_layerSet;
+  }
 
-  GetPosition(): VECTOR2I { return this.m_pos; }
-  SetPosition(aPos: VECTOR2I): void { this.m_pos = { ...aPos }; }
+  GetPosition(): VECTOR2I {
+    return this.m_pos;
+  }
+  SetPosition(aPos: VECTOR2I): void {
+    this.m_pos = { ...aPos };
+  }
 
   /** Half the diagonal of the pad's bounding box — the HitTest reject radius
    *  (approximates PAD::GetBoundingRadius for the common shapes). */
@@ -99,7 +137,8 @@ export class PAD extends BOARD_CONNECTED_ITEM {
     const local = RotatePoint(delta, this.m_orient.negate());
     const hw = this.m_size.x / 2 + aAccuracy;
     const hh = this.m_size.y / 2 + aAccuracy;
-    const ax = Math.abs(local.x), ay = Math.abs(local.y);
+    const ax = Math.abs(local.x),
+      ay = Math.abs(local.y);
 
     switch (this.m_shape) {
       case PAD_SHAPE.CIRCLE: {
@@ -121,7 +160,7 @@ export class PAD extends BOARD_CONNECTED_ITEM {
         if (ax > hw || ay > hh) return false;
         const dx = ax - (this.m_size.x / 2 - rad);
         const dy = ay - (this.m_size.y / 2 - rad);
-        if (dx <= 0 || dy <= 0) return true;           // in the straight edges
+        if (dx <= 0 || dy <= 0) return true; // in the straight edges
         return dx * dx + dy * dy <= (rad + aAccuracy) * (rad + aAccuracy); // rounded corner
       }
       // RECTANGLE / TRAPEZOID / CHAMFERED_RECT / CUSTOM: bounding rectangle (TODO exact).
@@ -129,5 +168,4 @@ export class PAD extends BOARD_CONNECTED_ITEM {
         return ax <= hw && ay <= hh;
     }
   }
-
 }

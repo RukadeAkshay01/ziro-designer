@@ -23,12 +23,12 @@ export function ErcDialog({ violations, onRun, onLocate, onClose }: Props): JSX.
     <div className="ze-erc-panel">
       <div className="ze-modal-header">
         Electrical Rules Checker
-        <span className="x" onClick={onClose}>✕</span>
+        <span className="x" onClick={onClose}>
+          ✕
+        </span>
       </div>
       <div className="ze-erc-list">
-        {violations.length === 0 && (
-          <div className="ze-erc-empty">No ERC violations found.</div>
-        )}
+        {violations.length === 0 && <div className="ze-erc-empty">No ERC violations found.</div>}
         {violations.map((v, i) => (
           <div key={i} className={`ze-erc-row ${v.severity}`} onClick={() => onLocate(v)}>
             <span className="sev">{v.severity === 'error' ? '⏺' : '⏺'}</span>
@@ -40,7 +40,9 @@ export function ErcDialog({ violations, onRun, onLocate, onClose }: Props): JSX.
         <span className="tally err">⏺ {errors} errors</span>
         <span className="tally warn">⏺ {warnings} warnings</span>
         <span className="grow" />
-        <button className="ze-btn primary" onClick={onRun}>Run ERC</button>
+        <button className="ze-btn primary" onClick={onRun}>
+          Run ERC
+        </button>
       </div>
     </div>
   );

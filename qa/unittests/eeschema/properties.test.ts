@@ -12,8 +12,14 @@ import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 import { editSymbolProperties, type EditedField } from '@ziroeda/eeschema/src/tools/properties.js';
 import { refId } from '@ziroeda/eeschema/src/tools/hittest.js';
 import {
-  fieldTextBox, fieldBoundingBox, fieldDrawRotation, letterSubReference, fieldShownText,
-  effectiveHorizJustify, isHorizJustifyFlipped, DEFAULT_TEXT_SIZE,
+  fieldTextBox,
+  fieldBoundingBox,
+  fieldDrawRotation,
+  letterSubReference,
+  fieldShownText,
+  effectiveHorizJustify,
+  isHorizJustifyFlipped,
+  DEFAULT_TEXT_SIZE,
 } from '@ziroeda/eeschema/src/fieldbox.js';
 import type { SchField, SchSymbol, TextEffects } from '@ziroeda/eeschema/src/types.js';
 
@@ -50,7 +56,9 @@ describe('editSymbolProperties', () => {
     const sch = readSchematic(parse(fixture));
     const sym = sch.symbols[0]!;
     const id = refId('symbol', sym.uuid, 0);
-    const next = editSymbolProperties(id, { ...baseEdit(sym), fields: editedFields(sym) }).apply(sch);
+    const next = editSymbolProperties(id, { ...baseEdit(sym), fields: editedFields(sym) }).apply(
+      sch,
+    );
     expect(serialize(writeSchematic(next))).toBe(serialize(writeSchematic(sch)));
   });
 
@@ -63,7 +71,8 @@ describe('editSymbolProperties', () => {
       fields: editedFields(sym, (f) =>
         f.key === 'Reference'
           ? { ...f, value: 'J99', effects: { ...(f.effects ?? { hidden: false }), hidden: true } }
-          : f),
+          : f,
+      ),
     });
     const next = cmd.apply(sch);
     const re = readSchematic(writeSchematic(next));
@@ -87,7 +96,8 @@ describe('editSymbolProperties', () => {
       effects: { hidden: true, fontSize: [DEFAULT_TEXT_SIZE, DEFAULT_TEXT_SIZE] },
     };
     const withField = editSymbolProperties(id, {
-      ...baseEdit(sym), fields: [...editedFields(sym), newField],
+      ...baseEdit(sym),
+      fields: [...editedFields(sym), newField],
     }).apply(sch);
 
     const text = serialize(writeSchematic(withField));
@@ -117,7 +127,8 @@ describe('editSymbolProperties', () => {
       { key: '', value: 'kept', angle: 0, at: { x: 0, y: 0 }, effects: { hidden: true } },
     ];
     const next = editSymbolProperties(id, {
-      ...baseEdit(sym), fields: [...editedFields(sym), ...extra],
+      ...baseEdit(sym),
+      fields: [...editedFields(sym), ...extra],
     }).apply(sch);
     const re = readSchematic(writeSchematic(next));
     const keys = re.symbols[0]!.fields.map((f) => f.key);
@@ -167,7 +178,9 @@ describe('editSymbolProperties', () => {
     };
     const next = editSymbolProperties(id, {
       ...baseEdit(sym),
-      fields: editedFields(sym, (f) => (f.key === 'Value' ? { ...f, effects: fx, nameShown: true } : f)),
+      fields: editedFields(sym, (f) =>
+        f.key === 'Value' ? { ...f, effects: fx, nameShown: true } : f,
+      ),
     }).apply(sch);
     const text = serialize(writeSchematic(next));
     const re = readSchematic(parse(text));
@@ -183,13 +196,22 @@ describe('editSymbolProperties', () => {
 
 describe('field geometry (SCH_FIELD::GetBoundingBox port)', () => {
   const mkSym = (angle = 0, mirror?: 'x' | 'y'): SchSymbol => ({
-    libId: 'X', at: { x: 100000, y: 100000 }, angle, unit: 1, bodyStyle: 1,
-    inBom: true, onBoard: true, dnp: false, fields: [],
+    libId: 'X',
+    at: { x: 100000, y: 100000 },
+    angle,
+    unit: 1,
+    bodyStyle: 1,
+    inBom: true,
+    onBoard: true,
+    dnp: false,
+    fields: [],
     source: { kind: 'list', items: [] },
     ...(mirror ? { mirror } : {}),
   });
   const mkField = (justify?: readonly string[], angle = 0): SchField => ({
-    key: 'Reference', value: 'R1', angle,
+    key: 'Reference',
+    value: 'R1',
+    angle,
     at: { x: 120000, y: 100000 },
     effects: { hidden: false, fontSize: [12700, 12700], ...(justify ? { justify } : {}) },
     source: { kind: 'list', items: [] },

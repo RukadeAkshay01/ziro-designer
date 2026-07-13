@@ -62,10 +62,18 @@ type HJustify = 'left' | 'center' | 'right';
 type VJustify = 'top' | 'center' | 'bottom';
 
 export const storedHJustify = (f: SchField): HJustify =>
-  f.effects?.justify?.includes('left') ? 'left' : f.effects?.justify?.includes('right') ? 'right' : 'center';
+  f.effects?.justify?.includes('left')
+    ? 'left'
+    : f.effects?.justify?.includes('right')
+      ? 'right'
+      : 'center';
 
 export const storedVJustify = (f: SchField): VJustify =>
-  f.effects?.justify?.includes('top') ? 'top' : f.effects?.justify?.includes('bottom') ? 'bottom' : 'center';
+  f.effects?.justify?.includes('top')
+    ? 'top'
+    : f.effects?.justify?.includes('bottom')
+      ? 'bottom'
+      : 'center';
 
 /** LIB_SYMBOL::LetterSubReference: 1→"A", 26→"Z", 27→"AA", … */
 export function letterSubReference(unit: number): string {
@@ -94,7 +102,12 @@ export function fieldShownText(field: SchField, sym: SchSymbol, unitCount: numbe
  * EDA_TEXT::GetTextBox for a single-line stroke-font field, anchored at the field
  * position with the *stored* justification, before any rotation/transform.
  */
-export function fieldTextBox(field: SchField, shownText: string, measure: TextMeasurer, posOverride?: Vec2): Box {
+export function fieldTextBox(
+  field: SchField,
+  shownText: string,
+  measure: TextMeasurer,
+  posOverride?: Vec2,
+): Box {
   const { h, w } = fieldSize(field);
   const bold = !!field.effects?.bold;
   const italic = !!field.effects?.italic;
@@ -111,14 +124,26 @@ export function fieldTextBox(field: SchField, shownText: string, measure: TextMe
 
   const italicOffset = italic ? kiRound(h * ITALIC_TILT) : 0;
   switch (storedHJustify(field)) {
-    case 'left': break;
-    case 'center': box.x -= Math.trunc((box.w - italicOffset) / 2); break;
-    case 'right': box.x -= box.w - italicOffset; break;
+    case 'left':
+      break;
+    case 'center':
+      box.x -= Math.trunc((box.w - italicOffset) / 2);
+      break;
+    case 'right':
+      box.x -= box.w - italicOffset;
+      break;
   }
   switch (storedVJustify(field)) {
-    case 'top': box.y -= fudge; break;
-    case 'center': box.y -= Math.trunc(box.h / 2); break;
-    case 'bottom': box.y -= box.h; box.y += fudge; break;
+    case 'top':
+      box.y -= fudge;
+      break;
+    case 'center':
+      box.y -= Math.trunc(box.h / 2);
+      break;
+    case 'bottom':
+      box.y -= box.h;
+      box.y += fudge;
+      break;
   }
   return box;
 }
@@ -149,7 +174,12 @@ function invTransform(t: Transform): Transform {
  * one (GetPosition applies the parent transform, sch_field.cpp), so the box is
  * built at inverse-transform(at - origin) and mapped forward again.
  */
-export function fieldBoundingBox(field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer): Box {
+export function fieldBoundingBox(
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+): Box {
   const origin = sym.at;
   const t: Transform = symbolTransform(sym.angle, sym.mirror);
   const relFile: Vec2 = { x: (field.at?.x ?? 0) - origin.x, y: (field.at?.y ?? 0) - origin.y };
@@ -183,26 +213,42 @@ export function fieldDrawRotation(field: SchField, sym: SchSymbol): 0 | 90 {
 }
 
 /** SCH_FIELD::IsHorizJustifyFlipped: does the box render on the other side of the anchor? */
-export function isHorizJustifyFlipped(field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer): boolean {
+export function isHorizJustifyFlipped(
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+): boolean {
   const centre = centreOf(fieldBoundingBox(field, sym, shownText, measure));
   const pos = field.at ?? { x: 0, y: 0 };
   const vertical = fieldDrawRotation(field, sym) === 90;
   switch (storedHJustify(field)) {
-    case 'left': return vertical ? centre.y > pos.y : centre.x < pos.x;
-    case 'right': return vertical ? centre.y < pos.y : centre.x > pos.x;
-    default: return false;
+    case 'left':
+      return vertical ? centre.y > pos.y : centre.x < pos.x;
+    case 'right':
+      return vertical ? centre.y < pos.y : centre.x > pos.x;
+    default:
+      return false;
   }
 }
 
 /** SCH_FIELD::IsVertJustifyFlipped. */
-export function isVertJustifyFlipped(field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer): boolean {
+export function isVertJustifyFlipped(
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+): boolean {
   const centre = centreOf(fieldBoundingBox(field, sym, shownText, measure));
   const pos = field.at ?? { x: 0, y: 0 };
   const vertical = fieldDrawRotation(field, sym) === 90;
   switch (storedVJustify(field)) {
-    case 'top': return vertical ? centre.x < pos.x : centre.y < pos.y;
-    case 'bottom': return vertical ? centre.x > pos.x : centre.y > pos.y;
-    default: return false;
+    case 'top':
+      return vertical ? centre.x < pos.x : centre.y < pos.y;
+    case 'bottom':
+      return vertical ? centre.x > pos.x : centre.y > pos.y;
+    default:
+      return false;
   }
 }
 
@@ -210,13 +256,23 @@ const flipH = (j: HJustify): HJustify => (j === 'left' ? 'right' : j === 'right'
 const flipV = (j: VJustify): VJustify => (j === 'top' ? 'bottom' : j === 'bottom' ? 'top' : j);
 
 /** SCH_FIELD::GetEffectiveHorizJustify — what the dialog's H-Align column shows. */
-export function effectiveHorizJustify(field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer): HJustify {
+export function effectiveHorizJustify(
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+): HJustify {
   const j = storedHJustify(field);
   return j === 'center' ? j : isHorizJustifyFlipped(field, sym, shownText, measure) ? flipH(j) : j;
 }
 
 /** SCH_FIELD::GetEffectiveVertJustify — what the dialog's V-Align column shows. */
-export function effectiveVertJustify(field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer): VJustify {
+export function effectiveVertJustify(
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+): VJustify {
   const j = storedVJustify(field);
   return j === 'center' ? j : isVertJustifyFlipped(field, sym, shownText, measure) ? flipV(j) : j;
 }
@@ -226,19 +282,39 @@ export function effectiveVertJustify(field: SchField, sym: SchSymbol, shownText:
  * `desired`. Set first, then flip if the render side is inverted (exact KiCad order).
  */
 export function storedForEffectiveHoriz(
-  field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer, desired: HJustify,
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+  desired: HJustify,
 ): HJustify {
   if (desired === 'center') return 'center';
-  const trial: SchField = { ...field, effects: { ...(field.effects ?? { hidden: false }), justify: justifyTokens(desired, storedVJustify(field)) } };
+  const trial: SchField = {
+    ...field,
+    effects: {
+      ...(field.effects ?? { hidden: false }),
+      justify: justifyTokens(desired, storedVJustify(field)),
+    },
+  };
   return isHorizJustifyFlipped(trial, sym, shownText, measure) ? flipH(desired) : desired;
 }
 
 /** SCH_FIELD::SetEffectiveVertJustify. */
 export function storedForEffectiveVert(
-  field: SchField, sym: SchSymbol, shownText: string, measure: TextMeasurer, desired: VJustify,
+  field: SchField,
+  sym: SchSymbol,
+  shownText: string,
+  measure: TextMeasurer,
+  desired: VJustify,
 ): VJustify {
   if (desired === 'center') return 'center';
-  const trial: SchField = { ...field, effects: { ...(field.effects ?? { hidden: false }), justify: justifyTokens(storedHJustify(field), desired) } };
+  const trial: SchField = {
+    ...field,
+    effects: {
+      ...(field.effects ?? { hidden: false }),
+      justify: justifyTokens(storedHJustify(field), desired),
+    },
+  };
   return isVertJustifyFlipped(trial, sym, shownText, measure) ? flipV(desired) : desired;
 }
 

@@ -69,7 +69,8 @@ export function editSymbolProperties(id: string, edit: SymbolEdit): EditCommand 
             fields: applyFields(s, edit.fields),
           };
           const m = { ...next } as { -readonly [K in keyof SchSymbol]: SchSymbol[K] };
-          if (edit.mirror) m.mirror = edit.mirror; else delete m.mirror;
+          if (edit.mirror) m.mirror = edit.mirror;
+          else delete m.mirror;
           if (edit.excludedFromSim !== undefined) m.excludedFromSim = edit.excludedFromSim;
           return m;
         }),

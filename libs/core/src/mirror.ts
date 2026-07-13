@@ -16,7 +16,11 @@ export function MIRRORVAL(aPoint: number, aMirrorRef: number): number {
 }
 
 /** Mirror a point about a reference point, in the given direction (in place). */
-export function MIRROR(aPoint: VECTOR2I, aMirrorRef: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void {
+export function MIRROR(
+  aPoint: VECTOR2I,
+  aMirrorRef: VECTOR2I,
+  aFlipDirection: FLIP_DIRECTION,
+): void {
   if (aFlipDirection === FLIP_DIRECTION.LEFT_RIGHT) aPoint.x = MIRRORVAL(aPoint.x, aMirrorRef.x);
   else aPoint.y = MIRRORVAL(aPoint.y, aMirrorRef.y);
 }

@@ -39,8 +39,18 @@ export const SYM_TOP_TOOLBAR: ToolEntry[] = [
   { id: 'showDatasheet', icon: 'showDatasheet', title: 'Show associated datasheet or document' },
   { id: 'checkSymbol', icon: 'checkSymbol', title: 'Check duplicate and off-grid pins' },
   sep,
-  { id: 'showDeMorganStandard', icon: 'morganStd', title: 'Show as "De Morgan" standard symbol', toggle: true },
-  { id: 'showDeMorganAlternate', icon: 'morganAlt', title: 'Show as "De Morgan" alternate symbol', toggle: true },
+  {
+    id: 'showDeMorganStandard',
+    icon: 'morganStd',
+    title: 'Show as "De Morgan" standard symbol',
+    toggle: true,
+  },
+  {
+    id: 'showDeMorganAlternate',
+    icon: 'morganAlt',
+    title: 'Show as "De Morgan" alternate symbol',
+    toggle: true,
+  },
   // (unit selector combo box is rendered here by the frame)
   sep,
   { id: 'toggleSyncedPinsMode', icon: 'syncedPins', title: 'Synchronized pins mode', toggle: true },
@@ -51,13 +61,28 @@ export const SYM_TOP_TOOLBAR: ToolEntry[] = [
 /** Left vertical options toolbar (ReCreateOptToolbar). */
 export const SYM_LEFT_TOOLBAR: ToolEntry[] = [
   { id: 'toggleGrid', icon: 'toggleGrid', title: 'Toggle grid display', toggle: true },
-  { id: 'toggleGridOverrides', icon: 'toggleGridOverrides', title: 'Toggle grid overrides', toggle: true },
+  {
+    id: 'toggleGridOverrides',
+    icon: 'toggleGridOverrides',
+    title: 'Toggle grid overrides',
+    toggle: true,
+  },
   { id: 'unitsInches', icon: 'unitsInches', title: 'Inches', toggle: true },
   { id: 'unitsMils', icon: 'unitsMils', title: 'Mils', toggle: true },
   { id: 'unitsMm', icon: 'unitsMm', title: 'Millimeters', toggle: true },
-  { id: 'toggleCursorStyle', icon: 'crosshairSmall', title: 'Toggle display of full-window crosshairs', toggle: true },
+  {
+    id: 'toggleCursorStyle',
+    icon: 'crosshairSmall',
+    title: 'Toggle display of full-window crosshairs',
+    toggle: true,
+  },
   sep,
-  { id: 'showElectricalTypes', icon: 'showElectricalTypes', title: 'Show pin electrical types', toggle: true },
+  {
+    id: 'showElectricalTypes',
+    icon: 'showElectricalTypes',
+    title: 'Show pin electrical types',
+    toggle: true,
+  },
   { id: 'showHiddenPins', icon: 'toggleHiddenPins', title: 'Show hidden pins', toggle: true },
   { id: 'showHiddenFields', icon: 'showHiddenFields', title: 'Show hidden fields', toggle: true },
   sep,

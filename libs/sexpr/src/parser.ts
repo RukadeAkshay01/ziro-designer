@@ -60,9 +60,12 @@ export function parse(src: string): SList {
     }
   }
 
-  const root = tokens[0]!.type === 'lparen' ? parseList() : (() => {
-    throw new ParseError('Expected a top-level list starting with "("', tokens[0]!.pos);
-  })();
+  const root =
+    tokens[0]!.type === 'lparen'
+      ? parseList()
+      : (() => {
+          throw new ParseError('Expected a top-level list starting with "("', tokens[0]!.pos);
+        })();
 
   if (i < tokens.length) {
     throw new ParseError('Unexpected trailing content after top-level list', tokens[i]!.pos);

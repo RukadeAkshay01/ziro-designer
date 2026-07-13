@@ -17,8 +17,12 @@ const key = (p: Vec2): string => `${p.x},${p.y}`;
 function onSegment(p: Vec2, a: Vec2, b: Vec2): boolean {
   const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
   if (cross !== 0) return false;
-  return p.x >= Math.min(a.x, b.x) && p.x <= Math.max(a.x, b.x)
-      && p.y >= Math.min(a.y, b.y) && p.y <= Math.max(a.y, b.y);
+  return (
+    p.x >= Math.min(a.x, b.x) &&
+    p.x <= Math.max(a.x, b.x) &&
+    p.y >= Math.min(a.y, b.y) &&
+    p.y <= Math.max(a.y, b.y)
+  );
 }
 
 /** World connection points of a placed symbol's pins (pin tips through the transform). */
@@ -27,7 +31,11 @@ function symbolPinWorld(sym: SchSymbol, lib: LibSymbol | undefined): Vec2[] {
   const t = symbolTransform(sym.angle, sym.mirror);
   const out: Vec2[] = [];
   for (const u of lib.units) {
-    if ((u.unit !== 0 && u.unit !== sym.unit) || (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)) continue;
+    if (
+      (u.unit !== 0 && u.unit !== sym.unit) ||
+      (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)
+    )
+      continue;
     for (const pin of u.pins) {
       if (pin.hidden) continue; // hidden pins aren't drawn or auto-started (unless "show hidden")
       out.push(localToWorld(sym.at, t, pin.at));
@@ -64,11 +72,14 @@ export function danglingPinPositions(sch: Schematic, libById: Map<string, LibSym
   for (const sh of sch.sheets) for (const p of sh.pins) nodePoints.add(key(p.at));
 
   const wires = sch.lines.filter((l) => l.kind === 'wire' || l.kind === 'bus');
-  for (const w of wires) { nodePoints.add(key(w.start)); nodePoints.add(key(w.end)); }
+  for (const w of wires) {
+    nodePoints.add(key(w.start));
+    nodePoints.add(key(w.end));
+  }
 
   const connected = (p: Vec2): boolean => {
-    if ((pinCount.get(key(p)) ?? 0) > 1) return true;      // stacked on another pin
-    if (nodePoints.has(key(p))) return true;               // junction, label, or wire end here
+    if ((pinCount.get(key(p)) ?? 0) > 1) return true; // stacked on another pin
+    if (nodePoints.has(key(p))) return true; // junction, label, or wire end here
     // Only the rare pin that is on no endpoint needs the mid-span (pass-through) scan.
     for (const w of wires) if (onSegment(p, w.start, w.end)) return true;
     return false;

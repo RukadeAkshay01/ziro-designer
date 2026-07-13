@@ -9,8 +9,8 @@
  */
 
 export type ResolvedModel =
-  | { kind: 'url'; url: string }        // hosted library asset
-  | { kind: 'project'; name: string }   // a file in the uploaded project
+  | { kind: 'url'; url: string } // hosted library asset
+  | { kind: 'project'; name: string } // a file in the uploaded project
   | { kind: 'unresolved' };
 
 export interface ResolveOpts {
@@ -38,7 +38,8 @@ function findInProject(rel: string, files: string[] | undefined): ResolvedModel 
   const norm = (s: string): string => s.replace(/\\/g, '/').replace(/^\.\//, '');
   const target = norm(rel);
   const base = target.split('/').pop()!;
-  const hit = files.find((f) => norm(f) === target) ?? files.find((f) => norm(f).split('/').pop() === base);
+  const hit =
+    files.find((f) => norm(f) === target) ?? files.find((f) => norm(f).split('/').pop() === base);
   return hit ? { kind: 'project', name: hit } : { kind: 'unresolved' };
 }
 
@@ -49,13 +50,20 @@ export function resolveModel(path: string, opts: ResolveOpts): ResolvedModel {
   if (PRJ_ENV.test(p)) return findInProject(p.replace(PRJ_ENV, ''), opts.projectFiles);
 
   if (LIB_ENV.test(p)) {
-    return { kind: 'url', url: joinUrl(opts.libBase, swapExt(p.replace(LIB_ENV, ''), opts.libExt)) };
+    return {
+      kind: 'url',
+      url: joinUrl(opts.libBase, swapExt(p.replace(LIB_ENV, ''), opts.libExt)),
+    };
   }
 
   // No env var: an absolute or bare/relative path. Prefer a project file (bundled
   // model); otherwise, if it looks like a library sub-path, host-resolve it.
   const inPrj = findInProject(p, opts.projectFiles);
   if (inPrj.kind === 'project') return inPrj;
-  if (/\.3dshapes\//i.test(p)) return { kind: 'url', url: joinUrl(opts.libBase, swapExt(p.replace(/^.*?([^/]+\.3dshapes\/)/i, '$1'), opts.libExt)) };
+  if (/\.3dshapes\//i.test(p))
+    return {
+      kind: 'url',
+      url: joinUrl(opts.libBase, swapExt(p.replace(/^.*?([^/]+\.3dshapes\/)/i, '$1'), opts.libExt)),
+    };
   return { kind: 'unresolved' };
 }

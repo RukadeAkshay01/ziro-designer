@@ -9,7 +9,12 @@ import { parse, serialize } from '@ziroeda/sexpr/src/index.js';
 import { readSchematic, writeSchematic } from '@ziroeda/eeschema';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 import { boxSelect } from '@ziroeda/eeschema/src/tools/boxselect.js';
-import { copySelectionText, parsePastedText, translatePayload, pasteItems } from '@ziroeda/eeschema/src/tools/clipboard.js';
+import {
+  copySelectionText,
+  parsePastedText,
+  translatePayload,
+  pasteItems,
+} from '@ziroeda/eeschema/src/tools/clipboard.js';
 import { refId } from '@ziroeda/eeschema/src/tools/hittest.js';
 import { symbolBodyBBox } from '@ziroeda/eeschema/src/tools/bbox.js';
 
@@ -24,19 +29,29 @@ describe('boxSelect (SelectMultiple port)', () => {
   it('left-to-right selects only fully-contained items', () => {
     const doc = sch();
     const sym = doc.symbols[0]!;
-    const body = symbolBodyBBox(sym, new Map(doc.libSymbols.map((l) => [l.libId, l])).get(sym.libId));
+    const body = symbolBodyBBox(
+      sym,
+      new Map(doc.libSymbols.map((l) => [l.libId, l])).get(sym.libId),
+    );
     const pad = mmToIU(1);
 
     // A window that covers the whole body selects the symbol...
     const libById = new Map(doc.libSymbols.map((l) => [l.libId, l]));
-    const all = boxSelect(doc, libById,
-      { x: body.minX - pad, y: body.minY - pad }, { x: body.maxX + pad, y: body.maxY + pad });
+    const all = boxSelect(
+      doc,
+      libById,
+      { x: body.minX - pad, y: body.minY - pad },
+      { x: body.maxX + pad, y: body.maxY + pad },
+    );
     expect(all.has(refId('symbol', sym.uuid, 0))).toBe(true);
 
     // ...but one that only covers half of it does not (contained mode).
-    const half = boxSelect(doc, libById,
+    const half = boxSelect(
+      doc,
+      libById,
       { x: body.minX - pad, y: body.minY - pad },
-      { x: (body.minX + body.maxX) / 2, y: body.maxY + pad });
+      { x: (body.minX + body.maxX) / 2, y: body.maxY + pad },
+    );
     expect(half.has(refId('symbol', sym.uuid, 0))).toBe(false);
   });
 
@@ -47,9 +62,12 @@ describe('boxSelect (SelectMultiple port)', () => {
     const body = symbolBodyBBox(sym, libById.get(sym.libId));
     const pad = mmToIU(1);
     // Same half-covering box, but dragged right-to-left (origin.x > end.x).
-    const ids = boxSelect(doc, libById,
+    const ids = boxSelect(
+      doc,
+      libById,
       { x: (body.minX + body.maxX) / 2, y: body.minY - pad },
-      { x: body.minX - pad, y: body.maxY + pad });
+      { x: body.minX - pad, y: body.maxY + pad },
+    );
     expect(ids.has(refId('symbol', sym.uuid, 0))).toBe(true);
   });
 
@@ -59,8 +77,10 @@ describe('boxSelect (SelectMultiple port)', () => {
       (wire (pts (xy 10 10) (xy 30 10)) (uuid "w-1")))`;
     const doc = readSchematic(parse(src));
     const libById = new Map<string, never>();
-    const minY = mmToIU(9), maxY = mmToIU(11);
-    const left = mmToIU(9), midX = mmToIU(20);
+    const minY = mmToIU(9),
+      maxY = mmToIU(11);
+    const left = mmToIU(9),
+      midX = mmToIU(20);
 
     // Window over only half the wire: not selected.
     const win = boxSelect(doc, libById, { x: left, y: minY }, { x: midX, y: maxY });
@@ -118,7 +138,9 @@ describe('copy/paste (doCopy / Paste port)', () => {
   it('round-trips through desktop-KiCad-style clipboard text including wires', () => {
     const doc = sch();
     const ids = new Set<string>();
-    doc.lines.forEach((l, i) => { if (l.kind === 'wire') ids.add(refId('line', l.uuid, i)); });
+    doc.lines.forEach((l, i) => {
+      if (l.kind === 'wire') ids.add(refId('line', l.uuid, i));
+    });
     const text = copySelectionText(doc, ids);
     const payload = parsePastedText(text, doc)!;
     expect(payload.batch.lines.length).toBe([...ids].length);

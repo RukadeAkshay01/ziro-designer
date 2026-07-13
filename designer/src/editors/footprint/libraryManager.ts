@@ -42,29 +42,46 @@ const BASE = import.meta.env.BASE_URL;
 
 /** A footprint's name is the `.kicad_mod` basename (its FPID item name). */
 export const fpNameOf = (path: string): string =>
-  path.split('/').pop()!.split('\\').pop()!.replace(/\.kicad_mod$/i, '');
+  path
+    .split('/')
+    .pop()!
+    .split('\\')
+    .pop()!
+    .replace(/\.kicad_mod$/i, '');
 
 export class FootprintLibraryManager {
   private libs = new Map<string, ManagedFpLibrary>();
   /** Bumped on every mutation so React can subscribe cheaply. */
   revision = 0;
 
-  private touch(): void { this.revision++; }
+  private touch(): void {
+    this.revision++;
+  }
 
   libraryNames(): string[] {
     return [...this.libs.keys()].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }
 
-  library(name: string): ManagedFpLibrary | undefined { return this.libs.get(name); }
-  libraryExists(name: string): boolean { return this.libs.has(name); }
+  library(name: string): ManagedFpLibrary | undefined {
+    return this.libs.get(name);
+  }
+  libraryExists(name: string): boolean {
+    return this.libs.has(name);
+  }
 
   /** Register a bundled global library by name (its `.kicad_mod`s fetched on demand). */
   addGlobalLibrary(name: string, footprintNames: string[]): void {
     if (this.libs.has(name)) return;
     this.libs.set(name, {
-      name, fileName: `${name}.pretty`, scope: 'global', loaded: false,
-      pendingNames: footprintNames, footprints: new Map(), original: new Map(),
-      modified: new Set(), libModified: false,
+      name,
+      fileName: `${name}.pretty`,
+      scope: 'global',
+      loaded: false,
+      pendingNames: footprintNames,
+      footprints: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: false,
     });
     this.touch();
   }
@@ -73,10 +90,21 @@ export class FootprintLibraryManager {
    * Add a project library from its already-loaded `.kicad_mod` files (the
    * members of one `.pretty` directory of the open project).
    */
-  addProjectLibrary(name: string, dirPath: string, entries: { fileName: string; text: string }[]): void {
+  addProjectLibrary(
+    name: string,
+    dirPath: string,
+    entries: { fileName: string; text: string }[],
+  ): void {
     const lib: ManagedFpLibrary = {
-      name, fileName: dirPath, scope: 'project', loaded: true, pendingNames: [],
-      footprints: new Map(), original: new Map(), modified: new Set(), libModified: false,
+      name,
+      fileName: dirPath,
+      scope: 'project',
+      loaded: true,
+      pendingNames: [],
+      footprints: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: false,
     };
     for (const e of entries) {
       const fp = readFootprintFile(parse(e.text));
@@ -92,8 +120,15 @@ export class FootprintLibraryManager {
   /** Create a new, empty library (ACTIONS::newLibrary). */
   createLibrary(name: string): ManagedFpLibrary {
     const lib: ManagedFpLibrary = {
-      name, fileName: `${name}.pretty`, scope: 'project', loaded: true, pendingNames: [],
-      footprints: new Map(), original: new Map(), modified: new Set(), libModified: true,
+      name,
+      fileName: `${name}.pretty`,
+      scope: 'project',
+      loaded: true,
+      pendingNames: [],
+      footprints: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: true,
     };
     this.libs.set(name, lib);
     this.touch();
@@ -123,7 +158,9 @@ export class FootprintLibraryManager {
     if (existing) return existing;
     if (lib.scope === 'global') {
       try {
-        const text = await fetch(`${BASE}footprints/${encodeURIComponent(lib.name)}.pretty/${encodeURIComponent(fpName)}.kicad_mod`).then((r) => {
+        const text = await fetch(
+          `${BASE}footprints/${encodeURIComponent(lib.name)}.pretty/${encodeURIComponent(fpName)}.kicad_mod`,
+        ).then((r) => {
           if (!r.ok) throw new Error(`${r.status}`);
           return r.text();
         });
@@ -173,8 +210,9 @@ export class FootprintLibraryManager {
   renameFootprint(libName: string, oldName: string, newName: string, fp: PcbFootprint): void {
     const lib = this.libs.get(libName);
     if (!lib) return;
-    const entries = [...lib.footprints.entries()].map(([k, v]) =>
-      (k === oldName ? [newName, fp] : [k, v]) as [string, PcbFootprint]);
+    const entries = [...lib.footprints.entries()].map(
+      ([k, v]) => (k === oldName ? [newName, fp] : [k, v]) as [string, PcbFootprint],
+    );
     lib.footprints = new Map(entries);
     lib.modified.delete(oldName);
     lib.modified.add(newName);

@@ -42,7 +42,9 @@ describe('makeLabel', () => {
   it('re-reads a serialized label back to the same kind/text/position', () => {
     const doc = addItems({ labels: [makeLabel('label', 'D0', at(12, 8))] }).apply(EMPTY());
     // Re-read the label's own node to confirm the writer/reader agree on it.
-    const back = readSchematic(parse(`(kicad_sch (version 1) (lib_symbols) ${serialize(doc.labels[0]!.source)})`));
+    const back = readSchematic(
+      parse(`(kicad_sch (version 1) (lib_symbols) ${serialize(doc.labels[0]!.source)})`),
+    );
     expect(back.labels).toHaveLength(1);
     expect(back.labels[0]!.kind).toBe('label');
     expect(back.labels[0]!.text).toBe('D0');
@@ -52,7 +54,9 @@ describe('makeLabel', () => {
   it('carries the flag shape on global/hierarchical labels through read', () => {
     const g = makeLabel('global_label', 'VCC', at(0, 0));
     expect(g.shape).toBe('bidirectional');
-    const back = readSchematic(parse(`(kicad_sch (version 1) (lib_symbols) ${serialize(g.source)})`));
+    const back = readSchematic(
+      parse(`(kicad_sch (version 1) (lib_symbols) ${serialize(g.source)})`),
+    );
     expect(back.labels[0]!.kind).toBe('global_label');
     expect(back.labels[0]!.shape).toBe('bidirectional');
   });

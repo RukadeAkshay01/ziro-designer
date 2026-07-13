@@ -69,14 +69,15 @@ describe('PCB_TRACK', () => {
   });
   it('HitTest respects half-width + accuracy', () => {
     const t = mk();
-    expect(t.HitTest({ x: 150, y: 40 }, 10)).toBe(true);  // 40 <= 10 + 50
+    expect(t.HitTest({ x: 150, y: 40 }, 10)).toBe(true); // 40 <= 10 + 50
     expect(t.HitTest({ x: 150, y: 100 }, 10)).toBe(false);
   });
 });
 
 describe('PCB_ARC', () => {
   // CCW quarter arc, centre origin, radius 1000.
-  const mk = (): PCB_ARC => new PCB_ARC({ x: 1000, y: 0 }, { x: 707, y: 707 }, { x: 0, y: 1000 }, 100, 'F.Cu', 1);
+  const mk = (): PCB_ARC =>
+    new PCB_ARC({ x: 1000, y: 0 }, { x: 707, y: 707 }, { x: 0, y: 1000 }, 100, 'F.Cu', 1);
 
   it('centre and radius', () => {
     const a = mk();
@@ -107,7 +108,15 @@ describe('PCB_VIA', () => {
     expect(through.GetPosition()).toEqual({ x: -100, y: 0 });
     expect(through.GetLayer()).toBe('F.Cu'); // through: unchanged
 
-    const blind = new PCB_VIA({ x: 100, y: 0 }, 200, 100, 'F.Cu', 'In1.Cu', VIATYPE.BLIND_BURIED, 1);
+    const blind = new PCB_VIA(
+      { x: 100, y: 0 },
+      200,
+      100,
+      'F.Cu',
+      'In1.Cu',
+      VIATYPE.BLIND_BURIED,
+      1,
+    );
     blind.Flip({ x: 0, y: 0 }, FLIP_DIRECTION.LEFT_RIGHT);
     expect(blind.GetLayer()).toBe('B.Cu');
     expect(blind.GetBottomLayer()).toBe('In1.Cu');

@@ -7,7 +7,7 @@
 
 import { BOARD_ITEM } from './board_item.js';
 import { FlipLayer, type PCB_LAYER_ID } from './layer_ids.js';
-import { EDA_SHAPE, SHAPE_T } from '@ziroeda/common/src/eda_shape.js';
+import { EDA_SHAPE, type SHAPE_T } from '@ziroeda/common/src/eda_shape.js';
 import type { VECTOR2I } from '@ziroeda/kimath/src/math/vector2.js';
 import type { EDA_ANGLE } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import type { FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
@@ -16,32 +16,59 @@ export class PCB_SHAPE extends BOARD_ITEM {
   /** The composed shape geometry (KiCad's EDA_SHAPE base). */
   readonly m_eda: EDA_SHAPE;
 
-  constructor(shape: SHAPE_T, layer: PCB_LAYER_ID, opts: {
-    start?: VECTOR2I; end?: VECTOR2I; mid?: VECTOR2I; poly?: VECTOR2I[]; width?: number; filled?: boolean;
-  } = {}) {
+  constructor(
+    shape: SHAPE_T,
+    layer: PCB_LAYER_ID,
+    opts: {
+      start?: VECTOR2I;
+      end?: VECTOR2I;
+      mid?: VECTOR2I;
+      poly?: VECTOR2I[];
+      width?: number;
+      filled?: boolean;
+    } = {},
+  ) {
     super(layer);
     this.m_eda = new EDA_SHAPE(shape, opts);
   }
 
-  GetShape(): SHAPE_T { return this.m_eda.GetShape(); }
-  GetStart(): VECTOR2I { return this.m_eda.GetStart(); }
-  GetEnd(): VECTOR2I { return this.m_eda.GetEnd(); }
-  GetWidth(): number { return this.m_eda.GetWidth(); }
+  GetShape(): SHAPE_T {
+    return this.m_eda.GetShape();
+  }
+  GetStart(): VECTOR2I {
+    return this.m_eda.GetStart();
+  }
+  GetEnd(): VECTOR2I {
+    return this.m_eda.GetEnd();
+  }
+  GetWidth(): number {
+    return this.m_eda.GetWidth();
+  }
 
-  GetPosition(): VECTOR2I { return this.m_eda.GetStart(); }
+  GetPosition(): VECTOR2I {
+    return this.m_eda.GetStart();
+  }
   SetPosition(aPos: VECTOR2I): void {
     const cur = this.m_eda.GetStart();
     this.m_eda.move({ x: aPos.x - cur.x, y: aPos.y - cur.y });
   }
 
-  Move(aMoveVector: VECTOR2I): void { this.m_eda.move(aMoveVector); }
-  Rotate(aRotCentre: VECTOR2I, aAngle: EDA_ANGLE): void { this.m_eda.rotate(aRotCentre, aAngle); }
-  Mirror(aCentre: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void { this.m_eda.flip(aCentre, aFlipDirection); }
+  Move(aMoveVector: VECTOR2I): void {
+    this.m_eda.move(aMoveVector);
+  }
+  Rotate(aRotCentre: VECTOR2I, aAngle: EDA_ANGLE): void {
+    this.m_eda.rotate(aRotCentre, aAngle);
+  }
+  Mirror(aCentre: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void {
+    this.m_eda.flip(aCentre, aFlipDirection);
+  }
 
   Flip(aCentre: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void {
     this.m_eda.flip(aCentre, aFlipDirection);
     this.SetLayer(FlipLayer(this.GetLayer()));
   }
 
-  HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean { return this.m_eda.hitTest(aPosition, aAccuracy); }
+  HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean {
+    return this.m_eda.hitTest(aPosition, aAccuracy);
+  }
 }

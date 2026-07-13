@@ -34,8 +34,17 @@ import { computeNetlist, enumeratePins, type PinNode } from './nets.js';
 
 /** ELECTRICAL_PINTYPE order, matching the ERC matrix rows/columns. */
 const PIN_TYPES = [
-  'input', 'output', 'bidirectional', 'tri_state', 'passive', 'free',
-  'unspecified', 'power_in', 'power_out', 'open_collector', 'open_emitter',
+  'input',
+  'output',
+  'bidirectional',
+  'tri_state',
+  'passive',
+  'free',
+  'unspecified',
+  'power_in',
+  'power_out',
+  'open_collector',
+  'open_emitter',
   'no_connect',
 ] as const;
 
@@ -46,24 +55,26 @@ const typeIndex = (token: string): PinTypeIndex => {
   return i === -1 ? 6 : i; // unknown token -> unspecified, as KiCad's parser does
 };
 
-const OK = 0, WAR = 1, ERR = 2;
+const OK = 0,
+  WAR = 1,
+  ERR = 2;
 type PinError = typeof OK | typeof WAR | typeof ERR;
 
 /** ERC_SETTINGS::m_defaultPinMap — the exact default conflict matrix. */
 const PIN_MAP: PinError[][] = [
   /*         I,   O,    Bi,   3S,   Pas,  NIC,  UnS,  PwrI, PwrO, OC,   OE,   NC */
-  /* I  */ [OK,  OK,   OK,   OK,   OK,   OK,   WAR,  OK,   OK,   OK,   OK,   ERR],
-  /* O  */ [OK,  ERR,  OK,   WAR,  OK,   OK,   WAR,  OK,   ERR,  ERR,  ERR,  ERR],
-  /* Bi */ [OK,  OK,   OK,   OK,   OK,   OK,   WAR,  OK,   WAR,  OK,   WAR,  ERR],
-  /* 3S */ [OK,  WAR,  OK,   OK,   OK,   OK,   WAR,  WAR,  ERR,  WAR,  WAR,  ERR],
-  /*Pas */ [OK,  OK,   OK,   OK,   OK,   OK,   WAR,  OK,   OK,   OK,   OK,   ERR],
-  /*NIC */ [OK,  OK,   OK,   OK,   OK,   OK,   OK,   OK,   OK,   OK,   OK,   ERR],
-  /*UnS */ [WAR, WAR,  WAR,  WAR,  WAR,  OK,   WAR,  WAR,  WAR,  WAR,  WAR,  ERR],
-  /*PwrI*/ [OK,  OK,   OK,   WAR,  OK,   OK,   WAR,  OK,   OK,   OK,   OK,   ERR],
-  /*PwrO*/ [OK,  ERR,  WAR,  ERR,  OK,   OK,   WAR,  OK,   ERR,  ERR,  ERR,  ERR],
-  /* OC */ [OK,  ERR,  OK,   WAR,  OK,   OK,   WAR,  OK,   ERR,  OK,   OK,   ERR],
-  /* OE */ [OK,  ERR,  WAR,  WAR,  OK,   OK,   WAR,  OK,   ERR,  OK,   OK,   ERR],
-  /* NC */ [ERR, ERR,  ERR,  ERR,  ERR,  ERR,  ERR,  ERR,  ERR,  ERR,  ERR,  ERR],
+  /* I  */ [OK, OK, OK, OK, OK, OK, WAR, OK, OK, OK, OK, ERR],
+  /* O  */ [OK, ERR, OK, WAR, OK, OK, WAR, OK, ERR, ERR, ERR, ERR],
+  /* Bi */ [OK, OK, OK, OK, OK, OK, WAR, OK, WAR, OK, WAR, ERR],
+  /* 3S */ [OK, WAR, OK, OK, OK, OK, WAR, WAR, ERR, WAR, WAR, ERR],
+  /*Pas */ [OK, OK, OK, OK, OK, OK, WAR, OK, OK, OK, OK, ERR],
+  /*NIC */ [OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, ERR],
+  /*UnS */ [WAR, WAR, WAR, WAR, WAR, OK, WAR, WAR, WAR, WAR, WAR, ERR],
+  /*PwrI*/ [OK, OK, OK, WAR, OK, OK, WAR, OK, OK, OK, OK, ERR],
+  /*PwrO*/ [OK, ERR, WAR, ERR, OK, OK, WAR, OK, ERR, ERR, ERR, ERR],
+  /* OC */ [OK, ERR, OK, WAR, OK, OK, WAR, OK, ERR, OK, OK, ERR],
+  /* OE */ [OK, ERR, WAR, WAR, OK, OK, WAR, OK, ERR, OK, OK, ERR],
+  /* NC */ [ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR],
 ];
 
 // erc.cpp pin-type driver sets.
@@ -73,9 +84,17 @@ const DRIVEN = new Set(['input', 'power_in']);
 
 /** Human names, as ElectricalPinTypeGetText produces them. */
 const TYPE_NAMES: Record<string, string> = {
-  input: 'Input', output: 'Output', bidirectional: 'Bidirectional', tri_state: 'Tri-state',
-  passive: 'Passive', free: 'Free', unspecified: 'Unspecified', power_in: 'Power input',
-  power_out: 'Power output', open_collector: 'Open collector', open_emitter: 'Open emitter',
+  input: 'Input',
+  output: 'Output',
+  bidirectional: 'Bidirectional',
+  tri_state: 'Tri-state',
+  passive: 'Passive',
+  free: 'Free',
+  unspecified: 'Unspecified',
+  power_in: 'Power input',
+  power_out: 'Power output',
+  open_collector: 'Open collector',
+  open_emitter: 'Open emitter',
   no_connect: 'Unconnected',
 };
 
@@ -114,8 +133,13 @@ const SEVERITY: Record<ErcCode, ErcSeverity> = {
   label_single_pin: 'warning',
 };
 
-const violation = (code: ErcCode, message: string, at: Vec2, items: string[]): ErcViolation =>
-  ({ code, severity: SEVERITY[code], message, at, items });
+const violation = (code: ErcCode, message: string, at: Vec2, items: string[]): ErcViolation => ({
+  code,
+  severity: SEVERITY[code],
+  message,
+  at,
+  items,
+});
 
 /** A pin id `<symId>:pin<k>` selects its parent symbol in the editor. */
 const selectableId = (id: string): string => {
@@ -137,12 +161,15 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
   // Item-kind lookups by id, matching the node ids computeNetlist emits.
   const labelIds = new Map<string, { text: string; at: Vec2; kind: string }>();
   sch.labels.forEach((l, i) => {
-    if (l.kind !== 'text') labelIds.set(refId('label', l.uuid, i), { text: l.text, at: l.at, kind: l.kind });
+    if (l.kind !== 'text')
+      labelIds.set(refId('label', l.uuid, i), { text: l.text, at: l.at, kind: l.kind });
   });
   const noConnectIds = new Map<string, Vec2>();
   sch.noConnects.forEach((nc, i) => noConnectIds.set(refId('noconnect', nc.uuid, i), nc.at));
   const wireIds = new Set<string>();
-  sch.lines.forEach((l, i) => { if (l.kind === 'wire') wireIds.add(refId('line', l.uuid, i)); });
+  sch.lines.forEach((l, i) => {
+    if (l.kind === 'wire') wireIds.add(refId('line', l.uuid, i));
+  });
   // Sheet-pin node ids (`<sheetId>:sheetpin<k>`): they count as connections; nets
   // crossing the hierarchy are exempt from single-sheet label/unconnected checks.
   const isSheetPin = (id: string): boolean => id.includes(':sheetpin');
@@ -162,13 +189,24 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
     if (netNCs.length > 0) {
       if (distinctPins.length > 1) {
         const p = netPins[0]!;
-        out.push(violation('no_connect_connected',
-          'A pin with a "no connection" flag is connected', p.at,
-          [selectableId(p.id), netNCs[0]!]));
+        out.push(
+          violation(
+            'no_connect_connected',
+            'A pin with a "no connection" flag is connected',
+            p.at,
+            [selectableId(p.id), netNCs[0]!],
+          ),
+        );
       }
       if (netPins.length === 0 && netLabels.length === 0) {
-        out.push(violation('no_connect_dangling',
-          'Unconnected "no connection" flag', noConnectIds.get(netNCs[0]!)!, [netNCs[0]!]));
+        out.push(
+          violation(
+            'no_connect_dangling',
+            'Unconnected "no connection" flag',
+            noConnectIds.get(netNCs[0]!)!,
+            [netNCs[0]!],
+          ),
+        );
       }
       continue; // a no-connect exempts the subgraph from the unconnected-pin check
     }
@@ -181,9 +219,14 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
     if (netPins.length > 0 && netLabels.length === 0 && distinctPins.length === 1) {
       const p = distinctPins[0]!;
       if (p.electricalType !== 'no_connect' && p.electricalType !== 'free' && !p.hidden) {
-        out.push(violation('pin_not_connected',
-          `Pin ${p.number} (${TYPE_NAMES[p.electricalType] ?? p.electricalType}) of ${p.ref} is not connected`,
-          p.at, [selectableId(p.id)]));
+        out.push(
+          violation(
+            'pin_not_connected',
+            `Pin ${p.number} (${TYPE_NAMES[p.electricalType] ?? p.electricalType}) of ${p.ref} is not connected`,
+            p.at,
+            [selectableId(p.id)],
+          ),
+        );
       }
     }
   }
@@ -203,25 +246,45 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
       if (e) e.others++;
     };
     for (const p of pins) if (p.electricalType !== 'no_connect') bump(p.at);
-    sch.lines.forEach((l) => { if (l.kind === 'wire') { bump(l.start); bump(l.end); } });
-    sch.labels.forEach((l) => { if (l.kind !== 'text') bump(l.at); });
+    sch.lines.forEach((l) => {
+      if (l.kind === 'wire') {
+        bump(l.start);
+        bump(l.end);
+      }
+    });
+    sch.labels.forEach((l) => {
+      if (l.kind !== 'text') bump(l.at);
+    });
     sch.junctions.forEach((j) => bump(j.at));
     for (const { nc, others } of byPoint.values()) {
       if (others > 0) {
         const p = nc[0]!;
-        out.push(violation('no_connect_connected',
-          `Pin with 'no connection' type is connected (pin ${p.number} of ${p.ref})`,
-          p.at, [selectableId(p.id)]));
+        out.push(
+          violation(
+            'no_connect_connected',
+            `Pin with 'no connection' type is connected (pin ${p.number} of ${p.ref})`,
+            p.at,
+            [selectableId(p.id)],
+          ),
+        );
       }
     }
   }
 
   // ----- name-merged nets (KiCad m_nets: subgraphs grouped by net name) ---------
-  interface NetGroup { pins: PinNode[]; hasNC: boolean; labels: string[]; hasSheetPin: boolean }
+  interface NetGroup {
+    pins: PinNode[];
+    hasNC: boolean;
+    labels: string[];
+    hasSheetPin: boolean;
+  }
   const groups = new Map<string, NetGroup>();
   for (const net of netlist.nets) {
     let g = groups.get(net.name);
-    if (!g) { g = { pins: [], hasNC: false, labels: [], hasSheetPin: false }; groups.set(net.name, g); }
+    if (!g) {
+      g = { pins: [], hasNC: false, labels: [], hasSheetPin: false };
+      groups.set(net.name, g);
+    }
     for (const id of net.items) {
       const p = pinById.get(id);
       if (p) g.pins.push(p);
@@ -248,10 +311,12 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
 
       if (DRIVEN.has(refType)) {
         // Prefer a visible pin, and on a power net a power-in pin, for the report.
-        if (!needsDriver
-            || (needsDriver.hidden && !ref.hidden)
-            || (isPowerNet !== (needsDriver.electricalType === 'power_in')
-                && isPowerNet === (refType === 'power_in'))) {
+        if (
+          !needsDriver ||
+          (needsDriver.hidden && !ref.hidden) ||
+          (isPowerNet !== (needsDriver.electricalType === 'power_in') &&
+            isPowerNet === (refType === 'power_in'))
+        ) {
           needsDriver = ref;
         }
       }
@@ -284,15 +349,24 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
         if (other === -1) return true;
         const q = gpins[other]!;
         const d = (q.at.x - pin.at.x) ** 2 + (q.at.y - pin.at.y) ** 2;
-        if (d < best) { best = d; nearest = other; nearestErc = erc; }
+        if (d < best) {
+          best = d;
+          nearest = other;
+          nearestErc = erc;
+        }
         return false;
       });
       if (nearest !== -1) {
         const other = gpins[nearest]!;
         const code: ErcCode = nearestErc === ERR ? 'pin_to_pin_error' : 'pin_to_pin_warning';
-        out.push(violation(code,
-          `Pins of type ${TYPE_NAMES[pin.electricalType]} and ${TYPE_NAMES[other.electricalType]} are connected`,
-          pin.at, [selectableId(pin.id), selectableId(other.id)]));
+        out.push(
+          violation(
+            code,
+            `Pins of type ${TYPE_NAMES[pin.electricalType]} and ${TYPE_NAMES[other.electricalType]} are connected`,
+            pin.at,
+            [selectableId(pin.id), selectableId(other.id)],
+          ),
+        );
       }
     }
 
@@ -300,10 +374,16 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
     // side; single-sheet ERC cannot see that, so the driver check stands down.
     if (needsDriver && !hasDriver && !group.hasNC && !group.hasSheetPin) {
       const code: ErcCode = isPowerNet ? 'power_pin_not_driven' : 'pin_not_driven';
-      out.push(violation(code,
-        isPowerNet ? 'Input Power pin not driven by any Output Power pins'
-                   : 'Input pin not driven by any Output pins',
-        needsDriver.at, [selectableId(needsDriver.id)]));
+      out.push(
+        violation(
+          code,
+          isPowerNet
+            ? 'Input Power pin not driven by any Output Power pins'
+            : 'Input pin not driven by any Output pins',
+          needsDriver.at,
+          [selectableId(needsDriver.id)],
+        ),
+      );
     }
 
     // ercCheckLabels: labels need pins on their (name-merged) net. Locals and
@@ -314,17 +394,27 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
         const l = labelIds.get(lid)!;
         if (l.kind === 'global_label' && gpins.length === 1) continue;
         if (gpins.length === 0) {
-          out.push(violation('label_not_connected', `Label '${l.text}' not connected`, l.at, [lid]));
+          out.push(
+            violation('label_not_connected', `Label '${l.text}' not connected`, l.at, [lid]),
+          );
         } else if (l.kind !== 'global_label') {
-          out.push(violation('label_single_pin', `Label '${l.text}' connected to only one pin`, l.at, [lid]));
+          out.push(
+            violation('label_single_pin', `Label '${l.text}' connected to only one pin`, l.at, [
+              lid,
+            ]),
+          );
         }
       }
     }
   }
 
   // Stable order: errors first, then by position (KiCad sorts its report).
-  out.sort((a, b) => (a.severity === b.severity
-    ? a.at.y - b.at.y || a.at.x - b.at.x
-    : a.severity === 'error' ? -1 : 1));
+  out.sort((a, b) =>
+    a.severity === b.severity
+      ? a.at.y - b.at.y || a.at.x - b.at.x
+      : a.severity === 'error'
+        ? -1
+        : 1,
+  );
   return out;
 }

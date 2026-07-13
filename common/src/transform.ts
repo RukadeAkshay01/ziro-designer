@@ -32,11 +32,16 @@ export const IDENTITY: Transform = { x1: 1, y1: 0, x2: 0, y2: 1 };
  */
 export function rotationTransform(angleDeg: number): Transform {
   switch (((angleDeg % 360) + 360) % 360) {
-    case 0: return { x1: 1, y1: 0, x2: 0, y2: 1 };
-    case 90: return { x1: 0, y1: 1, x2: -1, y2: 0 };
-    case 180: return { x1: -1, y1: 0, x2: 0, y2: -1 };
-    case 270: return { x1: 0, y1: -1, x2: 1, y2: 0 };
-    default: return IDENTITY;
+    case 0:
+      return { x1: 1, y1: 0, x2: 0, y2: 1 };
+    case 90:
+      return { x1: 0, y1: 1, x2: -1, y2: 0 };
+    case 180:
+      return { x1: -1, y1: 0, x2: 0, y2: -1 };
+    case 270:
+      return { x1: 0, y1: -1, x2: 1, y2: 0 };
+    default:
+      return IDENTITY;
   }
 }
 
@@ -50,7 +55,8 @@ export function rotationTransform(angleDeg: number): Transform {
  * where temp is (1,0,0,-1) for mirror-X and (-1,0,0,1) for mirror-Y.
  */
 export function composeMirror(m: Transform, axis: 'x' | 'y'): Transform {
-  const t: Transform = axis === 'x' ? { x1: 1, y1: 0, x2: 0, y2: -1 } : { x1: -1, y1: 0, x2: 0, y2: 1 };
+  const t: Transform =
+    axis === 'x' ? { x1: 1, y1: 0, x2: 0, y2: -1 } : { x1: -1, y1: 0, x2: 0, y2: 1 };
   const zz = (v: number): number => (v === 0 ? 0 : v);
   return {
     x1: zz(m.x1 * t.x1 + m.x2 * t.y1),
@@ -113,9 +119,17 @@ export interface Orientation {
 // (SCH_SYMBOL::GetOrientation's rotate_values), in the same preference order so
 // our serialization matches KiCad's.
 const ORIENT_STATES: Orientation[] = [
-  { angle: 0 }, { angle: 90 }, { angle: 180 }, { angle: 270 },
-  { angle: 0, mirror: 'x' }, { angle: 90, mirror: 'x' }, { angle: 270, mirror: 'x' },
-  { angle: 0, mirror: 'y' }, { angle: 90, mirror: 'y' }, { angle: 180, mirror: 'y' }, { angle: 270, mirror: 'y' },
+  { angle: 0 },
+  { angle: 90 },
+  { angle: 180 },
+  { angle: 270 },
+  { angle: 0, mirror: 'x' },
+  { angle: 90, mirror: 'x' },
+  { angle: 270, mirror: 'x' },
+  { angle: 0, mirror: 'y' },
+  { angle: 90, mirror: 'y' },
+  { angle: 180, mirror: 'y' },
+  { angle: 270, mirror: 'y' },
 ];
 
 const sameTransform = (a: Transform, b: Transform): boolean =>
@@ -131,7 +145,9 @@ export function orientationFromTransform(t: Transform): Orientation {
 
 /** Apply a 90° rotation to an orientation (CCW unless `cw`), as KiCad's Rotate does. */
 export function rotateOrientation(o: Orientation, cw = false): Orientation {
-  return orientationFromTransform(composeTransform(symbolTransform(o.angle, o.mirror), cw ? ROTATE_CW : ROTATE_CCW));
+  return orientationFromTransform(
+    composeTransform(symbolTransform(o.angle, o.mirror), cw ? ROTATE_CW : ROTATE_CCW),
+  );
 }
 
 /**

@@ -5,7 +5,12 @@ import { SchematicEditor, type PickedFile } from './editors/schematic/SchematicE
 import { PcbEditor } from './editors/pcb/PcbEditor.js';
 import { SymbolEditor } from './editors/symbol/SymbolEditor.js';
 import { FootprintEditor } from './editors/footprint/FootprintEditor.js';
-import { storageAvailable, listProjects, loadProject, updateProjectFiles } from './home/projectStore.js';
+import {
+  storageAvailable,
+  listProjects,
+  loadProject,
+  updateProjectFiles,
+} from './home/projectStore.js';
 import { saveSession, loadSession } from './home/session.js';
 import './ui/shell.css';
 
@@ -14,7 +19,11 @@ const enc = new TextEncoder();
 
 const projectNameOf = (files: PickedFile[]): string => {
   const pro = files.find((f) => /\.kicad_pro$/i.test(f.name));
-  const src = pro?.name ?? files.find((f) => /\.kicad_sch$/i.test(f.name))?.name ?? files[0]?.name ?? 'Project';
+  const src =
+    pro?.name ??
+    files.find((f) => /\.kicad_sch$/i.test(f.name))?.name ??
+    files[0]?.name ??
+    'Project';
   return pcbBasename(src).replace(/\.(kicad_pro|kicad_sch|kicad_pcb)$/i, '');
 };
 
@@ -68,7 +77,9 @@ export function App(): JSX.Element {
         else if (s.view === 'symbols') setSymMounted(true);
         else if (s.view === 'footprints') setFpMounted(true);
         setView(s.view);
-      } catch { /* fall back to home */ } finally {
+      } catch {
+        /* fall back to home */
+      } finally {
         setRestoring(false);
       }
     })();
@@ -101,7 +112,9 @@ export function App(): JSX.Element {
         try {
           const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
           if (rec) await updateProjectFiles(rec.id, fullChanged);
-        } catch { /* storage disabled */ }
+        } catch {
+          /* storage disabled */
+        }
       })();
     }, 1200);
   }, []);
@@ -116,15 +129,28 @@ export function App(): JSX.Element {
   );
   // KiCad shows "<project> — <Editor>" in the window title; we put it in the menu bar.
   const projectName = useMemo(
-    () => projectFiles ? projectNameOf(projectFiles)
-      : standalonePcb ? pcbBasename(standalonePcb.name).replace(/\.kicad_pcb$/i, '') : '',
+    () =>
+      projectFiles
+        ? projectNameOf(projectFiles)
+        : standalonePcb
+          ? pcbBasename(standalonePcb.name).replace(/\.kicad_pcb$/i, '')
+          : '',
     [projectFiles, standalonePcb],
   );
 
   const goHome = useCallback(() => setView('home'), []);
-  const showPcb = useCallback(() => { setPcbMounted(true); setView('pcb'); }, []);
-  const showSchematic = useCallback(() => { setSchMounted(true); setView('schematic'); }, []);
-  const showSymbolEditor = useCallback(() => { setSymMounted(true); setView('symbols'); }, []);
+  const showPcb = useCallback(() => {
+    setPcbMounted(true);
+    setView('pcb');
+  }, []);
+  const showSchematic = useCallback(() => {
+    setSchMounted(true);
+    setView('schematic');
+  }, []);
+  const showSymbolEditor = useCallback(() => {
+    setSymMounted(true);
+    setView('symbols');
+  }, []);
 
   // The symbol editor's SCH_ACTIONS::addSymbolToSchematic: switch to eeschema
   // with the symbol attached to the cursor for placement.
@@ -136,8 +162,14 @@ export function App(): JSX.Element {
 
   if (restoring) {
     return (
-      <div className="ze-app" style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="ze-loading-card"><span className="ze-spinner" /><span>Restoring your project…</span></div>
+      <div
+        className="ze-app"
+        style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <div className="ze-loading-card">
+          <span className="ze-spinner" />
+          <span>Restoring your project…</span>
+        </div>
       </div>
     );
   }
@@ -149,26 +181,46 @@ export function App(): JSX.Element {
       <HomePage
         initialFiles={openFiles}
         onOpenSchematic={() => {
-          setProjectFiles(null); setStandalonePcb(null); setStartFile(null);
-          setSchMounted(true); setView('schematic');
+          setProjectFiles(null);
+          setStandalonePcb(null);
+          setStartFile(null);
+          setSchMounted(true);
+          setView('schematic');
         }}
         onOpenProject={(files, start) => {
-          setProjectFiles(files); setStandalonePcb(null); setStartFile(start ?? null);
-          setSchMounted(true); setView('schematic');
+          setProjectFiles(files);
+          setStandalonePcb(null);
+          setStartFile(start ?? null);
+          setSchMounted(true);
+          setView('schematic');
         }}
         onOpenPcb={(file, files) => {
-          if (files) { setProjectFiles(files); setStandalonePcb(null); }
-          else { setStandalonePcb(file); setProjectFiles(null); }
-          setPcbMounted(true); setView('pcb');
+          if (files) {
+            setProjectFiles(files);
+            setStandalonePcb(null);
+          } else {
+            setStandalonePcb(file);
+            setProjectFiles(null);
+          }
+          setPcbMounted(true);
+          setView('pcb');
         }}
         onOpenSymbolEditor={(files, startFile) => {
-          if (files) { setProjectFiles(files); setStandalonePcb(null); }
-          setSymMounted(true); setView('symbols');
+          if (files) {
+            setProjectFiles(files);
+            setStandalonePcb(null);
+          }
+          setSymMounted(true);
+          setView('symbols');
           setSymRequest((prev) => ({ file: startFile ?? null, nonce: (prev?.nonce ?? 0) + 1 }));
         }}
         onOpenFootprintEditor={(files, startFile) => {
-          if (files) { setProjectFiles(files); setStandalonePcb(null); }
-          setFpMounted(true); setView('footprints');
+          if (files) {
+            setProjectFiles(files);
+            setStandalonePcb(null);
+          }
+          setFpMounted(true);
+          setView('footprints');
           setFpRequest((prev) => ({ file: startFile ?? null, nonce: (prev?.nonce ?? 0) + 1 }));
         }}
       />

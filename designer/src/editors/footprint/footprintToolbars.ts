@@ -15,7 +15,11 @@ const sep: ToolEntry = 'sep';
 /** TOP_MAIN toolbar (button portion; the grid/zoom/layer combos follow it). */
 export const FP_TOP_TOOLBAR: ToolEntry[] = [
   { id: 'newFootprint', icon: 'newFootprint', title: 'New footprint' },
-  { id: 'createFootprint', icon: 'createFootprint', title: 'Create new footprint using the footprint wizard' },
+  {
+    id: 'createFootprint',
+    icon: 'createFootprint',
+    title: 'Create new footprint using the footprint wizard',
+  },
   { id: 'save', icon: 'save', title: 'Save changes' },
   sep,
   { id: 'print', icon: 'print', title: 'Print footprint' },
@@ -38,7 +42,11 @@ export const FP_TOP_TOOLBAR: ToolEntry[] = [
   sep,
   { id: 'footprintProperties', icon: 'footprintProperties', title: 'Edit footprint properties' },
   { id: 'padTable', icon: 'padTable', title: 'Show pad list' },
-  { id: 'defaultPadProperties', icon: 'defaultPadProperties', title: 'Edit default pad properties' },
+  {
+    id: 'defaultPadProperties',
+    icon: 'defaultPadProperties',
+    title: 'Edit default pad properties',
+  },
   { id: 'showDatasheet', icon: 'showDatasheet', title: 'Show datasheet' },
   { id: 'checkFootprint', icon: 'checkFootprint', title: 'Run footprint checker' },
   sep,
@@ -49,8 +57,18 @@ export const FP_TOP_TOOLBAR: ToolEntry[] = [
 /** LEFT (view options) toolbar. */
 export const FP_LEFT_TOOLBAR: ToolEntry[] = [
   { id: 'toggleGrid', icon: 'toggleGrid', title: 'Show grid', toggle: true },
-  { id: 'toggleGridOverrides', icon: 'toggleGridOverrides', title: 'Toggle grid overrides', toggle: true },
-  { id: 'togglePolarCoords', icon: 'togglePolarCoords', title: 'Display polar coordinates', toggle: true },
+  {
+    id: 'toggleGridOverrides',
+    icon: 'toggleGridOverrides',
+    title: 'Toggle grid overrides',
+    toggle: true,
+  },
+  {
+    id: 'togglePolarCoords',
+    icon: 'togglePolarCoords',
+    title: 'Display polar coordinates',
+    toggle: true,
+  },
   { id: 'unitsMm', icon: 'unitsMm', title: 'Units in millimetres', toggle: true },
   { id: 'unitsInches', icon: 'unitsInches', title: 'Units in inches', toggle: true },
   { id: 'unitsMils', icon: 'unitsMils', title: 'Units in mils', toggle: true },
@@ -63,12 +81,27 @@ export const FP_LEFT_TOOLBAR: ToolEntry[] = [
   { id: 'lineMode45', icon: 'lineMode45', title: 'Line mode: 45°', toggle: true },
   sep,
   { id: 'padDisplayMode', icon: 'padDisplayMode', title: 'Sketch pads', toggle: true },
-  { id: 'graphicsOutlines', icon: 'graphicsOutlines', title: 'Show graphic items in outline mode', toggle: true },
-  { id: 'textOutlines', icon: 'textOutlines', title: 'Show text items in outline mode', toggle: true },
+  {
+    id: 'graphicsOutlines',
+    icon: 'graphicsOutlines',
+    title: 'Show graphic items in outline mode',
+    toggle: true,
+  },
+  {
+    id: 'textOutlines',
+    icon: 'textOutlines',
+    title: 'Show text items in outline mode',
+    toggle: true,
+  },
   { id: 'highContrast', icon: 'highContrast', title: 'High-contrast display mode', toggle: true },
   sep,
   { id: 'showLibraryTree', icon: 'showLibraryTree', title: 'Show footprint tree', toggle: true },
-  { id: 'showLayersManager', icon: 'showLayersManager', title: 'Show Appearance manager', toggle: true },
+  {
+    id: 'showLayersManager',
+    icon: 'showLayersManager',
+    title: 'Show Appearance manager',
+    toggle: true,
+  },
   { id: 'showProperties', icon: 'showProperties', title: 'Show Properties panel', toggle: true },
 ];
 

@@ -45,7 +45,12 @@ export function buildSheetTree(
   docs: ReadonlyMap<string, Schematic>,
   rootFile: string,
 ): SheetTreeNode {
-  const build = (file: string, name: string, path: string, stack: readonly string[]): SheetTreeNode => {
+  const build = (
+    file: string,
+    name: string,
+    path: string,
+    stack: readonly string[],
+  ): SheetTreeNode => {
     const node: SheetTreeNode = { file, name, path, children: [] };
     if (stack.includes(file)) return node; // recursion guard (KiCad TestForRecursion)
     const doc = docs.get(file);
@@ -68,10 +73,7 @@ export function buildSheetTree(
  * basename matching the .kicad_pro if given, else the document no other
  * document references as a sub-sheet, else the first file.
  */
-export function findRootFile(
-  docs: ReadonlyMap<string, Schematic>,
-  proName?: string,
-): string {
+export function findRootFile(docs: ReadonlyMap<string, Schematic>, proName?: string): string {
   if (proName) {
     const want = proName.replace(/\.kicad_pro$/i, '.kicad_sch');
     if (docs.has(want)) return want;

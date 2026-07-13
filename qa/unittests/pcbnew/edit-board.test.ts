@@ -1,38 +1,118 @@
 import { describe, it, expect } from 'vitest';
 import {
-  boardItemId, parseBoardItemId, boardItemBBox,
-  hitTestBoard, boardHitCandidates, boardItemsInBox,
-  moveBoardItems, deleteBoardItems, rotateBoardItems, duplicateBoardItems,
+  boardItemId,
+  parseBoardItemId,
+  boardItemBBox,
+  hitTestBoard,
+  boardHitCandidates,
+  boardItemsInBox,
+  moveBoardItems,
+  deleteBoardItems,
+  rotateBoardItems,
+  duplicateBoardItems,
 } from '@ziroeda/pcbnew/src/edit-board.js';
 import { parse } from '@ziroeda/sexpr/src/index.js';
 import { readBoard } from '@ziroeda/pcbnew/src/read-board.js';
 import { serializeBoard } from '@ziroeda/pcbnew/src/write-board.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
-import type { Board, PcbTrack, PcbArcTrack, PcbVia, PcbFootprint, PcbShape, PcbTextItem, PcbZone, PcbPad } from '@ziroeda/pcbnew/src/types.js';
+import type {
+  Board,
+  PcbTrack,
+  PcbArcTrack,
+  PcbVia,
+  PcbFootprint,
+  PcbShape,
+  PcbTextItem,
+  PcbZone,
+  PcbPad,
+} from '@ziroeda/pcbnew/src/types.js';
 
 const EMPTY = { kind: 'list' as const, items: [] };
 
 // Minimal typed-model builders (geometry is unit-agnostic; coords in internal units).
-const track = (start: { x: number; y: number }, end: { x: number; y: number }, width = 100): PcbTrack =>
-  ({ start, end, width, layer: 'F.Cu', net: 0, source: EMPTY });
-const via = (at: { x: number; y: number }, size = 200): PcbVia =>
-  ({ at, size, drill: 100, layers: ['F.Cu', 'B.Cu'], kind: 'through', net: 0, source: EMPTY });
-const arcTrack = (start: { x: number; y: number }, mid: { x: number; y: number }, end: { x: number; y: number }, width = 100): PcbArcTrack =>
-  ({ start, mid, end, width, layer: 'F.Cu', net: 0, source: EMPTY });
-const pad = (at: { x: number; y: number }, sx: number, sy: number): PcbPad =>
-  ({ number: '1', type: 'smd', shape: 'rect', at, angle: 0, size: { x: sx, y: sy }, layers: ['F.Cu'], source: EMPTY });
-const footprint = (pads: PcbPad[]): PcbFootprint =>
-  ({ lib: 'R', at: { x: 0, y: 0 }, angle: 0, layer: 'F.Cu', pads, shapes: [], texts: [], models: [], source: EMPTY });
-const lineShape = (start: { x: number; y: number }, end: { x: number; y: number }, width = 100): PcbShape =>
-  ({ kind: 'line', start, end, width, fill: false, layer: 'Edge.Cuts', source: EMPTY });
-const text = (at: { x: number; y: number }, s: string, size = 1000): PcbTextItem =>
-  ({ kind: 'user', text: s, at, angle: 0, layer: 'F.SilkS', size: { x: size, y: size }, source: EMPTY });
-const zone = (poly: { x: number; y: number }[]): PcbZone =>
-  ({ net: 0, layers: ['F.Cu'], fills: [{ layer: 'F.Cu', polys: [poly] }], source: EMPTY });
+const track = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  width = 100,
+): PcbTrack => ({ start, end, width, layer: 'F.Cu', net: 0, source: EMPTY });
+const via = (at: { x: number; y: number }, size = 200): PcbVia => ({
+  at,
+  size,
+  drill: 100,
+  layers: ['F.Cu', 'B.Cu'],
+  kind: 'through',
+  net: 0,
+  source: EMPTY,
+});
+const arcTrack = (
+  start: { x: number; y: number },
+  mid: { x: number; y: number },
+  end: { x: number; y: number },
+  width = 100,
+): PcbArcTrack => ({ start, mid, end, width, layer: 'F.Cu', net: 0, source: EMPTY });
+const pad = (at: { x: number; y: number }, sx: number, sy: number): PcbPad => ({
+  number: '1',
+  type: 'smd',
+  shape: 'rect',
+  at,
+  angle: 0,
+  size: { x: sx, y: sy },
+  layers: ['F.Cu'],
+  source: EMPTY,
+});
+const footprint = (pads: PcbPad[]): PcbFootprint => ({
+  lib: 'R',
+  at: { x: 0, y: 0 },
+  angle: 0,
+  layer: 'F.Cu',
+  pads,
+  shapes: [],
+  texts: [],
+  models: [],
+  source: EMPTY,
+});
+const lineShape = (
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  width = 100,
+): PcbShape => ({
+  kind: 'line',
+  start,
+  end,
+  width,
+  fill: false,
+  layer: 'Edge.Cuts',
+  source: EMPTY,
+});
+const text = (at: { x: number; y: number }, s: string, size = 1000): PcbTextItem => ({
+  kind: 'user',
+  text: s,
+  at,
+  angle: 0,
+  layer: 'F.SilkS',
+  size: { x: size, y: size },
+  source: EMPTY,
+});
+const zone = (poly: { x: number; y: number }[]): PcbZone => ({
+  net: 0,
+  layers: ['F.Cu'],
+  fills: [{ layer: 'F.Cu', polys: [poly] }],
+  source: EMPTY,
+});
 
 const board = (over: Partial<Board>): Board => ({
-  version: 20241229, layers: [], nets: new Map(), footprints: [], tracks: [], arcs: [],
-  vias: [], zones: [], shapes: [], texts: [], source: EMPTY, ...over,
+  version: 20241229,
+  layers: [],
+  nets: new Map(),
+  footprints: [],
+  tracks: [],
+  arcs: [],
+  vias: [],
+  zones: [],
+  shapes: [],
+  texts: [],
+  source: EMPTY,
+  ...over,
 });
 
 describe('board item ids', () => {
@@ -73,7 +153,9 @@ describe('via hit-test', () => {
 
 describe('arc hit-test (PCB_ARC::HitTest)', () => {
   // CCW quarter arc centred at origin, radius 1000: (1000,0) -> (707,707) -> (0,1000)
-  const b = board({ arcs: [arcTrack({ x: 1000, y: 0 }, { x: 707, y: 707 }, { x: 0, y: 1000 }, 100)] });
+  const b = board({
+    arcs: [arcTrack({ x: 1000, y: 0 }, { x: 707, y: 707 }, { x: 0, y: 1000 }, 100)],
+  });
   it('hits a point on the arc band within the sweep', () => {
     expect(hitTestBoard(b, { x: 707, y: 707 }, 20)).toBe('arc:0');
   });
@@ -95,13 +177,29 @@ describe('shape hit-test (EDA_SHAPE)', () => {
     expect(hitTestBoard(b, { x: 500, y: 2200 }, 10)).toBeNull();
   });
   it('unfilled rect: border is live, interior is not', () => {
-    const s: PcbShape = { kind: 'rect', start: { x: 0, y: 0 }, end: { x: 1000, y: 1000 }, width: 40, fill: false, layer: 'Edge.Cuts', source: EMPTY };
+    const s: PcbShape = {
+      kind: 'rect',
+      start: { x: 0, y: 0 },
+      end: { x: 1000, y: 1000 },
+      width: 40,
+      fill: false,
+      layer: 'Edge.Cuts',
+      source: EMPTY,
+    };
     const b = board({ shapes: [s] });
     expect(hitTestBoard(b, { x: 0, y: 500 }, 5)).toBe('shape:0'); // on left border
-    expect(hitTestBoard(b, { x: 500, y: 500 }, 5)).toBeNull();    // interior
+    expect(hitTestBoard(b, { x: 500, y: 500 }, 5)).toBeNull(); // interior
   });
   it('filled circle: interior hits', () => {
-    const s: PcbShape = { kind: 'circle', center: { x: 0, y: 0 }, end: { x: 500, y: 0 }, width: 20, fill: true, layer: 'F.SilkS', source: EMPTY };
+    const s: PcbShape = {
+      kind: 'circle',
+      center: { x: 0, y: 0 },
+      end: { x: 500, y: 0 },
+      width: 20,
+      fill: true,
+      layer: 'F.SilkS',
+      source: EMPTY,
+    };
     const b = board({ shapes: [s] });
     expect(hitTestBoard(b, { x: 100, y: 100 }, 0)).toBe('shape:0');
   });
@@ -118,7 +216,16 @@ describe('text hit-test (bounding box)', () => {
 });
 
 describe('zone hit-test (point in filled polygon)', () => {
-  const b = board({ zones: [zone([{ x: 10000, y: 10000 }, { x: 11000, y: 10000 }, { x: 11000, y: 11000 }, { x: 10000, y: 11000 }])] });
+  const b = board({
+    zones: [
+      zone([
+        { x: 10000, y: 10000 },
+        { x: 11000, y: 10000 },
+        { x: 11000, y: 11000 },
+        { x: 10000, y: 11000 },
+      ]),
+    ],
+  });
   it('hits inside the pour', () => {
     expect(hitTestBoard(b, { x: 10500, y: 10500 }, 0)).toBe('zone:0');
   });
@@ -146,10 +253,10 @@ describe('footprint hit-test + selection priority', () => {
 describe('box selection (contained vs crossing)', () => {
   const b = board({
     tracks: [
-      track({ x: 0, y: 0 }, { x: 100, y: 0 }, 20),      // fully inside 0..1000
-      track({ x: 900, y: 0 }, { x: 2000, y: 0 }, 20),   // straddles the right edge
+      track({ x: 0, y: 0 }, { x: 100, y: 0 }, 20), // fully inside 0..1000
+      track({ x: 900, y: 0 }, { x: 2000, y: 0 }, 20), // straddles the right edge
     ],
-    vias: [via({ x: 5000, y: 5000 }, 100)],             // far outside
+    vias: [via({ x: 5000, y: 5000 }, 100)], // far outside
   });
   it('contained: only items fully within the rect', () => {
     const sel = boardItemsInBox(b, 0, -500, 1000, 500, true);
@@ -294,7 +401,10 @@ describe('rotateBoardItems', () => {
 )
 `;
     const b = readBoard(parse(TEXT));
-    const rotated = rotateBoardItems(b, new Set(['track:0']), true, { x: mmToIU(20), y: mmToIU(10) });
+    const rotated = rotateBoardItems(b, new Set(['track:0']), true, {
+      x: mmToIU(20),
+      y: mmToIU(10),
+    });
     const reread = readBoard(parse(serializeBoard(rotated)));
     // start (10,10) about (20,10): rel (-10,0) -> (0,10) -> (20,20) mm.
     expect(reread.tracks[0]!.start).toEqual({ x: mmToIU(20), y: mmToIU(20) });
@@ -308,8 +418,8 @@ describe('duplicateBoardItems', () => {
     const { board: out, ids } = duplicateBoardItems(b, new Set(['track:0']), { x: 10, y: 20 });
     expect(out.tracks).toHaveLength(2);
     expect(ids).toEqual(['track:1']);
-    expect(out.tracks[0]!.start).toEqual({ x: 0, y: 0 });   // original untouched
-    expect(out.tracks[1]!.start).toEqual({ x: 10, y: 20 });  // copy offset
+    expect(out.tracks[0]!.start).toEqual({ x: 0, y: 0 }); // original untouched
+    expect(out.tracks[1]!.start).toEqual({ x: 10, y: 20 }); // copy offset
   });
 
   it('gives the copy a fresh uuid', () => {
@@ -329,7 +439,10 @@ describe('duplicateBoardItems', () => {
 )
 `;
     const b = readBoard(parse(TEXT));
-    const { board: out } = duplicateBoardItems(b, new Set(['track:0']), { x: mmToIU(0), y: mmToIU(5) });
+    const { board: out } = duplicateBoardItems(b, new Set(['track:0']), {
+      x: mmToIU(0),
+      y: mmToIU(5),
+    });
     const reread = readBoard(parse(serializeBoard(out)));
     expect(reread.tracks).toHaveLength(2);
     expect(reread.tracks[1]!.start).toEqual({ x: mmToIU(10), y: mmToIU(15) });
@@ -348,9 +461,13 @@ describe('canonical builders (source-less items append + re-read)', () => {
     // Push items with EMPTY source — the writer must build them canonically.
     const withNew: Board = {
       ...b,
-      tracks: [track({ x: mmToIU(0), y: mmToIU(0) }, { x: mmToIU(10), y: mmToIU(0) }, mmToIU(0.25))],
+      tracks: [
+        track({ x: mmToIU(0), y: mmToIU(0) }, { x: mmToIU(10), y: mmToIU(0) }, mmToIU(0.25)),
+      ],
       vias: [via({ x: mmToIU(10), y: mmToIU(0) }, mmToIU(0.8))],
-      shapes: [lineShape({ x: mmToIU(0), y: mmToIU(0) }, { x: mmToIU(20), y: mmToIU(0) }, mmToIU(0.15))],
+      shapes: [
+        lineShape({ x: mmToIU(0), y: mmToIU(0) }, { x: mmToIU(20), y: mmToIU(0) }, mmToIU(0.15)),
+      ],
       texts: [text({ x: mmToIU(5), y: mmToIU(5) }, 'HI', mmToIU(1))],
     };
     const reread = readBoard(parse(serializeBoard(withNew)));

@@ -11,7 +11,12 @@
 
 import { parse } from '@ziroeda/sexpr';
 import { EMPTY_SOURCE } from '@ziroeda/eeschema';
-import { readFootprintFile, type Board, type PcbFootprint, type PcbLayerDef } from '@ziroeda/pcbnew';
+import {
+  readFootprintFile,
+  type Board,
+  type PcbFootprint,
+  type PcbLayerDef,
+} from '@ziroeda/pcbnew';
 
 /**
  * The footprint-editor layer table: every board layer a footprint may live on,

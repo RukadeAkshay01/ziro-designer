@@ -102,15 +102,24 @@ export function storageAvailable(): boolean {
 /** Create/replace a project record. Returns the id (generated when omitted). */
 export async function saveProject(name: string, files: StoredFile[], id?: string): Promise<string> {
   const now = Date.now();
-  const pid = id ?? (crypto.randomUUID?.() ?? `p${now}-${Math.random().toString(36).slice(2)}`);
-  const gzFiles = await Promise.all(files.map(async (f) => ({ name: f.name, gz: await gzip(f.bytes) })));
+  const pid = id ?? crypto.randomUUID?.() ?? `p${now}-${Math.random().toString(36).slice(2)}`;
+  const gzFiles = await Promise.all(
+    files.map(async (f) => ({ name: f.name, gz: await gzip(f.bytes) })),
+  );
   // Preserve createdAt when updating an existing record.
   let createdAt = now;
   if (id) {
     const existing = await tx<StoredRecord | undefined>('readonly', (s) => s.get(id));
     if (existing) createdAt = existing.createdAt;
   }
-  const record: StoredRecord = { id: pid, name, createdAt, updatedAt: now, lastOpenedAt: now, files: gzFiles };
+  const record: StoredRecord = {
+    id: pid,
+    name,
+    createdAt,
+    updatedAt: now,
+    lastOpenedAt: now,
+    files: gzFiles,
+  };
   await tx('readwrite', (s) => s.put(record));
   return pid;
 }
@@ -118,18 +127,20 @@ export async function saveProject(name: string, files: StoredFile[], id?: string
 /** All saved projects, newest first, without decompressing file bodies. */
 export async function listProjects(): Promise<ProjectMeta[]> {
   const all = await tx<StoredRecord[]>('readonly', (s) => s.getAll());
-  return all
-    .map((r) => ({
-      id: r.id,
-      name: r.name,
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-      lastOpenedAt: r.lastOpenedAt,
-      fileCount: r.files.length,
-      bytes: r.files.reduce((n, f) => n + f.gz.byteLength, 0),
-    }))
-    // Recent = last opened (falls back to last saved for older records).
-    .sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt));
+  return (
+    all
+      .map((r) => ({
+        id: r.id,
+        name: r.name,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        lastOpenedAt: r.lastOpenedAt,
+        fileCount: r.files.length,
+        bytes: r.files.reduce((n, f) => n + f.gz.byteLength, 0),
+      }))
+      // Recent = last opened (falls back to last saved for older records).
+      .sort((a, b) => (b.lastOpenedAt ?? b.updatedAt) - (a.lastOpenedAt ?? a.updatedAt))
+  );
 }
 
 /** Autosave: replace only the given files in a project (by name), re-gzipping
@@ -155,10 +166,14 @@ export async function touchOpened(id: string): Promise<void> {
 }
 
 /** Load a project's files (decompressed), or null if it no longer exists. */
-export async function loadProject(id: string): Promise<{ meta: ProjectMeta; files: StoredFile[] } | null> {
+export async function loadProject(
+  id: string,
+): Promise<{ meta: ProjectMeta; files: StoredFile[] } | null> {
   const r = await tx<StoredRecord | undefined>('readonly', (s) => s.get(id));
   if (!r) return null;
-  const files = await Promise.all(r.files.map(async (f) => ({ name: f.name, bytes: await gunzip(f.gz) })));
+  const files = await Promise.all(
+    r.files.map(async (f) => ({ name: f.name, bytes: await gunzip(f.gz) })),
+  );
   return {
     meta: {
       id: r.id,

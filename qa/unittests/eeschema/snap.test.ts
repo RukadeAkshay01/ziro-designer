@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr/src/index.js';
 import { readSchematic, readSymbolLib } from '@ziroeda/eeschema/src/sch_io/sexpr/read-schematic.js';
-import { collectAnchors, selectionAnchors, nearestAnchor } from '@ziroeda/eeschema/src/tools/snap.js';
+import {
+  collectAnchors,
+  selectionAnchors,
+  nearestAnchor,
+} from '@ziroeda/eeschema/src/tools/snap.js';
 import { addItems, makeWire, placeSymbol } from '@ziroeda/eeschema/src/tools/index.js';
 import { refId } from '@ziroeda/eeschema/src/tools/hittest.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
@@ -11,8 +15,11 @@ import type { Schematic, LibSymbol } from '@ziroeda/eeschema/src/types.js';
 
 const at = (x: number, y: number) => ({ x: mmToIU(x), y: mmToIU(y) });
 const EMPTY = (): Schematic => readSchematic(parse('(kicad_sch (version 1) (lib_symbols))'));
-const libMap = (sch: Schematic) => new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
-const R = readSymbolLib(parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')))[0]!;
+const libMap = (sch: Schematic) =>
+  new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
+const R = readSymbolLib(
+  parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')),
+)[0]!;
 
 describe('connectable snapping helpers', () => {
   it('collects wire endpoints and symbol pins as anchors', () => {
@@ -36,7 +43,7 @@ describe('connectable snapping helpers', () => {
     const wireId = refId('line', sch.lines[0]!.uuid, 0);
     const moved = new Set([wireId]);
     const fixed = collectAnchors(sch, libMap(sch), moved); // only R's pins
-    const own = selectionAnchors(sch, libMap(sch), moved);  // the wire's endpoints
+    const own = selectionAnchors(sch, libMap(sch), moved); // the wire's endpoints
     expect(fixed.length).toBe(2);
     expect(own).toHaveLength(2);
     // The wire's near end coincides with R's pin, so snapping keeps them attached.

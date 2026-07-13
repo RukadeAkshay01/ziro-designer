@@ -23,12 +23,23 @@ function escapeString(value: string): string {
   let out = '';
   for (const ch of value) {
     switch (ch) {
-      case '\\': out += '\\\\'; break;
-      case '"': out += '\\"'; break;
-      case '\n': out += '\\n'; break;
-      case '\r': out += '\\r'; break;
-      case '\t': out += '\\t'; break;
-      default: out += ch;
+      case '\\':
+        out += '\\\\';
+        break;
+      case '"':
+        out += '\\"';
+        break;
+      case '\n':
+        out += '\\n';
+        break;
+      case '\r':
+        out += '\\r';
+        break;
+      case '\t':
+        out += '\\t';
+        break;
+      default:
+        out += ch;
     }
   }
   return out;
@@ -78,5 +89,5 @@ function writeNode(node: SNode, depth: number, out: string[]): void {
 export function serialize(root: SList): string {
   const out: string[] = [];
   writeNode(root, 0, out);
-  return out.join('\n') + '\n';
+  return `${out.join('\n')}\n`;
 }

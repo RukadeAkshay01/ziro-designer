@@ -97,12 +97,37 @@ const INNER = Array.from({ length: 30 }, (_, i) => `In${30 - i}.Cu`);
  * 'User.9' by the renderer, exactly where the GAL array puts them.
  */
 export const PCB_PAINT_ORDER: string[] = [
-  'B.Fab', 'B.CrtYd', 'B.Adhes', 'B.Paste', 'B.SilkS', 'B.Mask', 'B.Cu',
+  'B.Fab',
+  'B.CrtYd',
+  'B.Adhes',
+  'B.Paste',
+  'B.SilkS',
+  'B.Mask',
+  'B.Cu',
   ...INNER,
-  'F.Fab', 'F.CrtYd', 'F.Adhes', 'F.Paste', 'F.SilkS', 'F.Mask', 'F.Cu',
+  'F.Fab',
+  'F.CrtYd',
+  'F.Adhes',
+  'F.Paste',
+  'F.SilkS',
+  'F.Mask',
+  'F.Cu',
   // renderer: holes pass, then footprint-text pass
-  'User.9', 'User.8', 'User.7', 'User.6', 'User.5', 'User.4', 'User.3', 'User.2', 'User.1',
-  'Margin', 'Edge.Cuts', 'Eco2.User', 'Eco1.User', 'Cmts.User', 'Dwgs.User',
+  'User.9',
+  'User.8',
+  'User.7',
+  'User.6',
+  'User.5',
+  'User.4',
+  'User.3',
+  'User.2',
+  'User.1',
+  'Margin',
+  'Edge.Cuts',
+  'Eco2.User',
+  'Eco1.User',
+  'Cmts.User',
+  'Dwgs.User',
 ];
 
 export const layerColor = (name: string): string => PCB_LAYER_COLORS[name] ?? 'rgb(132,132,132)';

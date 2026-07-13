@@ -12,7 +12,9 @@ const EMPTY = (): Schematic => readSchematic(parse('(kicad_sch (version 1) (lib_
 
 describe('mergeColinearWires (KiCad SchematicCleanUp / MergeOverlap)', () => {
   it('merges two colinear touching wires into one', () => {
-    let sch = addItems({ lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(20, 0))] }).apply(EMPTY());
+    const sch = addItems({
+      lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(20, 0))],
+    }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(1);
     const l = merged.lines[0]!;
@@ -21,7 +23,9 @@ describe('mergeColinearWires (KiCad SchematicCleanUp / MergeOverlap)', () => {
   });
 
   it('merges overlapping colinear wires', () => {
-    const sch = addItems({ lines: [makeWire(at(0, 0), at(15, 0)), makeWire(at(10, 0), at(25, 0))] }).apply(EMPTY());
+    const sch = addItems({
+      lines: [makeWire(at(0, 0), at(15, 0)), makeWire(at(10, 0), at(25, 0))],
+    }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(1);
     const l = merged.lines[0]!;
@@ -53,19 +57,25 @@ describe('mergeColinearWires (KiCad SchematicCleanUp / MergeOverlap)', () => {
   });
 
   it('does NOT merge perpendicular wires meeting at a corner', () => {
-    const sch = addItems({ lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(10, 10))] }).apply(EMPTY());
+    const sch = addItems({
+      lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(10, 10))],
+    }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(2);
   });
 
   it('does NOT merge a wire and a bus that are colinear (different layers)', () => {
-    const sch = addItems({ lines: [makeWire(at(0, 0), at(10, 0)), makeBus(at(10, 0), at(20, 0))] }).apply(EMPTY());
+    const sch = addItems({
+      lines: [makeWire(at(0, 0), at(10, 0)), makeBus(at(10, 0), at(20, 0))],
+    }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(2);
   });
 
   it('removes an exact duplicate wire', () => {
-    const sch = addItems({ lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(0, 0))] }).apply(EMPTY());
+    const sch = addItems({
+      lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(0, 0))],
+    }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(1);
   });
@@ -74,9 +84,15 @@ describe('mergeColinearWires (KiCad SchematicCleanUp / MergeOverlap)', () => {
     const base = EMPTY();
     const history = new History();
     // Add a wire that is colinear-touching an existing one; cleanup should merge them.
-    const withFirst = history.execute(base, withCleanup(addItems({ lines: [makeWire(at(0, 0), at(10, 0))] })));
+    const withFirst = history.execute(
+      base,
+      withCleanup(addItems({ lines: [makeWire(at(0, 0), at(10, 0))] })),
+    );
     expect(withFirst.lines.length).toBe(1);
-    const merged = history.execute(withFirst, withCleanup(addItems({ lines: [makeWire(at(10, 0), at(20, 0))] })));
+    const merged = history.execute(
+      withFirst,
+      withCleanup(addItems({ lines: [makeWire(at(10, 0), at(20, 0))] })),
+    );
     expect(merged.lines.length).toBe(1); // merged into a single wire
     // Undo the second edit: back to the single original wire (0..10), not the merged span.
     const undone = history.undo(merged)!;
@@ -93,7 +109,11 @@ describe('mergeColinearWires (KiCad SchematicCleanUp / MergeOverlap)', () => {
 
   it('collapses a chain of three colinear segments', () => {
     const sch = addItems({
-      lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(20, 0)), makeWire(at(20, 0), at(30, 0))],
+      lines: [
+        makeWire(at(0, 0), at(10, 0)),
+        makeWire(at(10, 0), at(20, 0)),
+        makeWire(at(20, 0), at(30, 0)),
+      ],
     }).apply(EMPTY());
     const merged = mergeColinearWires(sch);
     expect(merged.lines.length).toBe(1);

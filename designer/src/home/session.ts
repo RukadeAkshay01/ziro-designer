@@ -16,7 +16,11 @@ export interface Session {
 const KEY = 'ziro.session';
 
 export function saveSession(s: Session): void {
-  try { localStorage.setItem(KEY, JSON.stringify(s)); } catch { /* private mode */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(s));
+  } catch {
+    /* private mode */
+  }
 }
 
 export function loadSession(): Session | null {

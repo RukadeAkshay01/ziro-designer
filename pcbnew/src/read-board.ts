@@ -16,7 +16,15 @@
 
 import { head, isList, type SList } from '@ziroeda/sexpr/src/types.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
-import { arg, args, childNamed, childrenNamed, numArg, stringField, numberField } from '@ziroeda/sexpr/src/query.js';
+import {
+  arg,
+  args,
+  childNamed,
+  childrenNamed,
+  numArg,
+  stringField,
+  numberField,
+} from '@ziroeda/sexpr/src/query.js';
 import type {
   Board,
   Model3D,
@@ -24,13 +32,9 @@ import type {
   PadShape,
   PadType,
   PcbFootprint,
-  PcbLayerDef,
   PcbPad,
   PcbShape,
   PcbTextItem,
-  PcbTrack,
-  PcbArcTrack,
-  PcbVia,
   PcbZone,
   PcbZoneFill,
 } from './types.js';
@@ -190,7 +194,9 @@ function readPcbText(
     mirror: fx.mirror,
     justify: fx.justify,
     hide: hideNode ? arg(hideNode, 0) !== 'no' : false,
-    knockout: childNamed(item, 'layer') ? args(childNamed(item, 'layer')!).includes('knockout') : false,
+    knockout: childNamed(item, 'layer')
+      ? args(childNamed(item, 'layer')!).includes('knockout')
+      : false,
     uuid: uuidOf(item),
     source: item,
   };
@@ -245,7 +251,9 @@ function readPad(item: SList, t: FpTransform | null): PcbPad | null {
   const drillNode = childNamed(item, 'drill');
   let drill: PcbPad['drill'];
   if (drillNode) {
-    const nums = args(drillNode).filter((a) => a !== 'oval').map(Number);
+    const nums = args(drillNode)
+      .filter((a) => a !== 'oval')
+      .map(Number);
     const w = mmToIU(nums[0] ?? 0);
     drill = {
       oblong: args(drillNode).includes('oval'),
@@ -319,7 +327,7 @@ function readFootprint(item: SList, local = false): PcbFootprint | null {
   const at = childNamed(item, 'at');
   const pos = ptAt(at) ?? (local ? { x: 0, y: 0 } : undefined);
   if (!pos) return null;
-  const angle = local ? 0 : (at ? (numArg(at, 2) ?? 0) : 0);
+  const angle = local ? 0 : at ? (numArg(at, 2) ?? 0) : 0;
   // On a board, children are baked to board coords through the placement
   // transform (legacy RebakeFromLib); a library footprint keeps local coords.
   const t: FpTransform | null = local ? null : { pos, angle };
@@ -527,7 +535,11 @@ export function readBoard(root: SList): Board {
           size: mmToIU(numberField(item, 'size') ?? 0),
           drill: mmToIU(numberField(item, 'drill') ?? 0),
           layers: [ls[0] ?? 'F.Cu', ls[1] ?? 'B.Cu'],
-          kind: positional.includes('micro') ? 'micro' : positional.includes('blind') ? 'blind' : 'through',
+          kind: positional.includes('micro')
+            ? 'micro'
+            : positional.includes('blind')
+              ? 'blind'
+              : 'through',
           net: numberField(item, 'net') ?? 0,
           uuid: uuidOf(item),
           source: item,

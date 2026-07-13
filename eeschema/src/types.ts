@@ -77,11 +77,46 @@ export interface LibPin {
 
 /** A graphic body element of a symbol unit. `kind` selects which fields apply. */
 export type LibGraphic =
-  | { readonly kind: 'rectangle'; readonly start: Vec2; readonly end: Vec2; readonly stroke?: Stroke; readonly fill?: Fill; readonly source: SList }
-  | { readonly kind: 'circle'; readonly center: Vec2; readonly radius: number; readonly stroke?: Stroke; readonly fill?: Fill; readonly source: SList }
-  | { readonly kind: 'arc'; readonly start: Vec2; readonly mid: Vec2; readonly end: Vec2; readonly stroke?: Stroke; readonly fill?: Fill; readonly source: SList }
-  | { readonly kind: 'polyline'; readonly points: readonly Vec2[]; readonly stroke?: Stroke; readonly fill?: Fill; readonly source: SList }
-  | { readonly kind: 'text'; readonly text: string; readonly at: Vec2; readonly angle: number; readonly effects?: TextEffects; readonly source: SList };
+  | {
+      readonly kind: 'rectangle';
+      readonly start: Vec2;
+      readonly end: Vec2;
+      readonly stroke?: Stroke;
+      readonly fill?: Fill;
+      readonly source: SList;
+    }
+  | {
+      readonly kind: 'circle';
+      readonly center: Vec2;
+      readonly radius: number;
+      readonly stroke?: Stroke;
+      readonly fill?: Fill;
+      readonly source: SList;
+    }
+  | {
+      readonly kind: 'arc';
+      readonly start: Vec2;
+      readonly mid: Vec2;
+      readonly end: Vec2;
+      readonly stroke?: Stroke;
+      readonly fill?: Fill;
+      readonly source: SList;
+    }
+  | {
+      readonly kind: 'polyline';
+      readonly points: readonly Vec2[];
+      readonly stroke?: Stroke;
+      readonly fill?: Fill;
+      readonly source: SList;
+    }
+  | {
+      readonly kind: 'text';
+      readonly text: string;
+      readonly at: Vec2;
+      readonly angle: number;
+      readonly effects?: TextEffects;
+      readonly source: SList;
+    };
 
 /**
  * One unit/body-style of a symbol definition, e.g. `Conn_01x02_1_1`. The name

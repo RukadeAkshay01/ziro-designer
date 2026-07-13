@@ -107,26 +107,32 @@ describe('readSchematic: losslessness is preserved alongside the typed view', ()
 
 describe('legacy bare-hide and per-pin text sizes', () => {
   it('treats a bare `hide` token in effects as hidden (Altium-import files)', () => {
-    const sch = readSchematic(parse(`(kicad_sch (version 1) (lib_symbols)
-      (text "SECRET" (at 0 0 0) (effects (font (size 1.27 1.27)) hide)))`));
+    const sch = readSchematic(
+      parse(`(kicad_sch (version 1) (lib_symbols)
+      (text "SECRET" (at 0 0 0) (effects (font (size 1.27 1.27)) hide)))`),
+    );
     expect(sch.labels[0]!.effects?.hidden).toBe(true);
   });
 
   it('parses per-pin name/number sizes; size 0 marks the text as not drawn', () => {
-    const libs = readSymbolLib(parse(`(kicad_symbol_lib (symbol "X"
+    const libs = readSymbolLib(
+      parse(`(kicad_symbol_lib (symbol "X"
       (symbol "X_1_1"
         (pin passive line (at 0 0 0) (length 2.54)
           (name "IN" (effects (font (size 0 0))))
           (number "1" (effects (font (size 1.27 1.27)))))))
-    )`));
+    )`),
+    );
     const pin = libs[0]!.units[0]!.pins[0]!;
     expect(pin.nameSize).toBe(0);
     expect(pin.numberSize).toBe(12700);
   });
 
   it('parses bold and font colour from effects', () => {
-    const sch = readSchematic(parse(`(kicad_sch (version 1) (lib_symbols)
-      (text "T" (at 0 0 0) (effects (font (size 4.572 4.572) bold (color 194 0 0 1)))))`));
+    const sch = readSchematic(
+      parse(`(kicad_sch (version 1) (lib_symbols)
+      (text "T" (at 0 0 0) (effects (font (size 4.572 4.572) bold (color 194 0 0 1)))))`),
+    );
     expect(sch.labels[0]!.effects?.bold).toBe(true);
     expect(sch.labels[0]!.effects?.color).toEqual([194, 0, 0, 1]);
   });

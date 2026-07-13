@@ -11,10 +11,10 @@
 
 import { BOARD_CONNECTED_ITEM } from './board_connected_item.js';
 import { FlipLayer, type PCB_LAYER_ID } from './layer_ids.js';
-import { VECTOR2I, Distance } from '@ziroeda/kimath/src/math/vector2.js';
-import { EDA_ANGLE } from '@ziroeda/kimath/src/geometry/eda_angle.js';
+import { type VECTOR2I, Distance } from '@ziroeda/kimath/src/math/vector2.js';
+import type { EDA_ANGLE } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import { RotatePoint, TestSegmentHit } from '@ziroeda/kimath/src/trigo.js';
-import { MIRROR, FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
+import { MIRROR, type FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 
 export class ZONE extends BOARD_CONNECTED_ITEM {
@@ -23,18 +23,31 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
   /** Per-layer filled areas (each an array of point rings). */
   protected m_fills: Map<PCB_LAYER_ID, VECTOR2I[][]>;
 
-  constructor(opts: { outline?: VECTOR2I[]; layers: PCB_LAYER_ID[]; fills?: Map<PCB_LAYER_ID, VECTOR2I[][]>; netCode?: number }) {
+  constructor(opts: {
+    outline?: VECTOR2I[];
+    layers: PCB_LAYER_ID[];
+    fills?: Map<PCB_LAYER_ID, VECTOR2I[][]>;
+    netCode?: number;
+  }) {
     super(opts.layers[0] ?? 'F.Cu', opts.netCode ?? 0);
     this.m_outline = (opts.outline ?? []).map((p) => ({ ...p }));
     this.m_layers = [...opts.layers];
     this.m_fills = opts.fills ?? new Map();
   }
 
-  GetLayerSet(): PCB_LAYER_ID[] { return this.m_layers; }
-  GetOutline(): VECTOR2I[] { return this.m_outline; }
-  GetFills(): Map<PCB_LAYER_ID, VECTOR2I[][]> { return this.m_fills; }
+  GetLayerSet(): PCB_LAYER_ID[] {
+    return this.m_layers;
+  }
+  GetOutline(): VECTOR2I[] {
+    return this.m_outline;
+  }
+  GetFills(): Map<PCB_LAYER_ID, VECTOR2I[][]> {
+    return this.m_fills;
+  }
 
-  GetPosition(): VECTOR2I { return this.m_outline[0] ?? { x: 0, y: 0 }; }
+  GetPosition(): VECTOR2I {
+    return this.m_outline[0] ?? { x: 0, y: 0 };
+  }
   SetPosition(aPos: VECTOR2I): void {
     const cur = this.GetPosition();
     this.Move({ x: aPos.x - cur.x, y: aPos.y - cur.y });
@@ -42,7 +55,11 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
 
   private forEachPoint(fn: (p: VECTOR2I) => VECTOR2I): void {
     this.m_outline = this.m_outline.map(fn);
-    for (const [layer, rings] of this.m_fills) this.m_fills.set(layer, rings.map((r) => r.map(fn)));
+    for (const [layer, rings] of this.m_fills)
+      this.m_fills.set(
+        layer,
+        rings.map((r) => r.map(fn)),
+      );
   }
 
   Move(offset: VECTOR2I): void {
@@ -54,7 +71,11 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
   }
 
   Mirror(aMirrorRef: VECTOR2I, aFlipDirection: FLIP_DIRECTION): void {
-    this.forEachPoint((p) => { const q = { ...p }; MIRROR(q, aMirrorRef, aFlipDirection); return q; });
+    this.forEachPoint((p) => {
+      const q = { ...p };
+      MIRROR(q, aMirrorRef, aFlipDirection);
+      return q;
+    });
   }
 
   /** ZONE::Flip — mirror geometry, then move the layers/fills to the other side. */
@@ -71,7 +92,9 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
    *  with a 0.1 mm floor on accuracy (zone.cpp:735). */
   HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean {
     const accuracy = Math.max(aAccuracy, mmToIU(0.1));
-    return this.HitTestForCorner(aPosition, accuracy * 2) || this.HitTestForEdge(aPosition, accuracy);
+    return (
+      this.HitTestForCorner(aPosition, accuracy * 2) || this.HitTestForEdge(aPosition, accuracy)
+    );
   }
 
   HitTestForCorner(refPos: VECTOR2I, aAccuracy: number): boolean {
@@ -81,7 +104,8 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
   HitTestForEdge(refPos: VECTOR2I, aAccuracy: number): boolean {
     const n = this.m_outline.length;
     for (let i = 0; i < n; i++) {
-      if (TestSegmentHit(refPos, this.m_outline[i]!, this.m_outline[(i + 1) % n]!, aAccuracy)) return true;
+      if (TestSegmentHit(refPos, this.m_outline[i]!, this.m_outline[(i + 1) % n]!, aAccuracy))
+        return true;
     }
     return false;
   }
@@ -97,8 +121,10 @@ export class ZONE extends BOARD_CONNECTED_ITEM {
 function pointInPolygon(p: VECTOR2I, poly: VECTOR2I[]): boolean {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const a = poly[i]!, b = poly[j]!;
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+    const a = poly[i]!,
+      b = poly[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x)
+      inside = !inside;
   }
   return inside;
 }

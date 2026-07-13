@@ -10,8 +10,11 @@ import type { Schematic, LibSymbol } from '@ziroeda/eeschema/src/types.js';
 
 const at = (x: number, y: number) => ({ x: mmToIU(x), y: mmToIU(y) });
 const EMPTY = (): Schematic => readSchematic(parse('(kicad_sch (version 1) (lib_symbols))'));
-const libMap = (sch: Schematic) => new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
-const R = readSymbolLib(parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')))[0]!;
+const libMap = (sch: Schematic) =>
+  new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
+const R = readSymbolLib(
+  parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')),
+)[0]!;
 
 describe('danglingPinPositions', () => {
   it('reports both pins of a lone resistor as dangling', () => {
@@ -37,7 +40,9 @@ describe('danglingPinPositions', () => {
     const pins = danglingPinPositions(sch, libMap(sch));
     const p = pins[0]!;
     // Wire spanning across the pin so the pin lies in its interior.
-    sch = addItems({ lines: [makeWire({ x: p.x - mmToIU(5), y: p.y }, { x: p.x + mmToIU(5), y: p.y })] }).apply(sch);
+    sch = addItems({
+      lines: [makeWire({ x: p.x - mmToIU(5), y: p.y }, { x: p.x + mmToIU(5), y: p.y })],
+    }).apply(sch);
     const after = danglingPinPositions(sch, libMap(sch));
     expect(after.some((q) => q.x === p.x && q.y === p.y)).toBe(false);
   });

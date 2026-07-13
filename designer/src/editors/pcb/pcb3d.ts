@@ -24,7 +24,12 @@ const MM = 10000;
 // cover all boards. See the ziro-3d-components-plan memory.
 const MODELS3D_BASE = (import.meta.env.VITE_MODELS3D_URL as string | undefined) || '/models3d';
 
-interface BBox { minX: number; minY: number; maxX: number; maxY: number }
+interface BBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
 
 /**
  * The physical board extent = the Edge.Cuts outline, NOT the item bounding box
@@ -32,29 +37,42 @@ interface BBox { minX: number; minY: number; maxX: number; maxY: number }
  * the full scene bbox if no edge exists.
  */
 function edgeBBox(board: Board, fallback: BBox): BBox {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const inc = (x?: number, y?: number): void => {
     if (x === undefined || y === undefined) return;
-    if (x < minX) minX = x; if (y < minY) minY = y;
-    if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
   };
   const shapes = [...board.shapes, ...board.footprints.flatMap((f) => f.shapes)];
   for (const s of shapes) {
     if (s.layer !== 'Edge.Cuts') continue;
-    inc(s.start?.x, s.start?.y); inc(s.end?.x, s.end?.y); inc(s.mid?.x, s.mid?.y);
+    inc(s.start?.x, s.start?.y);
+    inc(s.end?.x, s.end?.y);
+    inc(s.mid?.x, s.mid?.y);
     if (s.center && s.end) {
       const r = Math.hypot(s.end.x - s.center.x, s.end.y - s.center.y);
-      inc(s.center.x - r, s.center.y - r); inc(s.center.x + r, s.center.y + r);
+      inc(s.center.x - r, s.center.y - r);
+      inc(s.center.x + r, s.center.y + r);
     }
     for (const p of s.pts ?? []) inc(p.x, p.y);
   }
   return minX < maxX ? { minX, minY, maxX, maxY } : fallback;
 }
 
-export interface Viewer3D { dispose: () => void }
+export interface Viewer3D {
+  dispose: () => void;
+}
 
 // A geometry group: interleaved [x,y,z, nx,ny,nz] verts + triangle indices.
-interface Group { verts: number[]; idx: number[] }
+interface Group {
+  verts: number[];
+  idx: number[];
+}
 
 /** Mount the 3D viewer into `container`; returns a disposer. */
 export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | null {
@@ -81,24 +99,67 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   };
 
   // Stack heights just off each face (mm): FR4 body → copper → mask → pads → silk.
-  const zB = hz, zC = hz + 0.03, zM = hz + 0.06, zP = hz + 0.09, zS = hz + 0.12;
-  const gBody = mkGroup(), gCopper = mkGroup(), gMask = mkGroup(), gGold = mkGroup(), gSilk = mkGroup(), gWall = mkGroup(), gHole = mkGroup();
+  const zB = hz,
+    zC = hz + 0.03,
+    zM = hz + 0.06,
+    zP = hz + 0.09,
+    zS = hz + 0.12;
+  const gBody = mkGroup(),
+    gCopper = mkGroup(),
+    gMask = mkGroup(),
+    gGold = mkGroup(),
+    gSilk = mkGroup(),
+    gWall = mkGroup(),
+    gHole = mkGroup();
 
-  addFlat(gBody, outlineMesh, zB, 1); addFlat(gBody, outlineMesh, -zB, -1);
-  addFlat(gCopper, geom.front.copper, zC, 1); addFlat(gCopper, geom.back.copper, -zC, -1);
-  addFlat(gMask, outlineMesh, zM, 1); addFlat(gMask, outlineMesh, -zM, -1);
-  addFlat(gGold, geom.front.pads, zP, 1); addFlat(gGold, geom.back.pads, -zP, -1);
-  addFlat(gSilk, geom.front.silk, zS, 1); addFlat(gSilk, geom.back.silk, -zS, -1);
+  addFlat(gBody, outlineMesh, zB, 1);
+  addFlat(gBody, outlineMesh, -zB, -1);
+  addFlat(gCopper, geom.front.copper, zC, 1);
+  addFlat(gCopper, geom.back.copper, -zC, -1);
+  addFlat(gMask, outlineMesh, zM, 1);
+  addFlat(gMask, outlineMesh, -zM, -1);
+  addFlat(gGold, geom.front.pads, zP, 1);
+  addFlat(gGold, geom.back.pads, -zP, -1);
+  addFlat(gSilk, geom.front.silk, zS, 1);
+  addFlat(gSilk, geom.back.silk, -zS, -1);
 
   // Extruded FR4 walls along every outline loop (outer boundary + cutouts).
   for (const loop of outline.loops) {
     for (let i = 0; i < loop.length; i++) {
-      const p0 = loop[i]!, p1 = loop[(i + 1) % loop.length]!;
-      const dx = p1.x - p0.x, dy = p1.y - p0.y;
+      const p0 = loop[i]!,
+        p1 = loop[(i + 1) % loop.length]!;
+      const dx = p1.x - p0.x,
+        dy = p1.y - p0.y;
       const L = Math.hypot(dx, dy) || 1;
-      const nx = dy / L, ny = -dx / L;
+      const nx = dy / L,
+        ny = -dx / L;
       const b = gWall.verts.length / 6;
-      gWall.verts.push(p0.x, p0.y, hz, nx, ny, 0, p1.x, p1.y, hz, nx, ny, 0, p1.x, p1.y, -hz, nx, ny, 0, p0.x, p0.y, -hz, nx, ny, 0);
+      gWall.verts.push(
+        p0.x,
+        p0.y,
+        hz,
+        nx,
+        ny,
+        0,
+        p1.x,
+        p1.y,
+        hz,
+        nx,
+        ny,
+        0,
+        p1.x,
+        p1.y,
+        -hz,
+        nx,
+        ny,
+        0,
+        p0.x,
+        p0.y,
+        -hz,
+        nx,
+        ny,
+        0,
+      );
       gWall.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
     }
   }
@@ -107,11 +168,39 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   for (const h of holes) {
     const n = Math.max(10, Math.min(48, Math.round(h.r * 120)));
     for (let i = 0; i < n; i++) {
-      const a0 = (2 * Math.PI * i) / n, a1 = (2 * Math.PI * (i + 1)) / n;
-      const x0 = h.x + h.r * Math.cos(a0), y0 = h.y + h.r * Math.sin(a0);
-      const x1 = h.x + h.r * Math.cos(a1), y1 = h.y + h.r * Math.sin(a1);
+      const a0 = (2 * Math.PI * i) / n,
+        a1 = (2 * Math.PI * (i + 1)) / n;
+      const x0 = h.x + h.r * Math.cos(a0),
+        y0 = h.y + h.r * Math.sin(a0);
+      const x1 = h.x + h.r * Math.cos(a1),
+        y1 = h.y + h.r * Math.sin(a1);
       const b = gHole.verts.length / 6;
-      gHole.verts.push(x0, y0, zBar, -Math.cos(a0), -Math.sin(a0), 0, x1, y1, zBar, -Math.cos(a1), -Math.sin(a1), 0, x1, y1, -zBar, -Math.cos(a1), -Math.sin(a1), 0, x0, y0, -zBar, -Math.cos(a0), -Math.sin(a0), 0);
+      gHole.verts.push(
+        x0,
+        y0,
+        zBar,
+        -Math.cos(a0),
+        -Math.sin(a0),
+        0,
+        x1,
+        y1,
+        zBar,
+        -Math.cos(a1),
+        -Math.sin(a1),
+        0,
+        x1,
+        y1,
+        -zBar,
+        -Math.cos(a1),
+        -Math.sin(a1),
+        0,
+        x0,
+        y0,
+        -zBar,
+        -Math.cos(a0),
+        -Math.sin(a0),
+        0,
+      );
       gHole.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
     }
   }
@@ -128,8 +217,16 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
 
   let renderer: THREE.WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, logarithmicDepthBuffer: true });
-  } catch { container.removeChild(canvas); return null; }
+    renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+      logarithmicDepthBuffer: true,
+    });
+  } catch {
+    container.removeChild(canvas);
+    return null;
+  }
   renderer.setPixelRatio(window.devicePixelRatio || 1);
   renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -150,8 +247,12 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     const pos = new Float32Array(nVerts * 3);
     const nrm = new Float32Array(nVerts * 3);
     for (let i = 0; i < nVerts; i++) {
-      pos[i * 3] = g.verts[i * 6]!; pos[i * 3 + 1] = g.verts[i * 6 + 1]!; pos[i * 3 + 2] = g.verts[i * 6 + 2]!;
-      nrm[i * 3] = g.verts[i * 6 + 3]!; nrm[i * 3 + 1] = g.verts[i * 6 + 4]!; nrm[i * 3 + 2] = g.verts[i * 6 + 5]!;
+      pos[i * 3] = g.verts[i * 6]!;
+      pos[i * 3 + 1] = g.verts[i * 6 + 1]!;
+      pos[i * 3 + 2] = g.verts[i * 6 + 2]!;
+      nrm[i * 3] = g.verts[i * 6 + 3]!;
+      nrm[i * 3 + 1] = g.verts[i * 6 + 4]!;
+      nrm[i * 3 + 2] = g.verts[i * 6 + 5]!;
     }
     const bg = new THREE.BufferGeometry();
     bg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -160,8 +261,17 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     disposables.push(bg);
     return bg;
   };
-  const mat = (hex: number, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial => {
-    const m = new THREE.MeshStandardMaterial({ color: hex, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.1, ...opts });
+  const mat = (
+    hex: number,
+    opts: Partial<THREE.MeshStandardMaterialParameters> = {},
+  ): THREE.MeshStandardMaterial => {
+    const m = new THREE.MeshStandardMaterial({
+      color: hex,
+      side: THREE.DoubleSide,
+      roughness: 0.55,
+      metalness: 0.1,
+      ...opts,
+    });
     disposables.push(m);
     return m;
   };
@@ -174,9 +284,15 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
     silk: mat(0xededed),
     barrel: mat(0xb88f42, { metalness: 0.5, roughness: 0.4 }),
   };
-  const add = (g: Group, m: THREE.Material): void => { if (g.idx.length) scene.add(new THREE.Mesh(toGeom(g), m)); };
-  add(gWall, M.fr4); add(gBody, M.fr4); add(gCopper, M.copper);
-  add(gGold, M.gold); add(gSilk, M.silk); add(gHole, M.barrel);
+  const add = (g: Group, m: THREE.Material): void => {
+    if (g.idx.length) scene.add(new THREE.Mesh(toGeom(g), m));
+  };
+  add(gWall, M.fr4);
+  add(gBody, M.fr4);
+  add(gCopper, M.copper);
+  add(gGold, M.gold);
+  add(gSilk, M.silk);
+  add(gHole, M.barrel);
   add(gMask, M.mask); // translucent last
 
   // Lighting: soft hemispheric ambient + a headlight that follows the camera
@@ -198,7 +314,7 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   controls.rotateSpeed = 3.2;
   controls.zoomSpeed = 1.3;
   controls.panSpeed = 0.8;
-  controls.staticMoving = true;       // no inertia — precise, KiCad-like
+  controls.staticMoving = true; // no inertia — precise, KiCad-like
   controls.minDistance = half * 0.4;
   controls.maxDistance = half * 20;
   controls.target.set(0, 0, 0);

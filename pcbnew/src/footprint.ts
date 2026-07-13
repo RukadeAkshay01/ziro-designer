@@ -16,13 +16,13 @@
 
 import { BOARD_ITEM } from './board_item.js';
 import { FlipLayer, type PCB_LAYER_ID } from './layer_ids.js';
-import { PAD } from './pad.js';
-import { PCB_FIELD } from './pcb_field.js';
+import type { PAD } from './pad.js';
+import type { PCB_FIELD } from './pcb_field.js';
 import { PCB_SHAPE } from './pcb_shape.js';
-import { PCB_TEXT } from './pcb_text.js';
-import { ZONE } from './zone.js';
-import { VECTOR2I } from '@ziroeda/kimath/src/math/vector2.js';
-import { EDA_ANGLE, ANGLE_0, ANGLE_180 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
+import type { PCB_TEXT } from './pcb_text.js';
+import type { ZONE } from './zone.js';
+import type { VECTOR2I } from '@ziroeda/kimath/src/math/vector2.js';
+import { type EDA_ANGLE, ANGLE_0, ANGLE_180 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import { RotatePoint } from '@ziroeda/kimath/src/trigo.js';
 import { MIRRORVAL, FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
 
@@ -32,16 +32,24 @@ export type FP_DRAWING = PCB_SHAPE | PCB_TEXT;
 export class FOOTPRINT extends BOARD_ITEM {
   protected m_pos: VECTOR2I;
   protected m_orient: EDA_ANGLE;
-  protected m_fpid: string;              // library id "lib:name"
+  protected m_fpid: string; // library id "lib:name"
   protected m_fields: PCB_FIELD[];
   protected m_pads: PAD[];
   protected m_drawings: FP_DRAWING[];
   protected m_zones: ZONE[];
 
-  constructor(opts: {
-    fpid?: string; pos?: VECTOR2I; orient?: EDA_ANGLE; layer?: PCB_LAYER_ID;
-    fields?: PCB_FIELD[]; pads?: PAD[]; drawings?: FP_DRAWING[]; zones?: ZONE[];
-  } = {}) {
+  constructor(
+    opts: {
+      fpid?: string;
+      pos?: VECTOR2I;
+      orient?: EDA_ANGLE;
+      layer?: PCB_LAYER_ID;
+      fields?: PCB_FIELD[];
+      pads?: PAD[];
+      drawings?: FP_DRAWING[];
+      zones?: ZONE[];
+    } = {},
+  ) {
     super(opts.layer ?? 'F.Cu');
     this.m_fpid = opts.fpid ?? '';
     this.m_pos = { ...(opts.pos ?? { x: 0, y: 0 }) };
@@ -52,19 +60,39 @@ export class FOOTPRINT extends BOARD_ITEM {
     this.m_zones = opts.zones ?? [];
   }
 
-  GetFPID(): string { return this.m_fpid; }
-  GetOrientation(): EDA_ANGLE { return this.m_orient; }
-  Pads(): PAD[] { return this.m_pads; }
-  Fields(): PCB_FIELD[] { return this.m_fields; }
-  GraphicalItems(): FP_DRAWING[] { return this.m_drawings; }
-  Zones(): ZONE[] { return this.m_zones; }
+  GetFPID(): string {
+    return this.m_fpid;
+  }
+  GetOrientation(): EDA_ANGLE {
+    return this.m_orient;
+  }
+  Pads(): PAD[] {
+    return this.m_pads;
+  }
+  Fields(): PCB_FIELD[] {
+    return this.m_fields;
+  }
+  GraphicalItems(): FP_DRAWING[] {
+    return this.m_drawings;
+  }
+  Zones(): ZONE[] {
+    return this.m_zones;
+  }
 
-  GetReference(): string { return this.m_fields.find((f) => f.IsReference())?.GetText() ?? ''; }
-  GetValue(): string { return this.m_fields.find((f) => f.IsValue())?.GetText() ?? ''; }
+  GetReference(): string {
+    return this.m_fields.find((f) => f.IsReference())?.GetText() ?? '';
+  }
+  GetValue(): string {
+    return this.m_fields.find((f) => f.IsValue())?.GetText() ?? '';
+  }
 
-  private children(): BOARD_ITEM[] { return [...this.m_fields, ...this.m_pads, ...this.m_drawings, ...this.m_zones]; }
+  private children(): BOARD_ITEM[] {
+    return [...this.m_fields, ...this.m_pads, ...this.m_drawings, ...this.m_zones];
+  }
 
-  GetPosition(): VECTOR2I { return this.m_pos; }
+  GetPosition(): VECTOR2I {
+    return this.m_pos;
+  }
 
   /** FOOTPRINT::SetPosition — translate the anchor and every child by the delta. */
   SetPosition(aPos: VECTOR2I): void {
@@ -117,16 +145,35 @@ export class FOOTPRINT extends BOARD_ITEM {
 
   /** Bounding box of the footprint's geometry (pads / drawings / field anchors). */
   GetBoundingBox(): { minX: number; minY: number; maxX: number; maxY: number } | null {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     const grow = (x0: number, y0: number, x1: number, y1: number): void => {
-      if (x0 < minX) minX = x0; if (y0 < minY) minY = y0; if (x1 > maxX) maxX = x1; if (y1 > maxY) maxY = y1;
+      if (x0 < minX) minX = x0;
+      if (y0 < minY) minY = y0;
+      if (x1 > maxX) maxX = x1;
+      if (y1 > maxY) maxY = y1;
     };
-    for (const pad of this.m_pads) { const p = pad.GetPosition(), r = pad.GetBoundingRadius(); grow(p.x - r, p.y - r, p.x + r, p.y + r); }
-    for (const d of this.m_drawings) {
-      if (d instanceof PCB_SHAPE) { const s = d.GetStart(), e = d.GetEnd(); grow(Math.min(s.x, e.x), Math.min(s.y, e.y), Math.max(s.x, e.x), Math.max(s.y, e.y)); }
-      else { const p = d.GetPosition(); grow(p.x, p.y, p.x, p.y); }
+    for (const pad of this.m_pads) {
+      const p = pad.GetPosition(),
+        r = pad.GetBoundingRadius();
+      grow(p.x - r, p.y - r, p.x + r, p.y + r);
     }
-    for (const f of this.m_fields) { const p = f.GetPosition(); grow(p.x, p.y, p.x, p.y); }
+    for (const d of this.m_drawings) {
+      if (d instanceof PCB_SHAPE) {
+        const s = d.GetStart(),
+          e = d.GetEnd();
+        grow(Math.min(s.x, e.x), Math.min(s.y, e.y), Math.max(s.x, e.x), Math.max(s.y, e.y));
+      } else {
+        const p = d.GetPosition();
+        grow(p.x, p.y, p.x, p.y);
+      }
+    }
+    for (const f of this.m_fields) {
+      const p = f.GetPosition();
+      grow(p.x, p.y, p.x, p.y);
+    }
     return minX <= maxX ? { minX, minY, maxX, maxY } : null;
   }
 
@@ -134,7 +181,11 @@ export class FOOTPRINT extends BOARD_ITEM {
   HitTest(aPosition: VECTOR2I, aAccuracy = 0): boolean {
     const b = this.GetBoundingBox();
     if (!b) return false;
-    return aPosition.x >= b.minX - aAccuracy && aPosition.x <= b.maxX + aAccuracy
-        && aPosition.y >= b.minY - aAccuracy && aPosition.y <= b.maxY + aAccuracy;
+    return (
+      aPosition.x >= b.minX - aAccuracy &&
+      aPosition.x <= b.maxX + aAccuracy &&
+      aPosition.y >= b.minY - aAccuracy &&
+      aPosition.y <= b.maxY + aAccuracy
+    );
   }
 }

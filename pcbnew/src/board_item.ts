@@ -22,9 +22,15 @@ export abstract class BOARD_ITEM {
     this.m_layer = layer;
   }
 
-  GetLayer(): PCB_LAYER_ID { return this.m_layer; }
-  SetLayer(aLayer: PCB_LAYER_ID): void { this.m_layer = aLayer; }
-  IsOnLayer(aLayer: PCB_LAYER_ID): boolean { return this.m_layer === aLayer; }
+  GetLayer(): PCB_LAYER_ID {
+    return this.m_layer;
+  }
+  SetLayer(aLayer: PCB_LAYER_ID): void {
+    this.m_layer = aLayer;
+  }
+  IsOnLayer(aLayer: PCB_LAYER_ID): boolean {
+    return this.m_layer === aLayer;
+  }
 
   abstract GetPosition(): VECTOR2I;
   abstract SetPosition(aPos: VECTOR2I): void;

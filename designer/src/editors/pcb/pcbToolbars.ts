@@ -56,8 +56,18 @@ export const PCB_TOP_TOOLBAR: ToolEntry[] = [
 /** LEFT (view options) toolbar. */
 export const PCB_LEFT_TOOLBAR: ToolEntry[] = [
   { id: 'toggleGrid', icon: 'toggleGrid', title: 'Show grid', toggle: true },
-  { id: 'toggleGridOverrides', icon: 'toggleGridOverrides', title: 'Toggle grid overrides', toggle: true },
-  { id: 'togglePolarCoords', icon: 'togglePolarCoords', title: 'Display polar coordinates', toggle: true },
+  {
+    id: 'toggleGridOverrides',
+    icon: 'toggleGridOverrides',
+    title: 'Toggle grid overrides',
+    toggle: true,
+  },
+  {
+    id: 'togglePolarCoords',
+    icon: 'togglePolarCoords',
+    title: 'Display polar coordinates',
+    toggle: true,
+  },
   { id: 'unitsMm', icon: 'unitsMm', title: 'Units in millimetres', toggle: true },
   { id: 'unitsInches', icon: 'unitsInches', title: 'Units in inches', toggle: true },
   { id: 'unitsMils', icon: 'unitsMils', title: 'Units in mils', toggle: true },
@@ -70,19 +80,44 @@ export const PCB_LEFT_TOOLBAR: ToolEntry[] = [
   { id: 'lineMode45', icon: 'lineMode45', title: 'Line mode: 45°', toggle: true },
   sep,
   { id: 'showRatsnest', icon: 'showRatsnest', title: 'Show ratsnest', toggle: true },
-  { id: 'ratsnestLineMode', icon: 'ratsnestLineMode', title: 'Curved ratsnest lines', toggle: true },
+  {
+    id: 'ratsnestLineMode',
+    icon: 'ratsnestLineMode',
+    title: 'Curved ratsnest lines',
+    toggle: true,
+  },
   sep,
   { id: 'highContrast', icon: 'highContrast', title: 'High-contrast display mode', toggle: true },
-  { id: 'toggleNetHighlight', icon: 'toggleNetHighlight', title: 'Toggle net highlighting', toggle: true },
+  {
+    id: 'toggleNetHighlight',
+    icon: 'toggleNetHighlight',
+    title: 'Toggle net highlighting',
+    toggle: true,
+  },
   sep,
-  { id: 'zoneDisplayFilled', icon: 'zoneDisplayFilled', title: 'Show filled areas of zones', toggle: true },
-  { id: 'zoneDisplayOutline', icon: 'zoneDisplayOutline', title: 'Show only zone boundaries', toggle: true },
+  {
+    id: 'zoneDisplayFilled',
+    icon: 'zoneDisplayFilled',
+    title: 'Show filled areas of zones',
+    toggle: true,
+  },
+  {
+    id: 'zoneDisplayOutline',
+    icon: 'zoneDisplayOutline',
+    title: 'Show only zone boundaries',
+    toggle: true,
+  },
   sep,
   { id: 'padDisplayMode', icon: 'padDisplayMode', title: 'Sketch pads', toggle: true },
   { id: 'viaDisplayMode', icon: 'viaDisplayMode', title: 'Sketch vias', toggle: true },
   { id: 'trackDisplayMode', icon: 'trackDisplayMode', title: 'Sketch tracks', toggle: true },
   sep,
-  { id: 'showLayersManager', icon: 'showLayersManager', title: 'Show Appearance manager', toggle: true },
+  {
+    id: 'showLayersManager',
+    icon: 'showLayersManager',
+    title: 'Show Appearance manager',
+    toggle: true,
+  },
   { id: 'showProperties', icon: 'showProperties', title: 'Show Properties panel', toggle: true },
 ];
 
@@ -130,10 +165,16 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
  * two columns row-major like the panel.
  */
 export const PCB_FILTER_CATS: [string, string][] = [
-  ['lockedItems', 'Locked items'], ['footprints', 'Footprints'],
-  ['text', 'Text'], ['tracks', 'Tracks'],
-  ['vias', 'Vias'], ['zones', 'Zones'],
-  ['pads', 'Pads'], ['graphics', 'Graphics'],
-  ['keepouts', 'Rule Areas'], ['dimensions', 'Dimensions'],
-  ['otherItems', 'Other items'], ['points', 'Points'],
+  ['lockedItems', 'Locked items'],
+  ['footprints', 'Footprints'],
+  ['text', 'Text'],
+  ['tracks', 'Tracks'],
+  ['vias', 'Vias'],
+  ['zones', 'Zones'],
+  ['pads', 'Pads'],
+  ['graphics', 'Graphics'],
+  ['keepouts', 'Rule Areas'],
+  ['dimensions', 'Dimensions'],
+  ['otherItems', 'Other items'],
+  ['points', 'Points'],
 ];

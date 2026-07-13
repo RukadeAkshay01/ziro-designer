@@ -29,13 +29,13 @@ export interface CommonSettings {
   };
   input: {
     auto_pan: boolean;
-    auto_pan_acceleration: number;    // 0..9
+    auto_pan_acceleration: number; // 0..9
     center_on_zoom: boolean;
     warp_mouse_on_move: boolean;
     hotkey_feedback: boolean;
-    immediate_actions: boolean;       // !("First hotkey selects tool")
+    immediate_actions: boolean; // !("First hotkey selects tool")
     zoom_acceleration: boolean;
-    zoom_speed: number;               // 1..10
+    zoom_speed: number; // 1..10
     zoom_speed_auto: boolean;
     horizontal_pan: boolean;
     scroll_modifier_zoom: ScrollModifier;
@@ -43,13 +43,13 @@ export interface CommonSettings {
     scroll_modifier_pan_v: ScrollModifier;
     reverse_scroll_zoom: boolean;
     reverse_scroll_pan_h: boolean;
-    mouse_left: MouseDragAction;      // select | drag_selected | drag_any
-    mouse_middle: MouseDragAction;    // pan | zoom | none
-    mouse_right: MouseDragAction;     // pan | zoom | none
+    mouse_left: MouseDragAction; // select | drag_selected | drag_any
+    mouse_middle: MouseDragAction; // pan | zoom | none
+    mouse_right: MouseDragAction; // pan | zoom | none
   };
   system: {
     file_history_size: number;
-    autosave_interval: number;        // seconds; 0 = disabled
+    autosave_interval: number; // seconds; 0 = disabled
     session: { remember_open_files: boolean };
   };
   backup: {
@@ -57,8 +57,8 @@ export interface CommonSettings {
     backup_on_autosave: boolean;
     limit_total_files: number;
     limit_daily_files: number;
-    min_interval: number;             // seconds
-    limit_total_size: number;         // bytes
+    min_interval: number; // seconds
+    limit_total_size: number; // bytes
   };
 }
 
@@ -116,7 +116,10 @@ export interface TemplateFieldName {
   url: boolean;
 }
 
-export interface GridOverride { enabled: boolean; size: string }
+export interface GridOverride {
+  enabled: boolean;
+  size: string;
+}
 
 export interface EeschemaSettings {
   appearance: {
@@ -141,17 +144,17 @@ export interface EeschemaSettings {
     align_to_grid: boolean;
   };
   drawing: {
-    default_line_thickness: number;   // mils
-    default_wire_thickness: number;   // mils
-    default_bus_thickness: number;    // mils
-    default_text_size: number;        // mils
+    default_line_thickness: number; // mils
+    default_wire_thickness: number; // mils
+    default_bus_thickness: number; // mils
+    default_text_size: number; // mils
     line_mode: LineMode;
     /** editing.arc_edit_mode: 0 keep-center/adjust-radius, 1 keep-endpoints, 2 keep-center+radius. */
     arc_edit_mode: 0 | 1 | 2;
     auto_start_wires: boolean;
     repeat_label_increment: number;
-    default_repeat_offset_x: number;  // mils
-    default_repeat_offset_y: number;  // mils
+    default_repeat_offset_x: number; // mils
+    default_repeat_offset_y: number; // mils
     field_names: TemplateFieldName[];
     default_sheet_border_color: string;
     default_sheet_background_color: string;
@@ -169,8 +172,8 @@ export interface EeschemaSettings {
     never_show_rescue_dialog: boolean;
   };
   selection: {
-    thickness: number;                // mils
-    highlight_thickness: number;      // mils
+    thickness: number; // mils
+    highlight_thickness: number; // mils
     draw_selected_children: boolean;
     fill_shapes: boolean;
     highlight_netclass_colors: boolean;
@@ -180,20 +183,20 @@ export interface EeschemaSettings {
   annotation: {
     automatic: boolean;
     recursive: boolean;
-    method: 0 | 1 | 2;                // first free | sheet*100 | sheet*1000
-    sort_order: 0 | 1;                // by X | by Y
+    method: 0 | 1 | 2; // first free | sheet*100 | sheet*1000
+    sort_order: 0 | 1; // by X | by Y
   };
   window: {
     grid: {
-      sizes: string[];                // "50 mil", "25 mil", ...
+      sizes: string[]; // "50 mil", "25 mil", ...
       last_size_idx: number;
       fast_grid_1: number;
       fast_grid_2: number;
       /** GAL grid appearance (gal_options_panel): dots | lines | crosses. */
       style: 'dots' | 'lines' | 'crosses';
-      line_width: number;             // px
-      min_spacing: number;            // px
-      snap: 0 | 1 | 2;                // always | when shown | never
+      line_width: number; // px
+      min_spacing: number; // px
+      snap: 0 | 1 | 2; // always | when shown | never
       show: boolean;
       /** Whether the per-item grid overrides apply (ACTIONS::toggleGridOverrides). */
       overrides_enabled: boolean;
@@ -338,7 +341,9 @@ function load<T>(key: string, defaults: T): T {
 function store(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
-  } catch { /* private mode — settings simply don't persist */ }
+  } catch {
+    /* private mode — settings simply don't persist */
+  }
 }
 
 type Listener = () => void;

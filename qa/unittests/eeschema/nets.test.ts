@@ -2,7 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr/src/index.js';
 import { readSchematic, readSymbolLib } from '@ziroeda/eeschema/src/sch_io/sexpr/read-schematic.js';
 import { computeNetlist } from '@ziroeda/eeschema/src/connectivity/nets.js';
-import { addItems, makeWire, makeJunction, makeLabel, placeSymbol } from '@ziroeda/eeschema/src/tools/index.js';
+import {
+  addItems,
+  makeWire,
+  makeJunction,
+  makeLabel,
+  placeSymbol,
+} from '@ziroeda/eeschema/src/tools/index.js';
 import { refId } from '@ziroeda/eeschema/src/tools/hittest.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 import { readFileSync } from 'node:fs';
@@ -11,15 +17,20 @@ import type { Schematic, LibSymbol } from '@ziroeda/eeschema/src/types.js';
 
 const at = (x: number, y: number) => ({ x: mmToIU(x), y: mmToIU(y) });
 const EMPTY = (): Schematic => readSchematic(parse('(kicad_sch (version 1) (lib_symbols))'));
-const libMap = (sch: Schematic) => new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
+const libMap = (sch: Schematic) =>
+  new Map<string, LibSymbol>(sch.libSymbols.map((l) => [l.libId, l]));
 
 // A 2-pin part (R) so we have real pins to connect.
-const R = readSymbolLib(parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')))[0]!;
+const R = readSymbolLib(
+  parse(readFileSync(fileURLToPath(new URL('../../data/R.kicad_sym', import.meta.url)), 'utf8')),
+)[0]!;
 
 describe('computeNetlist', () => {
   it('joins two wires that share an endpoint into one net', () => {
     let sch = EMPTY();
-    sch = addItems({ lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(10, 10))] }).apply(sch);
+    sch = addItems({
+      lines: [makeWire(at(0, 0), at(10, 0)), makeWire(at(10, 0), at(10, 10))],
+    }).apply(sch);
     const { nets } = computeNetlist(sch, libMap(sch));
     expect(nets).toHaveLength(1);
     expect(nets[0]!.items).toHaveLength(2);
@@ -28,7 +39,9 @@ describe('computeNetlist', () => {
   it('keeps two wires that merely cross (no junction) on separate nets', () => {
     let sch = EMPTY();
     // Horizontal wire and a vertical wire crossing its middle, no junction.
-    sch = addItems({ lines: [makeWire(at(0, 5), at(10, 5)), makeWire(at(5, 0), at(5, 10))] }).apply(sch);
+    sch = addItems({ lines: [makeWire(at(0, 5), at(10, 5)), makeWire(at(5, 0), at(5, 10))] }).apply(
+      sch,
+    );
     const { nets } = computeNetlist(sch, libMap(sch));
     expect(nets).toHaveLength(2);
   });

@@ -25,9 +25,15 @@ export class EDA_ANGLE {
    *  double ctor). */
   constructor(value = 0, angleType: EDA_ANGLE_T = EDA_ANGLE_T.DEGREES_T) {
     switch (angleType) {
-      case EDA_ANGLE_T.RADIANS_T: this.m_value = value / DEGREES_TO_RADIANS; break;
-      case EDA_ANGLE_T.TENTHS_OF_A_DEGREE_T: this.m_value = value / 10.0; break;
-      default: this.m_value = value; break;
+      case EDA_ANGLE_T.RADIANS_T:
+        this.m_value = value / DEGREES_TO_RADIANS;
+        break;
+      case EDA_ANGLE_T.TENTHS_OF_A_DEGREE_T:
+        this.m_value = value / 10.0;
+        break;
+      default:
+        this.m_value = value;
+        break;
     }
   }
 
@@ -41,13 +47,25 @@ export class EDA_ANGLE {
     return new EDA_ANGLE(Math.atan2(v.y, v.x), EDA_ANGLE_T.RADIANS_T);
   }
 
-  AsDegrees(): number { return this.m_value; }
-  AsTenthsOfADegree(): number { return Math.round(this.m_value * 10.0); }
-  AsRadians(): number { return this.m_value * DEGREES_TO_RADIANS; }
+  AsDegrees(): number {
+    return this.m_value;
+  }
+  AsTenthsOfADegree(): number {
+    return Math.round(this.m_value * 10.0);
+  }
+  AsRadians(): number {
+    return this.m_value * DEGREES_TO_RADIANS;
+  }
 
-  IsZero(): boolean { return this.m_value === 0.0; }
-  IsHorizontal(): boolean { return this.m_value === 0.0 || this.m_value === 180.0; }
-  IsVertical(): boolean { return this.m_value === 90.0 || this.m_value === 270.0; }
+  IsZero(): boolean {
+    return this.m_value === 0.0;
+  }
+  IsHorizontal(): boolean {
+    return this.m_value === 0.0 || this.m_value === 180.0;
+  }
+  IsVertical(): boolean {
+    return this.m_value === 90.0 || this.m_value === 270.0;
+  }
   IsCardinal90(): boolean {
     const n = this.Normalized().AsDegrees();
     return n === 0.0 || n === 90.0 || n === 180.0 || n === 270.0;
@@ -73,14 +91,26 @@ export class EDA_ANGLE {
     return Math.cos(this.AsRadians());
   }
 
-  Tan(): number { return Math.tan(this.AsRadians()); }
+  Tan(): number {
+    return Math.tan(this.AsRadians());
+  }
 
-  static Arccos(x: number): EDA_ANGLE { return new EDA_ANGLE(Math.acos(x), EDA_ANGLE_T.RADIANS_T); }
-  static Arcsin(x: number): EDA_ANGLE { return new EDA_ANGLE(Math.asin(x), EDA_ANGLE_T.RADIANS_T); }
-  static Arctan(x: number): EDA_ANGLE { return new EDA_ANGLE(Math.atan(x), EDA_ANGLE_T.RADIANS_T); }
-  static Arctan2(y: number, x: number): EDA_ANGLE { return new EDA_ANGLE(Math.atan2(y, x), EDA_ANGLE_T.RADIANS_T); }
+  static Arccos(x: number): EDA_ANGLE {
+    return new EDA_ANGLE(Math.acos(x), EDA_ANGLE_T.RADIANS_T);
+  }
+  static Arcsin(x: number): EDA_ANGLE {
+    return new EDA_ANGLE(Math.asin(x), EDA_ANGLE_T.RADIANS_T);
+  }
+  static Arctan(x: number): EDA_ANGLE {
+    return new EDA_ANGLE(Math.atan(x), EDA_ANGLE_T.RADIANS_T);
+  }
+  static Arctan2(y: number, x: number): EDA_ANGLE {
+    return new EDA_ANGLE(Math.atan2(y, x), EDA_ANGLE_T.RADIANS_T);
+  }
 
-  Invert(): EDA_ANGLE { return new EDA_ANGLE(-this.m_value); }
+  Invert(): EDA_ANGLE {
+    return new EDA_ANGLE(-this.m_value);
+  }
 
   // ---- in-place normalizers (KiCad mutates and returns *this) ---------------
   Normalize(): EDA_ANGLE {
@@ -109,23 +139,47 @@ export class EDA_ANGLE {
     return this;
   }
   /** Non-mutating Normalize (KiCad Normalized()). */
-  Normalized(): EDA_ANGLE { return this.Clone().Normalize(); }
+  Normalized(): EDA_ANGLE {
+    return this.Clone().Normalize();
+  }
 
-  Clone(): EDA_ANGLE { return new EDA_ANGLE(this.m_value); }
+  Clone(): EDA_ANGLE {
+    return new EDA_ANGLE(this.m_value);
+  }
 
   // ---- operator replacements ------------------------------------------------
   /** a += b  →  a.add(b) returns a new angle (a + b). */
-  add(o: EDA_ANGLE): EDA_ANGLE { return new EDA_ANGLE(this.m_value + o.m_value); }
-  sub(o: EDA_ANGLE): EDA_ANGLE { return new EDA_ANGLE(this.m_value - o.m_value); }
-  negate(): EDA_ANGLE { return new EDA_ANGLE(-this.m_value); }
-  multiply(k: number): EDA_ANGLE { return new EDA_ANGLE(this.m_value * k); }
-  divide(k: number): EDA_ANGLE { return new EDA_ANGLE(this.m_value / k); }
+  add(o: EDA_ANGLE): EDA_ANGLE {
+    return new EDA_ANGLE(this.m_value + o.m_value);
+  }
+  sub(o: EDA_ANGLE): EDA_ANGLE {
+    return new EDA_ANGLE(this.m_value - o.m_value);
+  }
+  negate(): EDA_ANGLE {
+    return new EDA_ANGLE(-this.m_value);
+  }
+  multiply(k: number): EDA_ANGLE {
+    return new EDA_ANGLE(this.m_value * k);
+  }
+  divide(k: number): EDA_ANGLE {
+    return new EDA_ANGLE(this.m_value / k);
+  }
 
-  equals(o: EDA_ANGLE): boolean { return this.m_value === o.m_value; }
-  lt(o: EDA_ANGLE): boolean { return this.m_value < o.m_value; }
-  gt(o: EDA_ANGLE): boolean { return this.m_value > o.m_value; }
-  le(o: EDA_ANGLE): boolean { return this.m_value <= o.m_value; }
-  ge(o: EDA_ANGLE): boolean { return this.m_value >= o.m_value; }
+  equals(o: EDA_ANGLE): boolean {
+    return this.m_value === o.m_value;
+  }
+  lt(o: EDA_ANGLE): boolean {
+    return this.m_value < o.m_value;
+  }
+  gt(o: EDA_ANGLE): boolean {
+    return this.m_value > o.m_value;
+  }
+  le(o: EDA_ANGLE): boolean {
+    return this.m_value <= o.m_value;
+  }
+  ge(o: EDA_ANGLE): boolean {
+    return this.m_value >= o.m_value;
+  }
 }
 
 // Global angle constants (eda_angle.h).

@@ -5,11 +5,14 @@ import { readBoard, rotatePcb, arcCenter } from '@ziroeda/pcbnew/src/read-board.
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 
 // Local KiCad source clone (gitignored); the suite is skipped when absent.
-const STICKHUB = new URL('../../../kicad-src/demos/stickhub/StickHub.kicad_pcb', import.meta.url).pathname;
+const STICKHUB = new URL('../../../kicad-src/demos/stickhub/StickHub.kicad_pcb', import.meta.url)
+  .pathname;
 
 describe.skipIf(!existsSync(STICKHUB))('readBoard (real KiCad demo board)', () => {
   // Guarded read: vitest still executes skipped suite factories during collection.
-  const board = existsSync(STICKHUB) ? readBoard(parse(readFileSync(STICKHUB, 'utf8'))) : (undefined as never);
+  const board = existsSync(STICKHUB)
+    ? readBoard(parse(readFileSync(STICKHUB, 'utf8')))
+    : (undefined as never);
 
   it('reads the layer table, nets and main item arrays', () => {
     expect(board.layers.length).toBeGreaterThan(5);
@@ -30,7 +33,8 @@ describe.skipIf(!existsSync(STICKHUB))('readBoard (real KiCad demo board)', () =
         if (p.net === undefined) continue;
         checked++;
         const tol = Math.max(p.size.x, p.size.y) / 2 + mmToIU(0.01);
-        if (ends.some((e) => Math.abs(e.x - p.at.x) <= tol && Math.abs(e.y - p.at.y) <= tol)) matched++;
+        if (ends.some((e) => Math.abs(e.x - p.at.x) <= tol && Math.abs(e.y - p.at.y) <= tol))
+          matched++;
       }
     }
     expect(checked).toBeGreaterThan(0);
@@ -94,7 +98,12 @@ describe('readBoard (synthetic)', () => {
     expect(board.zones[0]!.fills[0]!.layer).toBe('B.Cu');
     expect(board.zones[0]!.fills[0]!.polys[0]!.length).toBe(4);
     const pad2 = board.footprints[0]!.pads.find((p) => p.number === '2')!;
-    expect(pad2.drill).toEqual({ oblong: false, w: mmToIU(0.8), h: mmToIU(0.8), offset: undefined });
+    expect(pad2.drill).toEqual({
+      oblong: false,
+      w: mmToIU(0.8),
+      h: mmToIU(0.8),
+      offset: undefined,
+    });
     expect(pad2.layers).toEqual(['*.Cu']);
   });
 });

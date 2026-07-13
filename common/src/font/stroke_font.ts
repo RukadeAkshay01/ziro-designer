@@ -43,7 +43,10 @@ function decodeGlyph(s: string): Glyph {
     } else {
       const x = (c0 - R) * STROKE_FONT_SCALE - startX;
       const y = (c1 - R + FONT_OFFSET) * STROKE_FONT_SCALE;
-      if (!cur) { cur = []; strokes.push(cur); }
+      if (!cur) {
+        cur = [];
+        strokes.push(cur);
+      }
       cur.push({ x, y });
     }
   }
@@ -65,7 +68,10 @@ export function measureText(text: string, size: number): number {
   const gl = glyphs();
   let w = 0;
   for (const ch of text) {
-    if (ch === ' ') { w += spaceAdvance() * size; continue; }
+    if (ch === ' ') {
+      w += spaceAdvance() * size;
+      continue;
+    }
     let dd = ch.codePointAt(0)! - 0x20;
     if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20;
     w += gl[dd]!.advance * size;
@@ -93,11 +99,15 @@ export function layoutText(text: string, size: number): { strokes: Vec2[][]; wid
     const strokes: Vec2[][] = [];
     let cursorX = 0;
     for (const ch of line) {
-      if (ch === ' ') { cursorX += spaceAdvance() * size; continue; }
+      if (ch === ' ') {
+        cursorX += spaceAdvance() * size;
+        continue;
+      }
       let dd = ch.codePointAt(0)! - 0x20;
       if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20; // non-printable -> '?'
       const g = gl[dd]!;
-      for (const stroke of g.strokes) strokes.push(stroke.map((p) => ({ x: cursorX + p.x * size, y: p.y * size })));
+      for (const stroke of g.strokes)
+        strokes.push(stroke.map((p) => ({ x: cursorX + p.x * size, y: p.y * size })));
       cursorX += g.advance * size;
     }
     return { strokes, width: cursorX };

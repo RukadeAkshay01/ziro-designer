@@ -6,8 +6,19 @@ import { ANGLE_90 } from '@ziroeda/kimath/src/geometry/eda_angle.js';
 import { FLIP_DIRECTION } from '@ziroeda/core/src/mirror.js';
 
 const mkFp = (pos = { x: 0, y: 0 }, padPos = { x: 0, y: 100 }): FOOTPRINT => {
-  const pad = new PAD({ number: '1', pos: padPos, size: { x: 60, y: 60 }, shape: PAD_SHAPE.CIRCLE, attribute: PAD_ATTRIB.SMD, layers: ['F.Cu'] });
-  const ref = new PCB_FIELD('F.SilkS', MANDATORY_FIELD_T.REFERENCE, 'Reference', { text: 'R1', pos, size: { x: 1000, y: 1000 } });
+  const pad = new PAD({
+    number: '1',
+    pos: padPos,
+    size: { x: 60, y: 60 },
+    shape: PAD_SHAPE.CIRCLE,
+    attribute: PAD_ATTRIB.SMD,
+    layers: ['F.Cu'],
+  });
+  const ref = new PCB_FIELD('F.SilkS', MANDATORY_FIELD_T.REFERENCE, 'Reference', {
+    text: 'R1',
+    pos,
+    size: { x: 1000, y: 1000 },
+  });
   return new FOOTPRINT({ fpid: 'R:0603', pos, layer: 'F.Cu', pads: [pad], fields: [ref] });
 };
 
@@ -38,7 +49,7 @@ describe('FOOTPRINT', () => {
     expect(fp.GetLayer()).toBe('B.Cu');
     const pad = fp.Pads()[0]!;
     expect(pad.GetPosition()).toEqual({ x: 0, y: -100 }); // mirrored about the anchor's Y
-    expect(pad.GetLayer()).toBe('B.Cu');                  // child layer flipped too
+    expect(pad.GetLayer()).toBe('B.Cu'); // child layer flipped too
   });
 
   it('Flip LEFT_RIGHT flips side and child layers', () => {

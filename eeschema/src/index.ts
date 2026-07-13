@@ -1,6 +1,11 @@
 /** @ziroeda/eeschema — schematic engine mirroring KiCad's eeschema/. */
 export * from './types.js';
-export { readSchematic, readSymbolLib, readLibPin, readGraphic } from './sch_io/sexpr/read-schematic.js';
+export {
+  readSchematic,
+  readSymbolLib,
+  readLibPin,
+  readGraphic,
+} from './sch_io/sexpr/read-schematic.js';
 export { writeSchematic, buildPropertyNode } from './sch_io/sexpr/write-schematic.js';
 export {
   writeSymbolLib,

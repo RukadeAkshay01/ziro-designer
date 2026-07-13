@@ -4,7 +4,10 @@ import { readSchematic, serializeSchematic } from '@ziroeda/eeschema';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  rotateOrientation, mirrorOrientation, symbolTransform, orientationFromTransform,
+  rotateOrientation,
+  mirrorOrientation,
+  symbolTransform,
+  orientationFromTransform,
   type Orientation,
 } from '@ziroeda/common/src/transform.js';
 import { transformItems } from '@ziroeda/eeschema/src/tools/transform.js';
@@ -43,12 +46,17 @@ describe('orientation algebra (KiCad SetOrientation/GetOrientation)', () => {
     // MIRROR_X == MIRROR_Y ∘ ROT_180 in KiCad's group.
     const viaX = mirrorOrientation({ angle: 0 }, 'x');
     const viaY180 = mirrorOrientation({ angle: 180 }, 'y');
-    expect(symbolTransform(viaX.angle, viaX.mirror)).toEqual(symbolTransform(viaY180.angle, viaY180.mirror));
+    expect(symbolTransform(viaX.angle, viaX.mirror)).toEqual(
+      symbolTransform(viaY180.angle, viaY180.mirror),
+    );
   });
 });
 
 describe('transformItems command', () => {
-  const fixture = readFileSync(fileURLToPath(new URL('../../data/nfc-antenna.kicad_sch', import.meta.url)), 'utf8');
+  const fixture = readFileSync(
+    fileURLToPath(new URL('../../data/nfc-antenna.kicad_sch', import.meta.url)),
+    'utf8',
+  );
   const load = () => readSchematic(parse(fixture));
 
   it('rotating a single symbol changes its angle but not its position', () => {

@@ -79,7 +79,10 @@ function readStroke(node: SList): Stroke | undefined {
   };
   const col = childNamed(s, 'color');
   if (col) {
-    const r = numArg(col, 0) ?? 0, g = numArg(col, 1) ?? 0, b = numArg(col, 2) ?? 0, a = numArg(col, 3) ?? 1;
+    const r = numArg(col, 0) ?? 0,
+      g = numArg(col, 1) ?? 0,
+      b = numArg(col, 2) ?? 0,
+      a = numArg(col, 3) ?? 1;
     if (r || g || b || a < 1) stroke.color = [r, g, b, a]; // ignore KiCad's (0 0 0 0) "unspecified"
   }
   return stroke;
@@ -91,7 +94,10 @@ function readFill(node: SList): Fill | undefined {
   const fill: { -readonly [K in keyof Fill]: Fill[K] } = { type: stringField(f, 'type') ?? 'none' };
   const col = childNamed(f, 'color');
   if (col) {
-    const r = numArg(col, 0) ?? 0, g = numArg(col, 1) ?? 0, b = numArg(col, 2) ?? 0, a = numArg(col, 3) ?? 1;
+    const r = numArg(col, 0) ?? 0,
+      g = numArg(col, 1) ?? 0,
+      b = numArg(col, 2) ?? 0,
+      a = numArg(col, 3) ?? 1;
     if (r || g || b || a < 1) fill.color = [r, g, b, a];
   }
   return fill;
@@ -118,7 +124,10 @@ function readEffects(node: SList): TextEffects | undefined {
     if (bareItalic || boolField(font, 'italic', false)) effects.italic = true;
     const col = childNamed(font, 'color');
     if (col) {
-      const r = numArg(col, 0) ?? 0, g = numArg(col, 1) ?? 0, b = numArg(col, 2) ?? 0, a = numArg(col, 3) ?? 1;
+      const r = numArg(col, 0) ?? 0,
+        g = numArg(col, 1) ?? 0,
+        b = numArg(col, 2) ?? 0,
+        a = numArg(col, 3) ?? 1;
       if (r || g || b || a < 1) effects.color = [r, g, b, a];
     }
   }
@@ -201,20 +210,36 @@ export function readGraphic(node: SList, invertY = false): LibGraphic | undefine
       const start = childNamed(node, 'start');
       const end = childNamed(node, 'end');
       if (!start || !end) return undefined;
-      return withSF({ kind: 'rectangle' as const, start: readPoint(start, 0, invertY), end: readPoint(end, 0, invertY), source: node });
+      return withSF({
+        kind: 'rectangle' as const,
+        start: readPoint(start, 0, invertY),
+        end: readPoint(end, 0, invertY),
+        source: node,
+      });
     }
     case 'circle': {
       const center = childNamed(node, 'center');
       const radius = childNamed(node, 'radius');
       if (!center) return undefined;
-      return withSF({ kind: 'circle' as const, center: readPoint(center, 0, invertY), radius: mmToIU(radius ? (numArg(radius, 0) ?? 0) : 0), source: node });
+      return withSF({
+        kind: 'circle' as const,
+        center: readPoint(center, 0, invertY),
+        radius: mmToIU(radius ? (numArg(radius, 0) ?? 0) : 0),
+        source: node,
+      });
     }
     case 'arc': {
       const start = childNamed(node, 'start');
       const mid = childNamed(node, 'mid');
       const end = childNamed(node, 'end');
       if (!start || !mid || !end) return undefined;
-      return withSF({ kind: 'arc' as const, start: readPoint(start, 0, invertY), mid: readPoint(mid, 0, invertY), end: readPoint(end, 0, invertY), source: node });
+      return withSF({
+        kind: 'arc' as const,
+        start: readPoint(start, 0, invertY),
+        mid: readPoint(mid, 0, invertY),
+        end: readPoint(end, 0, invertY),
+        source: node,
+      });
     }
     case 'polyline': {
       const pts = childNamed(node, 'pts');
@@ -261,13 +286,17 @@ function readLibSymbol(node: SList): LibSymbol {
   const pinNamesNode = childNamed(node, 'pin_names');
   const pinNumbersNode = childNamed(node, 'pin_numbers');
   const bareHide = (n: SList | undefined): boolean =>
-    n !== undefined && (boolField(n, 'hide', false) || n.items.some((it) => it.kind === 'atom' && it.value === 'hide'));
+    n !== undefined &&
+    (boolField(n, 'hide', false) ||
+      n.items.some((it) => it.kind === 'atom' && it.value === 'hide'));
   const sym: { -readonly [K in keyof LibSymbol]: LibSymbol[K] } = {
     libId: arg(node, 0) ?? '',
     isPower: childNamed(node, 'power') !== undefined,
     pinNumbersHidden: bareHide(pinNumbersNode),
     pinNamesHidden: bareHide(pinNamesNode),
-    pinNameOffset: pinNamesNode ? mmToIU(numberField(pinNamesNode, 'offset') ?? 0.508) : mmToIU(0.508),
+    pinNameOffset: pinNamesNode
+      ? mmToIU(numberField(pinNamesNode, 'offset') ?? 0.508)
+      : mmToIU(0.508),
     properties,
     units,
     source: node,
@@ -350,7 +379,8 @@ function readSymbol(node: SList): SchSymbol {
   };
   if (mirror === 'x' || mirror === 'y') sym.mirror = mirror;
   // Keep "token absent" distinct from "no": older files have no exclude_from_sim.
-  if (childNamed(node, 'exclude_from_sim')) sym.excludedFromSim = boolField(node, 'exclude_from_sim', false);
+  if (childNamed(node, 'exclude_from_sim'))
+    sym.excludedFromSim = boolField(node, 'exclude_from_sim', false);
   const uuid = stringField(node, 'uuid');
   if (uuid) sym.uuid = uuid;
   return sym;
@@ -392,7 +422,9 @@ function readSheetPin(node: SList): SheetPin {
   const shapeTok = arg(node, 1);
   const pin: { -readonly [K in keyof SheetPin]: SheetPin[K] } = {
     name: arg(node, 0) ?? '',
-    shape: (PIN_SHAPES as readonly string[]).includes(shapeTok ?? '') ? shapeTok as LabelShape : 'input',
+    shape: (PIN_SHAPES as readonly string[]).includes(shapeTok ?? '')
+      ? (shapeTok as LabelShape)
+      : 'input',
     at,
     angle,
     source: node,
@@ -423,7 +455,10 @@ function readSheet(node: SList): SchSheet {
   const fill = childNamed(node, 'fill');
   const fillCol = fill && childNamed(fill, 'color');
   if (fillCol) {
-    const r = numArg(fillCol, 0) ?? 0, g = numArg(fillCol, 1) ?? 0, b = numArg(fillCol, 2) ?? 0, a = numArg(fillCol, 3) ?? 0;
+    const r = numArg(fillCol, 0) ?? 0,
+      g = numArg(fillCol, 1) ?? 0,
+      b = numArg(fillCol, 2) ?? 0,
+      a = numArg(fillCol, 3) ?? 0;
     if (a > 0) sheet.fillColor = [r, g, b, a];
   }
   const uuid = stringField(node, 'uuid');
@@ -485,7 +520,10 @@ function readTextBox(node: SList): SchTextBox {
   const endNode = childNamed(node, 'end');
   const end = endNode
     ? readPoint(endNode, 0)
-    : { x: start.x + mmToIU(numArg(sizeNode ?? node, 0) ?? 0), y: start.y + mmToIU(numArg(sizeNode ?? node, 1) ?? 0) };
+    : {
+        x: start.x + mmToIU(numArg(sizeNode ?? node, 0) ?? 0),
+        y: start.y + mmToIU(numArg(sizeNode ?? node, 1) ?? 0),
+      };
   const tb: { -readonly [K in keyof SchTextBox]: SchTextBox[K] } = {
     text: arg(node, 0) ?? '',
     start,
@@ -508,7 +546,8 @@ function readTextBox(node: SList): SchTextBox {
   if (fill) tb.fill = fill;
   const effects = readEffects(node);
   if (effects) tb.effects = effects;
-  if (childNamed(node, 'exclude_from_sim')) tb.excludedFromSim = boolField(node, 'exclude_from_sim', false);
+  if (childNamed(node, 'exclude_from_sim'))
+    tb.excludedFromSim = boolField(node, 'exclude_from_sim', false);
   const uuid = stringField(node, 'uuid');
   if (uuid) tb.uuid = uuid;
   return tb;
@@ -523,7 +562,10 @@ function readTableCell(node: SList): SchTableCell {
   const endNode = childNamed(node, 'end');
   const end = endNode
     ? readPoint(endNode, 0)
-    : { x: start.x + mmToIU(numArg(sizeNode ?? node, 0) ?? 0), y: start.y + mmToIU(numArg(sizeNode ?? node, 1) ?? 0) };
+    : {
+        x: start.x + mmToIU(numArg(sizeNode ?? node, 0) ?? 0),
+        y: start.y + mmToIU(numArg(sizeNode ?? node, 1) ?? 0),
+      };
   const spanNode = childNamed(node, 'span');
   const cell: { -readonly [K in keyof SchTableCell]: SchTableCell[K] } = {
     text: arg(node, 0) ?? '',
@@ -595,7 +637,13 @@ function readLabel(node: SList, kind: LabelKind): SchLabel {
     source: node,
   };
   const shape = stringField(node, 'shape');
-  if (shape === 'input' || shape === 'output' || shape === 'bidirectional' || shape === 'tri_state' || shape === 'passive') {
+  if (
+    shape === 'input' ||
+    shape === 'output' ||
+    shape === 'bidirectional' ||
+    shape === 'tri_state' ||
+    shape === 'passive'
+  ) {
     label.shape = shape;
   }
   const effects = readEffects(node);
@@ -680,8 +728,7 @@ export function readSchematic(root: SList): Schematic {
     else if (name === 'rectangle' || name === 'circle' || name === 'arc') {
       const g = readGraphic(item, false); // sheet coordinates: +Y down, no invert
       if (g) graphics.push(g);
-    }
-    else if (name === 'text_box') textBoxes.push(readTextBox(item));
+    } else if (name === 'text_box') textBoxes.push(readTextBox(item));
     else if (name === 'table') tables.push(readTable(item));
     else if (LABEL_KINDS[name]) labels.push(readLabel(item, LABEL_KINDS[name]!));
   }

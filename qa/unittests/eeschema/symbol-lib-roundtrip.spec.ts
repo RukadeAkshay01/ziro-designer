@@ -22,15 +22,19 @@ describe('symbol library writer', () => {
     // so compare by name lookup rather than file order.
     const byName = new Map(symbols2.map((s) => [s.libId, s]));
     for (let i = 0; i < symbols.length; i++) {
-      const a = symbols[i]!, b = byName.get(symbols[i]!.libId)!;
+      const a = symbols[i]!,
+        b = byName.get(symbols[i]!.libId)!;
       expect(b).toBeDefined();
       expect(b.units.length).toBe(a.units.length);
-      expect(b.properties.map((p) => [p.key, p.value])).toEqual(a.properties.map((p) => [p.key, p.value]));
+      expect(b.properties.map((p) => [p.key, p.value])).toEqual(
+        a.properties.map((p) => [p.key, p.value]),
+      );
       for (let u = 0; u < a.units.length; u++) {
         expect(b.units[u]!.pins.length).toBe(a.units[u]!.pins.length);
         expect(b.units[u]!.graphics.length).toBe(a.units[u]!.graphics.length);
-        expect(JSON.stringify(b.units[u]!.pins.map(({source, ...r}) => r)))
-          .toBe(JSON.stringify(a.units[u]!.pins.map(({source, ...r}) => r)));
+        expect(JSON.stringify(b.units[u]!.pins.map(({ source, ...r }) => r))).toBe(
+          JSON.stringify(a.units[u]!.pins.map(({ source, ...r }) => r)),
+        );
       }
     }
   });

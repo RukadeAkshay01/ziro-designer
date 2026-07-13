@@ -8,7 +8,9 @@ import type { Board } from '@ziroeda/pcbnew/src/types.js';
 // Strip `source` (and turn Maps into entry arrays) so two boards compare by
 // their modelled content, like the footprint round-trip test's strip().
 const strip = (b: Board): unknown =>
-  JSON.parse(JSON.stringify(b, (k, v) => (k === 'source' ? undefined : v instanceof Map ? [...v] : v)));
+  JSON.parse(
+    JSON.stringify(b, (k, v) => (k === 'source' ? undefined : v instanceof Map ? [...v] : v)),
+  );
 
 // A small but representative board: a footprint, two graphics, a track, an arc
 // track and a via, across a minimal layer table with two nets.
