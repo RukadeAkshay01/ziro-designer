@@ -6,7 +6,11 @@ import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr';
 import { readSchematic } from '@ziroeda/eeschema';
 import { readBoard } from '@ziroeda/pcbnew';
-import { newProjectFiles, sanitizeProjectName } from '@ziroeda/designer/src/home/new_project.js';
+import {
+  copyProjectFiles,
+  newProjectFiles,
+  sanitizeProjectName,
+} from '@ziroeda/designer/src/home/new_project.js';
 
 describe('newProjectFiles', () => {
   const files = newProjectFiles('MyBoard');
@@ -46,5 +50,19 @@ describe('sanitizeProjectName', () => {
   it('strips filesystem-invalid characters and trims', () => {
     expect(sanitizeProjectName(' my/pro:ject*? ')).toBe('myproject');
     expect(sanitizeProjectName('a<b>c|d"e\\f')).toBe('abcdef');
+  });
+});
+
+describe('copyProjectFiles (Save As)', () => {
+  it('renames the project folder and name-matching stems, keeps the rest', () => {
+    const src = newProjectFiles('Old');
+    const extra = { name: 'Old/notes.txt', text: 'n' };
+    const out = copyProjectFiles([...src, extra], 'Old/', 'Old', 'New');
+    expect(out.map((f) => f.name)).toEqual([
+      'New/New.kicad_pro',
+      'New/New.kicad_sch',
+      'New/New.kicad_pcb',
+      'New/notes.txt',
+    ]);
   });
 });

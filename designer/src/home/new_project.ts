@@ -113,3 +113,28 @@ export const newProjectFiles = (name: string): PickedHomeFile[] => {
 
 // KiCad rejects these in project names (invalid on common filesystems).
 export const sanitizeProjectName = (s: string): string => s.replace(/[/\\:*?"<>|]/g, '').trim();
+
+/**
+ * Save As: copy the project's files under a new project name — the folder
+ * prefix and every file whose stem matches the old project name are renamed
+ * (mirrors the upstream manager's SaveProjectAs copy).
+ */
+export function copyProjectFiles(
+  files: readonly PickedHomeFile[],
+  stripPrefix: string,
+  oldName: string,
+  newName: string,
+): PickedHomeFile[] {
+  return files.map((f) => {
+    let rel = f.name.replace(/\\/g, '/');
+    if (stripPrefix && rel.startsWith(stripPrefix)) rel = rel.slice(stripPrefix.length);
+    rel = rel.replace(/^\/+/, '');
+    const parts = rel.split('/');
+    const base = parts[parts.length - 1]!;
+    const dot = base.lastIndexOf('.');
+    const stem = dot >= 0 ? base.slice(0, dot) : base;
+    const ext = dot >= 0 ? base.slice(dot) : '';
+    if (stem.toLowerCase() === oldName.toLowerCase()) parts[parts.length - 1] = `${newName}${ext}`;
+    return { ...f, name: `${newName}/${parts.join('/')}` };
+  });
+}
