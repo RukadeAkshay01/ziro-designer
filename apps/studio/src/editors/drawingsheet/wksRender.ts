@@ -8,8 +8,12 @@
  * before calling; everything here is in schematic internal units.
  */
 
-import { ITALIC_TILT, type DsDrawItem, type DsTextItem } from '@ziroeda/core';
+import { ITALIC_TILT, type DsDrawItem, type DsTextItem, type DsBitmapItem } from '@ziroeda/core';
 import { layoutText } from '../../common/strokeFont.js';
+import { getBitmapImage } from './wksBitmap.js';
+
+/** IU per inch: 25.4 mm/in · 10000 IU/mm. */
+const IU_PER_INCH = 254000;
 
 /** KiCad LAYER_DRAWINGSHEET default colour (a muted red-brown on the white page). */
 export const DS_ITEM_COLOR = '#c8322d';
@@ -57,6 +61,31 @@ function drawText(ctx: CanvasRenderingContext2D, t: DsTextItem, color: string, m
   ctx.stroke();
 }
 
+/**
+ * Draw one bitmap. KiCad centres the image on its anchor point and sizes it at
+ * `pixels / ppi · scale`. While the PNG is still decoding (or when it has no
+ * payload) a dashed placeholder box of the same footprint is drawn instead, so
+ * the item stays visible, selectable and movable.
+ */
+function drawBitmap(ctx: CanvasRenderingContext2D, d: DsBitmapItem, color: string, minWidth: number): void {
+  const decoded = d.pngB64 ? getBitmapImage(d.pngB64) : null;
+  const pxW = decoded?.w ?? (d.pxW && d.pxW > 0 ? d.pxW : d.ppi);
+  const pxH = decoded?.h ?? (d.pxH && d.pxH > 0 ? d.pxH : d.ppi);
+  const w = (pxW / d.ppi) * IU_PER_INCH * d.scale;
+  const h = (pxH / d.ppi) * IU_PER_INCH * d.scale;
+  const x = d.at.x - w / 2;
+  const y = d.at.y - h / 2;
+  if (decoded) {
+    ctx.drawImage(decoded.img, x, y, w, h);
+  } else {
+    ctx.strokeStyle = color;
+    ctx.setLineDash([Math.max(w, h) / 40, Math.max(w, h) / 60]);
+    ctx.lineWidth = minWidth;
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+  }
+}
+
 /** Draw all resolved primitives; `selected` is the set of source item indices. */
 export function drawDrawingSheetItems(
   ctx: CanvasRenderingContext2D,
@@ -101,17 +130,9 @@ export function drawDrawingSheetItems(
       case 'text':
         drawText(ctx, d, color, minWidth);
         break;
-      case 'bitmap': {
-        // Placeholder: KiCad renders the PNG; we outline its footprint so it is
-        // selectable/movable even before pixel decoding is wired up.
-        const half = ((25400 * d.scale) / d.ppi) * 50;
-        ctx.strokeStyle = color;
-        ctx.setLineDash([half / 6, half / 8]);
-        ctx.lineWidth = minWidth;
-        ctx.strokeRect(d.at.x - half, d.at.y - half, half * 2, half * 2);
-        ctx.setLineDash([]);
+      case 'bitmap':
+        drawBitmap(ctx, d, color, minWidth);
         break;
-      }
     }
   }
 }

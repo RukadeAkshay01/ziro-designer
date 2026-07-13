@@ -61,8 +61,14 @@ export function drawItemBBox(d: DsDrawItem): WksBBox {
       return { minX, minY, maxX, maxY };
     }
     case 'bitmap': {
-      const sz = (25400 * d.scale) / d.ppi * 100; // ~1in image → IU, scaled
-      return { minX: d.at.x - sz / 2, minY: d.at.y - sz / 2, maxX: d.at.x + sz / 2, maxY: d.at.y + sz / 2 };
+      // IU per inch = 25.4 mm/in · 10000 IU/mm. Size = pixels / ppi (inch) · scale.
+      // Fall back to a 1-inch square when the image hasn't been decoded yet, so a
+      // freshly-placed / not-yet-loaded bitmap is still visible and pickable.
+      const IU_PER_INCH = 254000;
+      const px = (n: number | undefined): number => (n && n > 0 ? n : d.ppi);
+      const halfW = ((px(d.pxW) / d.ppi) * IU_PER_INCH * d.scale) / 2;
+      const halfH = ((px(d.pxH) / d.ppi) * IU_PER_INCH * d.scale) / 2;
+      return { minX: d.at.x - halfW, minY: d.at.y - halfH, maxX: d.at.x + halfW, maxY: d.at.y + halfH };
     }
   }
 }

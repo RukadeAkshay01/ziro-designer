@@ -78,6 +78,9 @@ export interface DsBitmapItem {
   scale: number;
   pngB64: string;
   ppi: number;
+  /** Natural pixel dimensions, when the image has been decoded (see WksBitmap). */
+  pxW?: number;
+  pxH?: number;
   src: number;
 }
 export type DsDrawItem = DsLineItem | DsTextItem | DsPolyItem | DsBitmapItem;
@@ -233,6 +236,8 @@ export function layoutDrawingSheet(
             scale: it.scale,
             pngB64: it.pngB64,
             ppi: it.ppi,
+            ...(it.pxW ? { pxW: it.pxW } : {}),
+            ...(it.pxH ? { pxH: it.pxH } : {}),
             src,
           });
           break;

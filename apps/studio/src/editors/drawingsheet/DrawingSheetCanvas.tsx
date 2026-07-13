@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { pickDrawItem, wksItemsInBox, wksItemBBox, type DsDrawItem, type Vec2 } from '@ziroeda/core';
 import { drawDrawingSheetItems, DS_BG_COLOR, DS_PAGE_COLOR } from './wksRender.js';
+import { setBitmapInvalidate } from './wksBitmap.js';
 
 const MM = 10000;
 
@@ -170,6 +171,12 @@ export const DrawingSheetCanvas = forwardRef<DrawingSheetCanvasController, Drawi
     }, [draw]);
 
     useEffect(() => { requestDraw(); }, [draws, selection, requestDraw]);
+
+    // Redraw when an async bitmap decode finishes.
+    useEffect(() => {
+      setBitmapInvalidate(requestDraw);
+      return () => setBitmapInvalidate(null);
+    }, [requestDraw]);
 
     const zoomToFit = useCallback(() => {
       const canvas = canvasRef.current;

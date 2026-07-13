@@ -105,10 +105,17 @@ export interface WksBitmap extends WksItemBase {
   pos: WksPoint;
   /** Uniform scale factor (DS_DATA_ITEM_BITMAP::m_ImageBitmap scale). */
   scale: number;
-  /** PNG bytes as a base64 data payload (may be empty for a placeholder). */
+  /** PNG bytes as a hex-encoded payload (KiCad `(pngdata (data …))`); may be empty. */
   pngB64: string;
   /** Pixels-per-inch of the source bitmap, for sizing (default 300). */
   ppi: number;
+  /**
+   * Natural pixel dimensions of the decoded image, when known. Not part of the
+   * `.kicad_wks` format (KiCad derives them by decoding the PNG); ZiroEDA caches
+   * them on the model so DOM-free code (bbox, hit-testing) can size the image.
+   */
+  pxW?: number;
+  pxH?: number;
 }
 
 export interface WksPoly extends WksItemBase {

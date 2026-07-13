@@ -23,6 +23,7 @@ import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { DS_TOP_TOOLBAR, DS_LEFT_TOOLBAR, DS_RIGHT_TOOLBAR } from './drawingSheetToolbars.js';
 import { DrawingSheetCanvas, type DrawingSheetCanvasController } from './DrawingSheetCanvas.js';
+import { imageFileToPng, decodeHexImageSize } from './wksBitmap.js';
 import '../../ui/shell.css';
 
 export interface DrawingSheetEditorFile { name: string; text: string }
@@ -52,6 +53,21 @@ const download = (fileName: string, text: string): void => {
   URL.revokeObjectURL(url);
 };
 
+/**
+ * Decode the natural pixel size of any bitmap loaded from a `.kicad_wks` file
+ * (the format has no pixel dimensions; KiCad derives them from the PNG). Sizes
+ * are cached on the model so bbox / hit-testing size the image correctly.
+ */
+async function backfillBitmapSizes(sheet: WksSheet): Promise<WksSheet> {
+  if (!sheet.items.some((it) => it.type === 'bitmap' && it.pngB64 && !(it.pxW && it.pxW > 0))) return sheet;
+  const items = await Promise.all(sheet.items.map(async (it) => {
+    if (it.type !== 'bitmap' || !it.pngB64 || (it.pxW && it.pxW > 0)) return it;
+    try { const { w, h } = await decodeHexImageSize(it.pngB64); return { ...it, pxW: w, pxH: h }; }
+    catch { return it; }
+  }));
+  return { ...sheet, items };
+}
+
 export function DrawingSheetEditor({ onExitToHome, projectName }: {
   onExitToHome: () => void;
   projectName?: string;
@@ -78,6 +94,10 @@ export function DrawingSheetEditor({ onExitToHome, projectName }: {
   const controller = useRef<DrawingSheetCanvasController>(null);
   const openInputRef = useRef<HTMLInputElement>(null);
   const appendInputRef = useRef<HTMLInputElement>(null);
+  const bitmapInputRef = useRef<HTMLInputElement>(null);
+  // Anchor point captured when the bitmap tool is clicked, consumed once the
+  // user chooses an image file (KiCad's Place → Image opens a file dialog).
+  const pendingBitmapPos = useRef<WksPoint | null>(null);
 
   // ---- page geometry ----
   const pageMM = useMemo<[number, number]>(() => {
@@ -128,7 +148,7 @@ export function DrawingSheetEditor({ onExitToHome, projectName }: {
 
   const openFile = useCallback(async (file: File) => {
     try {
-      const parsed = parseDrawingSheet(await file.text());
+      const parsed = await backfillBitmapSizes(parseDrawingSheet(await file.text()));
       undoStack.current = []; redoStack.current = [];
       setSheet(parsed); setSelection(new Set()); setDirty(false);
       setFileName(file.name);
@@ -141,7 +161,7 @@ export function DrawingSheetEditor({ onExitToHome, projectName }: {
 
   const appendFile = useCallback(async (file: File) => {
     try {
-      const parsed = parseDrawingSheet(await file.text());
+      const parsed = await backfillBitmapSizes(parseDrawingSheet(await file.text()));
       commit({ ...sheet, items: [...sheet.items, ...parsed.items] }, `Appended ${parsed.items.length} items from ${file.name}`);
     } catch (err) {
       setStatus(`Failed to append ${file.name}: ${(err as Error).message}`);
@@ -194,12 +214,26 @@ export function DrawingSheetEditor({ onExitToHome, projectName }: {
         hjustify: 'left', vjustify: 'center', rotate: 0, maxlen: 0, maxheight: 0,
       }, 'Add text');
     } else if (tool === 'dsAddBitmap') {
-      addItem({
-        type: 'bitmap', name: `bitmap ${sheet.items.length + 1}`, option: 'normal', repeat: 1, incrx: 0, incry: 0, incrlabel: 1, comment: '',
-        pos, scale: 1, pngB64: '', ppi: 300,
-      }, 'Add bitmap');
+      // KiCad's Place → Image opens a file dialog; capture the anchor and prompt.
+      pendingBitmapPos.current = pos;
+      bitmapInputRef.current?.click();
+      setActiveTool('select');
     }
   }, [anchoredPoint, originCorner, addItem, sheet.items.length]);
+
+  const onPickBitmap = useCallback(async (file: File) => {
+    const pos = pendingBitmapPos.current ?? anchoredPoint({ x: pageW / 2, y: pageH / 2 }, originCorner);
+    pendingBitmapPos.current = null;
+    try {
+      const { hex, pxW, pxH } = await imageFileToPng(file);
+      addItem({
+        type: 'bitmap', name: `bitmap ${sheet.items.length + 1}`, option: 'normal', repeat: 1, incrx: 0, incry: 0, incrlabel: 1, comment: '',
+        pos, scale: 1, pngB64: hex, ppi: 300, pxW, pxH,
+      }, `Add bitmap (${file.name})`);
+    } catch (err) {
+      setStatus(`Failed to load image ${file.name}: ${(err as Error).message}`);
+    }
+  }, [anchoredPoint, originCorner, addItem, sheet.items.length, pageW, pageH]);
 
   const onPlaceSegment = useCallback((tool: string, a: Vec2, b: Vec2) => {
     const start = anchoredPoint(a, originCorner);
@@ -406,6 +440,8 @@ export function DrawingSheetEditor({ onExitToHome, projectName }: {
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void openFile(f); e.target.value = ''; }} />
       <input ref={appendInputRef} type="file" accept=".kicad_wks" style={{ display: 'none' }}
         onChange={(e) => { const f = e.target.files?.[0]; if (f) void appendFile(f); e.target.value = ''; }} />
+      <input ref={bitmapInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickBitmap(f); e.target.value = ''; }} />
 
       <MenuBar
         menus={menus}
