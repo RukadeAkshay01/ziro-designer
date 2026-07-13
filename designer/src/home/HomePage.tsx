@@ -23,6 +23,9 @@ import {
 } from './new_project.js';
 import {
   buildDirTree,
+  deleteTreeEntries,
+  isViewableTextFile,
+  renameTreeEntry,
   treeIconFor,
   isHiddenFile,
   inArchiveAllowList,
@@ -170,7 +173,15 @@ export function HomePage({
   // Expanded directory-tree folder paths (collapsed by default, like KiCad).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Selected tree row (single click). Double click opens — like KiCad's tree.
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectPath = (path: string, additive: boolean): void =>
+    setSelected((prev) => {
+      if (!additive) return new Set([path]);
+      const n = new Set(prev);
+      if (n.has(path)) n.delete(path);
+      else n.add(path);
+      return n;
+    });
   // Whether the project root node is expanded (its twisty collapses the tree).
   const [rootOpen, setRootOpen] = useState(true);
   // Chrome dialogs: About, read-only text viewer, Preferences.
@@ -367,6 +378,15 @@ export function HomePage({
   // works for Downloads/Desktop) and ingest every file found.
   const onDropProject = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault();
+    // A single dropped .zip routes through Unarchive (upstream accepts zip drops).
+    const plain = [...e.dataTransfer.files];
+    if (plain.length === 1 && /\.zip$/i.test(plain[0]!.name)) {
+      const expanded = expandArchive(new Uint8Array(await plain[0]!.arrayBuffer()));
+      if (expanded) {
+        await ingest(expanded.map(({ name, data }) => ({ name, bytesOf: async () => data })));
+        return;
+      }
+    }
     const entries = [...e.dataTransfer.items]
       .map((i) => i.webkitGetAsEntry() as unknown as DropEntry | null)
       .filter((x): x is DropEntry => !!x);
@@ -479,24 +499,56 @@ export function HomePage({
   // The on-disk directory tree, sorted exactly like KiCad's project window
   // (dirs first, root files next, then case-insensitive by name). Footprint/3D
   // libraries stay inside collapsible folders instead of flooding the list.
-  const dirRoot = useMemo<DirNode | null>(() => {
-    if (!picked) return null;
+  const stripPrefix = useMemo<string>(() => {
+    if (!picked) return '';
     const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
     const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
-    const strip =
-      firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
-        ? firstSeg
-        : '';
-    return buildDirTree(picked, strip, projLower);
-  }, [picked, proFile, projLower]);
+    return firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
+      ? firstSeg
+      : '';
+  }, [picked, proFile]);
 
-  // The tree-selected file, when it is a text document our viewer can show.
-  const TEXT_FILE_RE = /\.(txt|md|rpt|net|cir|csv|log|pos|gbrjob|kicad_dru)$/i;
+  const dirRoot = useMemo<DirNode | null>(
+    () => (picked ? buildDirTree(picked, stripPrefix, projLower) : null),
+    [picked, stripPrefix, projLower],
+  );
+
+  // The tree-selected file, when it is a single text document our viewer can show.
+  const fileAtPath = (path: string): PickedHomeFile | null =>
+    picked?.find((x) => x.name.replace(/\\/g, '/') === stripPrefix + path) ?? null;
   const selectedTextFile = useMemo<PickedHomeFile | null>(() => {
-    if (!picked || !selected) return null;
-    const f = picked.find((x) => x.name.replace(/\\/g, '/').endsWith(selected));
-    return f && (TEXT_FILE_RE.test(f.name) || /(^|\/)(fp|sym)-lib-table$/.test(f.name)) ? f : null;
-  }, [picked, selected]);
+    if (!picked || selected.size !== 1) return null;
+    const [path] = selected;
+    const f = picked.find((x) => x.name.replace(/\\/g, '/') === stripPrefix + path);
+    return f && isViewableTextFile(f.name) ? f : null;
+  }, [picked, selected, stripPrefix]);
+
+  // Tree file operations (upstream onRenameFile/onDeleteFile): apply the pure
+  // list transform, then persist the changed project like any other ingest.
+  const applyTreeOp = async (next: PickedHomeFile[] | null): Promise<void> => {
+    if (!next) return;
+    setSelected(new Set());
+    await ingest(
+      next.map((f) => ({
+        name: f.name,
+        bytesOf: async () => f.bytes ?? enc.encode(f.text),
+      })),
+    );
+  };
+  const renamePath = (path: string): void => {
+    const current = path.split('/').pop()!;
+    const name = window.prompt(`Change filename: '${current}'`, current);
+    if (!name || !picked) return;
+    const next = renameTreeEntry(picked, stripPrefix, path, name);
+    if (!next) window.alert('That name is empty or already taken.');
+    else void applyTreeOp(next);
+  };
+  const deletePaths = (paths: Set<string>): void => {
+    if (!picked || paths.size === 0) return;
+    const what = paths.size === 1 ? `'${[...paths][0]}'` : `${paths.size} items`;
+    if (!window.confirm(`Delete ${what} and their contents?`)) return;
+    void applyTreeOp(deleteTreeEntries(picked, stripPrefix, paths));
+  };
 
   const toggleDir = (path: string): void =>
     setExpanded((prev) => {
@@ -651,7 +703,10 @@ export function HomePage({
           expanded={expanded}
           onToggleDir={toggleDir}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={selectPath}
+          onRenamePath={renamePath}
+          onDeletePaths={deletePaths}
+          onViewTextPath={(path) => setTextView(fileAtPath(path))}
           rootOpen={rootOpen}
           onToggleRoot={() => setRootOpen((o) => !o)}
           onOpenPcbFile={onOpenPcb ? (f) => onOpenPcb(f, picked ?? undefined) : undefined}

@@ -6,6 +6,8 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildDirTree,
+  renameTreeEntry,
+  deleteTreeEntries,
   inArchiveAllowList,
   isHiddenFile,
   isRootFileName,
@@ -86,5 +88,40 @@ describe('fmtBytes', () => {
     expect(fmtBytes(512)).toBe('512 B');
     expect(fmtBytes(2048)).toBe('2 KB');
     expect(fmtBytes(3 * 1024 * 1024)).toBe('3.0 MB');
+  });
+});
+
+describe('tree file operations', () => {
+  const files = [
+    f('proj/proj.kicad_sch'),
+    f('proj/lib/r.kicad_sym'),
+    f('proj/lib/c.kicad_sym'),
+    f('proj/notes.txt'),
+  ];
+
+  it('renames a file in place', () => {
+    const out = renameTreeEntry(files, 'proj/', 'notes.txt', 'readme.txt')!;
+    expect(out.map((x) => x.name)).toContain('proj/readme.txt');
+    expect(out).toHaveLength(4);
+  });
+
+  it('renames a directory and moves its contents', () => {
+    const out = renameTreeEntry(files, 'proj/', 'lib', 'symbols')!;
+    expect(out.map((x) => x.name).sort()).toEqual([
+      'proj/notes.txt',
+      'proj/proj.kicad_sch',
+      'proj/symbols/c.kicad_sym',
+      'proj/symbols/r.kicad_sym',
+    ]);
+  });
+
+  it('rejects collisions and empty names', () => {
+    expect(renameTreeEntry(files, 'proj/', 'notes.txt', 'proj.kicad_sch')).toBeNull();
+    expect(renameTreeEntry(files, 'proj/', 'notes.txt', '  ')).toBeNull();
+  });
+
+  it('deletes files and whole directories', () => {
+    const out = deleteTreeEntries(files, 'proj/', new Set(['lib', 'notes.txt']));
+    expect(out.map((x) => x.name)).toEqual(['proj/proj.kicad_sch']);
   });
 });
