@@ -32,6 +32,7 @@ export type { PickedHomeFile } from './files.js';
 import { archiveEntries, zipArchive, expandArchive } from './project_archiver.js';
 import { NewProjectDialog } from './dialogs/dialog_new_project.js';
 import { TemplateDialog } from './dialogs/dialog_template_selector.js';
+import { ProjectTreePane, TreeIcon, mgrUrl } from './project_tree_pane.js';
 
 const dec = new TextDecoder();
 const enc = new TextEncoder();
@@ -42,13 +43,7 @@ const TILE_ICONS = import.meta.glob('../assets/launcher/*.svg', {
   import: 'default',
   eager: true,
 }) as Record<string, string>;
-const MGR_ICONS = import.meta.glob('../assets/manager/*.svg', {
-  query: '?url',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
 const tileUrl = (id: string): string | undefined => TILE_ICONS[`../assets/launcher/${id}.svg`];
-const mgrUrl = (name: string): string | undefined => MGR_ICONS[`../assets/manager/${name}.svg`];
 
 interface Tile {
   id: string;
@@ -112,11 +107,6 @@ const MGR_TOOLS: ({ icon: string; title: string; action: MgrAction } | 'sep')[] 
 const tileIcon = (id: string): JSX.Element => {
   const url = tileUrl(id);
   return url ? <img src={url} alt="" /> : <span style={{ width: 44, height: 44 }} />;
-};
-
-const TreeIcon = ({ name }: { name: string }): JSX.Element => {
-  const url = mgrUrl(name);
-  return url ? <img src={url} alt="" /> : <span style={{ width: 18, height: 18 }} />;
 };
 
 /**
@@ -454,9 +444,6 @@ export function HomePage({
     }
   };
 
-  // Unarchive Project: read a .zip, expand it in memory, and feed its files
-  // through the same ingest path as a folder open (so it lands in the tree and
-  // persists). Entries are raw bytes — byte-exact, like KiCad's Unarchive.
   // Unarchive Project: expand a .zip in memory and feed its files through the
   // same ingest path as a folder open (so it lands in the tree and persists).
   const onUnarchive = async (list: FileList | null): Promise<void> => {
@@ -565,76 +552,6 @@ export function HomePage({
       return n;
     });
 
-  // Like KiCad's addItemToProjectTree: a schematic is only listed when its
-  // basename matches the project (i.e. the root sheet). Sub-sheets are hidden
-  // here — they live in the Schematic Editor's hierarchy navigator.
-  const isHiddenNode = (name: string): boolean =>
-    isHiddenFile(name) || (/\.kicad_sch$/i.test(name) && !isRootFileName(name, projLower));
-
-  const renderDir = (node: DirNode, depth: number): JSX.Element | null => {
-    if (node.isDir) {
-      const kids = node.children.filter((c) => c.isDir || !isHiddenNode(c.name));
-      if (kids.length === 0) return null;
-      const open = expanded.has(node.path);
-      return (
-        <div key={node.path}>
-          <div
-            className="ze-tree-item"
-            style={{ paddingLeft: 8 + depth * 16, cursor: 'pointer' }}
-            onClick={() => toggleDir(node.path)}
-            title={node.path}
-          >
-            <span className={`twisty expandable${open ? ' open' : ''}`} />
-            <TreeIcon name={open ? 'directory_open' : 'directory'} />
-            <span>{node.name}</span>
-          </div>
-          {open && kids.map((c) => renderDir(c, depth + 1))}
-        </div>
-      );
-    }
-    if (isHiddenNode(node.name)) return null;
-    const isPcb = /\.kicad_pcb$/i.test(node.name);
-    const isSch = /\.kicad_sch$/i.test(node.name);
-    const isSym = /\.kicad_sym$/i.test(node.name);
-    const isMod = /\.kicad_mod$/i.test(node.name);
-    // KiCad's PROJECT_TREE_ITEM::Activate: each document type routes to the
-    // editor it belongs to (a `.kicad_mod` to the Footprint Editor, a
-    // `.kicad_sym` to the Symbol Editor, a board to pcbnew, a sheet to eeschema).
-    const openFn =
-      isPcb && onOpenPcb && node.file
-        ? () => onOpenPcb(node.file!, picked ?? undefined)
-        : isSch
-          ? () => launchSchematic(basename(node.name))
-          : isSym && onOpenSymbolEditor && node.file
-            ? () => onOpenSymbolEditor(picked ?? undefined, node.file!.name)
-            : isMod && onOpenFootprintEditor && node.file
-              ? () => onOpenFootprintEditor(picked ?? undefined, node.file!.name)
-              : undefined;
-    const openTitle = isPcb
-      ? 'Double-click to open in the PCB Editor'
-      : isSch
-        ? 'Double-click to open in the Schematic Editor'
-        : isSym
-          ? 'Double-click to open in the Symbol Editor'
-          : isMod
-            ? 'Double-click to open in the Footprint Editor'
-            : node.path;
-    // KiCad's project tree: single click selects, double click opens the file.
-    return (
-      <div
-        key={node.path}
-        className={`ze-tree-item${selected === node.path ? ' active' : ''}`}
-        style={{ paddingLeft: 8 + depth * 16 + 15, cursor: openFn ? 'pointer' : 'default' }}
-        title={openTitle}
-        onClick={() => setSelected(node.path)}
-        onDoubleClick={openFn}
-      >
-        <TreeIcon name={treeIconFor(node.name)} />
-        <span>{node.name}</span>
-      </div>
-    );
-  };
-
   // KiCad's project-manager File menu (the working subset).
   const menus: Menu[] = [
     {
@@ -676,7 +593,7 @@ export function HomePage({
         },
       ],
     },
-    { label: 'Help', items: [{ label: 'About ZiroEDA', action: () => {} }] },
+    { label: 'Help', items: [{ label: 'About Ziro Designer', action: () => {} }] },
   ];
 
   return (
@@ -719,7 +636,7 @@ export function HomePage({
         menus={menus}
         title={
           <>
-            <b>{picked && projName ? projName : 'No project'}</b>&nbsp;—&nbsp;ZiroEDA
+            <b>{picked && projName ? projName : 'No project'}</b>&nbsp;—&nbsp;Ziro Designer
           </>
         }
         rightSlot={
@@ -758,56 +675,31 @@ export function HomePage({
           )}
         </div>
 
-        {/* project file tree */}
-        <div className="ze-panel left" style={{ width: panelWidth }}>
-          <div className="ze-panel-header">Project Files</div>
-          <div className="ze-panel-body">
-            {picked ? (
-              <>
-                {/* project root (.kicad_pro): bold, selectable, and its twisty
-                    collapses the whole tree — like KiCad's tree root. */}
-                <div
-                  className={`ze-tree-item root${selected === '\0root' ? ' active' : ''}`}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => setSelected('\0root')}
-                >
-                  <span
-                    className={`twisty expandable${rootOpen ? ' open' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRootOpen((o) => !o);
-                    }}
-                  />
-                  <TreeIcon name="project" />
-                  <span>{rootLabel}</span>
-                </div>
-                {/* project directory contents, flat and KiCad-sorted */}
-                {rootOpen && dirRoot?.children.map((c) => renderDir(c, 1))}
-              </>
-            ) : (
-              <>
-                <div
-                  className="ze-tree-item"
-                  style={{ fontWeight: 600 }}
-                  onClick={() => void openProjectPicker()}
-                  title="Open a KiCad project (the folder holding the .kicad_pro and its sheets)"
-                >
-                  📂 Open KiCad Project…
-                </div>
-                <div
-                  className="ze-tree-item"
-                  onClick={() => filesInputRef.current?.click()}
-                  title="If the browser blocks the folder (Downloads, Desktop…), select all the project files instead (Ctrl+A in the dialog)"
-                >
-                  🗂 Select Project Files…
-                </div>
-                <div className="ze-tree-item" style={{ opacity: 0.6, cursor: 'default' }}>
-                  …or drag the project folder here
-                </div>
-              </>
-            )}
-          </div>
-        </div>
+        <ProjectTreePane
+          picked={picked}
+          dirRoot={dirRoot}
+          rootLabel={rootLabel}
+          projLower={projLower}
+          width={panelWidth}
+          expanded={expanded}
+          onToggleDir={toggleDir}
+          selected={selected}
+          onSelect={setSelected}
+          rootOpen={rootOpen}
+          onToggleRoot={() => setRootOpen((o) => !o)}
+          onOpenPcbFile={onOpenPcb ? (f) => onOpenPcb(f, picked ?? undefined) : undefined}
+          onOpenSchematic={launchSchematic}
+          onOpenSymbolFile={
+            onOpenSymbolEditor ? (f) => onOpenSymbolEditor(picked ?? undefined, f.name) : undefined
+          }
+          onOpenFootprintFile={
+            onOpenFootprintEditor
+              ? (f) => onOpenFootprintEditor(picked ?? undefined, f.name)
+              : undefined
+          }
+          onOpenProjectPicker={() => void openProjectPicker()}
+          onSelectFiles={() => filesInputRef.current?.click()}
+        />
 
         {/* draggable sash between the tree and the launchers (KiCad's wxAUI pane) */}
         <div className="ze-splitter" onMouseDown={startResize} title="Drag to resize" />
