@@ -1,8 +1,15 @@
 /**
  * Drawing-sheet canvas painter. Draws the resolved IU primitives from
- * `layoutDrawingSheet` the way KiCad's DS_DRAW_ITEM classes paint in
- * `pl_editor` — segments, rectangles, poly-polygons, stroke-font text (via the
- * Newstroke font, matching the rest of the suite) and bitmap placeholders.
+ * `layoutDrawingSheet` the way KiCad's DS_PAINTER paints them in `pl_editor`
+ * (common/drawing_sheet/ds_painter.cpp):
+ *  - lines / rectangles are stroked with the pen width;
+ *  - poly-polygons are *filled* with the item colour (DrawPolygon, fill on,
+ *    stroke off), the way logos are drawn;
+ *  - text uses the stroke font (Newstroke) by default, or the named outline
+ *    font when the item carries a `face` — matching `font->Draw`, which strokes
+ *    glyph paths for the stroke font and fills glyph outlines for an outline
+ *    font;
+ *  - bitmaps are centred and sized `pixels / ppi · scale`.
  *
  * The caller sets the world transform on the context (IU → device pixels)
  * before calling; everything here is in schematic internal units.
@@ -36,6 +43,66 @@ interface RenderOpts {
   brightened?: number | null;
 }
 
+/** Line-pitch factor for multi-line outline text (FONT_METRICS m_InterlinePitch). */
+const INTERLINE_PITCH = 1.68;
+
+/**
+ * Map a stored `face` name to a CSS font-family. `sans`/`serif`/`monospace`
+ * resolve to the CSS generics; any other name is passed through with a
+ * sans-serif fallback so an unavailable face still renders.
+ */
+function cssFamily(face: string): string {
+  const f = face.toLowerCase();
+  if (f === 'sans' || f === 'sans-serif') return 'sans-serif';
+  if (f === 'serif') return 'serif';
+  if (f === 'monospace' || f === 'mono') return 'monospace';
+  return `"${face}", sans-serif`;
+}
+
+/**
+ * Fill one resolved text primitive with a named outline font, the way
+ * `font->Draw` renders TTF glyphs (filled, not stroked). Positioning,
+ * justification, rotation and the width/height ratio match the stroke path.
+ */
+/**
+ * Reference glyph size (device px) the outline font is set at. Browsers clamp
+ * `ctx.font` to a few thousand px, so setting an 8 mm = 80000 IU size directly
+ * under the IU world transform gets dropped; instead the font is rasterised at
+ * EM px and a nested scale maps EM → the item's world size.
+ */
+const OUTLINE_EM = 100;
+
+function drawOutlineText(ctx: CanvasRenderingContext2D, t: DsTextItem, color: string): void {
+  const size = t.h;
+  if (size <= 0 || t.text === '') return;
+  const lines = t.text.split('\n');
+  const sx = size > 0 ? t.w / size : 1;
+  const rad = (-t.rotate * Math.PI) / 180;
+  const lineHeight = OUTLINE_EM * INTERLINE_PITCH; // in EM units
+  const n = lines.length;
+  // Vertical block anchor: top → first line at 0; bottom → last line at 0;
+  // center → block centred. Canvas baselines line up with these.
+  const baseline = t.vjustify === 'top' ? 'top' : t.vjustify === 'bottom' ? 'bottom' : 'middle';
+  const y0 =
+    t.vjustify === 'top'
+      ? 0
+      : t.vjustify === 'bottom'
+        ? -(n - 1) * lineHeight
+        : -((n - 1) / 2) * lineHeight;
+
+  ctx.save();
+  ctx.translate(t.at.x, t.at.y);
+  ctx.rotate(rad);
+  // Map the EM-sized font to `size` world units, applying the width/height ratio.
+  ctx.scale((sx * size) / OUTLINE_EM, size / OUTLINE_EM);
+  ctx.fillStyle = color;
+  ctx.textAlign = t.hjustify === 'left' ? 'left' : t.hjustify === 'right' ? 'right' : 'center';
+  ctx.textBaseline = baseline;
+  ctx.font = `${t.italic ? 'italic ' : ''}${t.bold ? 'bold ' : ''}${OUTLINE_EM}px ${cssFamily(t.face ?? '')}`;
+  lines.forEach((line, i) => ctx.fillText(line, 0, y0 + i * lineHeight));
+  ctx.restore();
+}
+
 /** Stroke one resolved text primitive with the Newstroke font. */
 function drawText(
   ctx: CanvasRenderingContext2D,
@@ -43,6 +110,11 @@ function drawText(
   color: string,
   minWidth: number,
 ): void {
+  // A named outline font is filled (font->Draw); the default is the stroke font.
+  if (t.face) {
+    drawOutlineText(ctx, t, color);
+    return;
+  }
   const size = t.h;
   if (size <= 0 || t.text === '') return;
   const { strokes, width } = layoutText(t.text, size);
@@ -148,12 +220,12 @@ export function drawDrawingSheetItems(
         break;
       }
       case 'poly': {
-        ctx.strokeStyle = color;
-        ctx.lineWidth = Math.max(d.width, minWidth);
+        // DS_PAINTER fills poly-polygons (fill on, stroke off) — logos, not outlines.
+        ctx.fillStyle = color;
         ctx.beginPath();
         d.pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
         ctx.closePath();
-        ctx.stroke();
+        ctx.fill();
         break;
       }
       case 'text':

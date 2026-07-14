@@ -424,8 +424,10 @@ function ItemProperties({
               value={t.face ?? ''}
               onChange={(e) => patch({ face: e.target.value || undefined })}
             >
-              <option value="">Default Font</option>
-              <option value="sans">Sans</option>
+              {/* Default Font = the stroke font (empty face); a named face
+                  switches the item to that outline font, as in KiCad. */}
+              <option value="">Default Font (KiCad Font)</option>
+              <option value="sans-serif">Sans-serif</option>
               <option value="serif">Serif</option>
               <option value="monospace">Monospace</option>
             </select>
