@@ -68,12 +68,17 @@ const hmac = (k, s) => createHmac('sha256', k).update(s).digest();
 const encPath = (p) =>
   p
     .split('/')
-    .map((seg) => encodeURIComponent(seg).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`))
+    .map((seg) =>
+      encodeURIComponent(seg).replace(
+        /[!'()*]/g,
+        (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+      ),
+    )
     .join('/');
 
 async function putObject(key, body, contentType) {
   const now = new Date();
-  const amzDate = now.toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const amzDate = `${now.toISOString().replace(/[-:]/g, '').slice(0, 15)}Z`;
   const date = amzDate.slice(0, 8);
   const payloadHash = sha256(body);
   const canonicalUri = `/${BUCKET}/${encPath(key)}`;
@@ -129,19 +134,32 @@ const walk = (dir) => {
 walk(SRC);
 
 // manifest: one entry per top-most project directory
-const proDirs = [...new Set(files.filter((f) => f.endsWith('.kicad_pro')).map((f) => f.slice(0, f.lastIndexOf('/'))))];
+const proDirs = [
+  ...new Set(
+    files.filter((f) => f.endsWith('.kicad_pro')).map((f) => f.slice(0, f.lastIndexOf('/'))),
+  ),
+];
 const tops = proDirs.filter((d) => !proDirs.some((o) => o !== d && d.startsWith(`${o}/`))).sort();
 const demos = tops
   .map((d) => {
-    const inDir = files.filter((f) => f.startsWith(`${d}/`)).map((f) => f.slice(d.length + 1)).sort();
+    const inDir = files
+      .filter((f) => f.startsWith(`${d}/`))
+      .map((f) => f.slice(d.length + 1))
+      .sort();
     const base = d.split('/').pop();
     return {
       id: d,
       base,
       title:
         TITLES[d] ??
-        base.replaceAll('_', ' ').replaceAll('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
-      description: `Upstream demo project (${inDir.find((f) => f.endsWith('.kicad_pro')).split('/').pop()}).`,
+        base
+          .replaceAll('_', ' ')
+          .replaceAll('-', ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase()),
+      description: `Upstream demo project (${inDir
+        .find((f) => f.endsWith('.kicad_pro'))
+        .split('/')
+        .pop()}).`,
       files: inDir,
     };
   })
