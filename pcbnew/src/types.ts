@@ -102,6 +102,8 @@ export interface Model3D {
   scale: { x: number; y: number; z: number };
   rotate: { x: number; y: number; z: number };
   hide?: boolean;
+  /** 0..1 blend factor (FP_3DMODEL::m_Opacity); undefined = 1 (opaque). */
+  opacity?: number;
 }
 
 export interface PcbFootprint {

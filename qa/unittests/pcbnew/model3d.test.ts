@@ -40,4 +40,32 @@ describe('footprint 3D models', () => {
     const b = readBoard(parse(BOARD));
     expect(b.footprints[1]!.models).toEqual([]);
   });
+
+  // PCB_IO_KICAD_SEXPR_PARSER::parse3DModel: the legacy `(at (xyz …))` offset
+  // variant is in inches — upstream multiplies by 25.4 into mm.
+  it('converts legacy (at (xyz …)) offsets from inches to mm', () => {
+    const b = readBoard(
+      parse(`(kicad_pcb (version 20241229) (generator "test")
+        (layers (0 "F.Cu" signal))
+        (footprint "Test:Legacy" (layer "F.Cu") (at 0 0)
+          (model "x.wrl" (at (xyz 0.1 0 -0.05)) (scale (xyz 1 1 1)) (rotate (xyz 0 0 0)))))`),
+    );
+    const m = b.footprints[0]!.models[0]!;
+    expect(m.offset.x).toBeCloseTo(2.54);
+    expect(m.offset.y).toBeCloseTo(0);
+    expect(m.offset.z).toBeCloseTo(-1.27);
+  });
+
+  it('parses (opacity …) like FP_3DMODEL::m_Opacity', () => {
+    const b = readBoard(
+      parse(`(kicad_pcb (version 20241229) (generator "test")
+        (layers (0 "F.Cu" signal))
+        (footprint "Test:Ghost" (layer "F.Cu") (at 0 0)
+          (model "x.wrl" (opacity 0.4) (offset (xyz 0 0 0))))
+        (footprint "Test:Solid" (layer "F.Cu") (at 5 0)
+          (model "y.wrl" (offset (xyz 0 0 0)))))`),
+    );
+    expect(b.footprints[0]!.models[0]!.opacity).toBeCloseTo(0.4);
+    expect(b.footprints[1]!.models[0]!.opacity).toBeUndefined();
+  });
 });

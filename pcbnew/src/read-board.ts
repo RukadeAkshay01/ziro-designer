@@ -387,26 +387,36 @@ function readFootprint(item: SList, local = false): PcbFootprint | null {
   return fp;
 }
 
-// A footprint's `(model …)` 3D reference. Offset/scale/rotate stay in the file's
-// native units (mm, unitless, degrees) — the 3D viewer applies KiCad's transform.
+// A footprint's `(model …)` 3D reference (PCB_IO_KICAD_SEXPR_PARSER::parse3DModel).
+// Offset/scale/rotate stay in the file's native units (mm, unitless, degrees) —
+// the 3D viewer applies KiCad's transform. The legacy `(at (xyz …))` variant is
+// in *inches*: upstream multiplies it by 25.4 into mm.
 function readModel(item: SList): Model3D | null {
   const path = arg(item, 0);
   if (!path) return null;
-  const xyzOf = (node: SList | undefined, def: number): { x: number; y: number; z: number } => {
+  const xyzOf = (
+    node: SList | undefined,
+    def: number,
+    mul = 1,
+  ): { x: number; y: number; z: number } => {
     const inner = node ? childNamed(node, 'xyz') : undefined;
     return {
-      x: inner ? (numArg(inner, 0) ?? def) : def,
-      y: inner ? (numArg(inner, 1) ?? def) : def,
-      z: inner ? (numArg(inner, 2) ?? def) : def,
+      x: inner ? (numArg(inner, 0) ?? def) * mul : def,
+      y: inner ? (numArg(inner, 1) ?? def) * mul : def,
+      z: inner ? (numArg(inner, 2) ?? def) * mul : def,
     };
   };
   const hideNode = childNamed(item, 'hide');
+  const offsetNode = childNamed(item, 'offset');
+  const opacityNode = childNamed(item, 'opacity');
+  const opacity = opacityNode ? numArg(opacityNode, 0) : undefined;
   return {
     path,
-    offset: xyzOf(childNamed(item, 'offset') ?? childNamed(item, 'at'), 0), // 'at' = legacy
+    offset: offsetNode ? xyzOf(offsetNode, 0) : xyzOf(childNamed(item, 'at'), 0, 25.4), // legacy `at` is in inches
     scale: xyzOf(childNamed(item, 'scale'), 1),
     rotate: xyzOf(childNamed(item, 'rotate'), 0),
     hide: hideNode ? arg(hideNode, 0) !== 'no' : false,
+    ...(opacity !== undefined && opacity < 1 ? { opacity } : {}),
   };
 }
 

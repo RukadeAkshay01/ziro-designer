@@ -166,6 +166,7 @@ export function PcbEditor({
   onExit,
   onShowSchematic,
   projectName,
+  projectFiles,
 }: {
   fileName: string;
   text: string;
@@ -173,6 +174,9 @@ export function PcbEditor({
   onShowSchematic?: () => void;
   /** Project name shown as "<project> — PCB Editor" in the menu bar. */
   projectName?: string;
+  /** The open project's files (name + text) — lets the 3D viewer resolve
+   *  ${KIPRJMOD}/relative model references to project-bundled files. */
+  projectFiles?: { name: string; text: string }[];
 }): JSX.Element {
   const [board, setBoard] = useState<Board | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -914,7 +918,7 @@ export function PcbEditor({
     void import('./pcb3d.js').then(({ mount3DViewer }) => {
       if (cancelled) return;
       try {
-        viewer = mount3DViewer(el, brd);
+        viewer = mount3DViewer(el, brd, projectFiles);
       } catch {
         viewer = null;
       }
@@ -924,7 +928,7 @@ export function PcbEditor({
       cancelled = true;
       viewer?.dispose();
     };
-  }, [show3D]);
+  }, [show3D, projectFiles]);
 
   // ----- appearance data ------------------------------------------------------
 

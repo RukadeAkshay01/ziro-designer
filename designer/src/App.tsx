@@ -251,6 +251,7 @@ export function App(): JSX.Element {
             onExit={goHome}
             onShowSchematic={hasSchematic ? showSchematic : undefined}
             projectName={projectName}
+            projectFiles={projectFiles ?? undefined}
           />
         </div>
       )}

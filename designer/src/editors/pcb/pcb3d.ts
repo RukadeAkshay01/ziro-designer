@@ -15,7 +15,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { buildScene } from './renderBoard.js';
 import { buildBoardOutline } from './boardOutline.js';
 import { buildBoardGeom, boardHoles, type Mesh } from './boardGeom.js';
-import { mountComponents } from './component3d.js';
+import { mountComponents, type ProjectFile } from './component3d.js';
 import type { Board } from '@ziroeda/pcbnew';
 
 const MM = 10000;
@@ -74,8 +74,14 @@ interface Group {
   idx: number[];
 }
 
-/** Mount the 3D viewer into `container`; returns a disposer. */
-export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | null {
+/** Mount the 3D viewer into `container`; returns a disposer. `projectFiles`
+ *  carries the open project's own files so ${KIPRJMOD}/relative model
+ *  references resolve like KiCad's project directory. */
+export function mount3DViewer(
+  container: HTMLElement,
+  board: Board,
+  projectFiles?: ProjectFile[],
+): Viewer3D | null {
   const scene2d = buildScene(board);
   if (!scene2d.bbox) return null;
   const box = edgeBBox(board, scene2d.bbox);
@@ -301,8 +307,8 @@ export function mount3DViewer(container: HTMLElement, board: Board): Viewer3D | 
   const headlight = new THREE.DirectionalLight(0xffffff, 1.35);
   scene.add(headlight);
 
-  // Footprint 3D models (loaded async from the bundled/hosted library).
-  const disposeComponents = mountComponents(scene, board, box, hz, MODELS3D_BASE);
+  // Footprint 3D models (loaded async from the hosted library / project files).
+  const disposeComponents = mountComponents(scene, board, box, hz, MODELS3D_BASE, projectFiles);
 
   // ---- camera + KiCad-style trackball --------------------------------------
   const camera = new THREE.PerspectiveCamera(45, 1, Math.max(0.05, half * 0.02), half * 200);
