@@ -54,6 +54,12 @@ import { Toolbar } from '../../ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from './toolbars_sch_editor.js';
 import { MenuBar } from '../../ui/MenuBar.js';
 import { buildMenus, TOOL_HOTKEYS } from './menubar.js';
+import {
+  SchNavigateTool,
+  flattenHierarchy,
+  parentPath,
+  type SheetRef,
+} from './sch_navigate_tool.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
 import { settings, gridSizeToIU } from '../../prefs/settings.js';
@@ -351,6 +357,17 @@ export function SchematicEditor({
     return buildSheetTree(docs, project.current.root);
   }, [doc, currentFile]);
 
+  // Depth-first hierarchy order (virtual page numbers) + Back/Forward history
+  // (SCH_NAVIGATE_TOOL). Sheet edits prune dead history entries (CleanHistory).
+  const flatSheets = useMemo<SheetRef[]>(
+    () => (sheetTree ? flattenHierarchy(sheetTree) : []),
+    [sheetTree],
+  );
+  const navTool = useRef(new SchNavigateTool());
+  useEffect(() => {
+    navTool.current.cleanHistory(new Set(flatSheets.map((s) => s.path)));
+  }, [flatSheets]);
+
   // Load a schematic from raw .kicad_sch text: parse (lossless), fresh history,
   // clear transient state, and fit the view. Embedded lib_symbols render as-is.
   const resetTransient = useCallback(() => {
@@ -376,6 +393,7 @@ export function SchematicEditor({
         history.current = histories.current.get(file)!;
         setCurrentFile(file);
         setCurrentPath('/');
+        navTool.current.resetHistory('/');
         setDoc(next);
         resetTransient();
         if (name) setFileName(name);
@@ -433,6 +451,7 @@ export function SchematicEditor({
         setCurrentFile(start);
         // Home-tree opens the root; deeper instances are entered from the canvas.
         setCurrentPath('/');
+        navTool.current.resetHistory('/');
         setDoc(docs.get(start)!);
         resetTransient();
         setFileName(start);
@@ -486,7 +505,10 @@ export function SchematicEditor({
   // the edited current sheet back into the project, swap in the target document
   // and its own undo history.
   const switchSheet = useCallback(
-    (path: string, file: string) => {
+    (path: string, file: string, pushHistory = true) => {
+      // Every sheet change lands in the Back/Forward history (changeSheet →
+      // pushToHistory); Back/Forward themselves move the cursor instead.
+      if (pushHistory) navTool.current.pushToHistory(path);
       // Always record which instance is active (path is unique per instance).
       setCurrentPath(path);
       // Two instances of the same file share one document — nothing to swap, just
@@ -856,6 +878,21 @@ export function SchematicEditor({
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
       else if (id === 'openPreferences') setPrefsOpen(true);
       else if (id === 'close') onExitToHome();
+      // Hierarchy navigation (SCH_NAVIGATE_TOOL). Back/Forward move the history
+      // cursor without pushing; Up and Previous/Next go through changeSheet.
+      else if (id === 'navBack' || id === 'navFwd') {
+        const p = id === 'navBack' ? navTool.current.back() : navTool.current.forward();
+        const target = p !== null ? flatSheets.find((s) => s.path === p) : undefined;
+        if (target) switchSheet(target.path, target.file, false);
+      } else if (id === 'navUp') {
+        const pp = parentPath(currentPath);
+        const target = pp !== null ? flatSheets.find((s) => s.path === pp) : undefined;
+        if (target) switchSheet(target.path, target.file);
+      } else if (id === 'navPrev' || id === 'navNext') {
+        const idx = flatSheets.findIndex((s) => s.path === currentPath);
+        const target = idx !== -1 ? flatSheets[idx + (id === 'navNext' ? 1 : -1)] : undefined;
+        if (target) switchSheet(target.path, target.file);
+      }
       // Menu Cut/Copy re-dispatch the native clipboard events our document
       // handlers already implement; Paste reads the async clipboard API (menu
       // clicks can't synthesize a trusted paste event).
@@ -893,6 +930,9 @@ export function SchematicEditor({
       onShowPcb,
       onShowSymbolEditor,
       onExitToHome,
+      flatSheets,
+      currentPath,
+      switchSheet,
     ],
   );
 
@@ -993,6 +1033,30 @@ export function SchematicEditor({
         // ACTIONS::toggleGridOverrides (Ctrl+Shift+G).
         e.preventDefault();
         onLeftToggle('toggleGridOverrides');
+      } else if (e.altKey && e.key === 'ArrowLeft') {
+        // SCH_ACTIONS::navigateBack (Alt+Left).
+        e.preventDefault();
+        onTopAction('navBack');
+      } else if (e.altKey && e.key === 'ArrowUp') {
+        // SCH_ACTIONS::navigateUp (Alt+Up).
+        e.preventDefault();
+        onTopAction('navUp');
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        // SCH_ACTIONS::navigateForward (Alt+Right).
+        e.preventDefault();
+        onTopAction('navFwd');
+      } else if (e.altKey && e.key === 'Backspace') {
+        // SCH_ACTIONS::leaveSheet (Alt+Backspace) — same as Navigate Up.
+        e.preventDefault();
+        onTopAction('navUp');
+      } else if (e.key === 'PageUp' && !isTyping()) {
+        // SCH_ACTIONS::navigatePrevious (PgUp).
+        e.preventDefault();
+        onTopAction('navPrev');
+      } else if (e.key === 'PageDown' && !isTyping()) {
+        // SCH_ACTIONS::navigateNext (PgDn).
+        e.preventDefault();
+        onTopAction('navNext');
       } else if (e.key === 'Escape') {
         if (propsTarget !== null) setPropsTarget(null);
         else if (pastePending) setPastePending(null);
