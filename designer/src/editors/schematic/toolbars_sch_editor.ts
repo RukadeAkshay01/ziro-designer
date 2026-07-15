@@ -31,7 +31,7 @@ export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'redo', icon: 'redo', title: 'Redo (Ctrl+Shift+Z)' },
   sep,
   { id: 'find', icon: 'find', title: 'Find (Ctrl+F)' },
-  { id: 'findReplace', icon: 'replace', title: 'Find and Replace (Ctrl+Alt+F)', disabled: true },
+  { id: 'findReplace', icon: 'replace', title: 'Find and Replace (Ctrl+Alt+F)' },
   sep,
   { id: 'zoomRedraw', icon: 'zoomRedraw', title: 'Refresh (Ctrl+R)', disabled: true },
   { id: 'zoomIn', icon: 'zoomIn', title: 'Zoom In' },

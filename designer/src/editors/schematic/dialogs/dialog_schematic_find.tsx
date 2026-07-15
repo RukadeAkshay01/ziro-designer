@@ -16,6 +16,10 @@ interface Props {
   onClose: () => void;
   /** "1 of 12" style status; empty until a search ran. */
   status: string;
+  /** Replace mode (Find and Replace): shows the replace row and buttons. */
+  replace?: boolean;
+  onReplace?: () => void;
+  onReplaceAll?: () => void;
 }
 
 export function DialogSchematicFind({
@@ -25,6 +29,9 @@ export function DialogSchematicFind({
   onFindPrevious,
   onClose,
   status,
+  replace,
+  onReplace,
+  onReplaceAll,
 }: Props): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
   const [text, setText] = useState(data.findString);
@@ -44,7 +51,7 @@ export function DialogSchematicFind({
   return (
     <div className="ze-find-dialog" onMouseDown={(e) => e.stopPropagation()}>
       <div className="ze-modal-header">
-        Find
+        {replace ? 'Find and Replace' : 'Find'}
         <span className="x" onClick={onClose}>
           ✕
         </span>
@@ -69,6 +76,25 @@ export function DialogSchematicFind({
             }}
           />
         </label>
+        {replace && (
+          <label className="row">
+            <span>Replace with:</span>
+            <input
+              className="ze-search"
+              value={data.replaceString}
+              onChange={(e) => onChange({ ...data, replaceString: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  onReplace?.();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  onClose();
+                }
+              }}
+            />
+          </label>
+        )}
         <div className="opts">
           <label>
             <input
@@ -118,6 +144,16 @@ export function DialogSchematicFind({
             />
             Search the current sheet only
           </label>
+          {replace && (
+            <label>
+              <input
+                type="checkbox"
+                checked={data.replaceReferences}
+                onChange={(e) => onChange({ ...data, replaceReferences: e.target.checked })}
+              />
+              Replace matches in reference designators
+            </label>
+          )}
         </div>
         <div className="ze-find-buttons">
           <span className="status">{status}</span>
@@ -127,6 +163,16 @@ export function DialogSchematicFind({
           <button type="button" className="primary" onClick={onFindNext}>
             Find Next
           </button>
+          {replace && (
+            <button type="button" onClick={onReplace}>
+              Replace
+            </button>
+          )}
+          {replace && (
+            <button type="button" onClick={onReplaceAll}>
+              Replace All
+            </button>
+          )}
           <button type="button" onClick={onClose}>
             Close
           </button>

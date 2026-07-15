@@ -15,6 +15,7 @@ import {
   parsePastedText,
   boxSelect,
   findMatches,
+  replaceCommand,
   defaultSearchData,
   type SchSearchData,
   runErc,
@@ -372,15 +373,23 @@ export function SchematicEditor({
     navTool.current.cleanHistory(new Set(flatSheets.map((s) => s.path)));
   }, [flatSheets]);
 
-  // Find (SCH_FIND_REPLACE_TOOL): modeless dialog state, the search settings,
-  // and a cursor over the matches across sheet instances in hierarchy order.
-  const [findOpen, setFindOpen] = useState(false);
+  // Find / Find and Replace (SCH_FIND_REPLACE_TOOL): modeless dialog state
+  // (false, or which mode it opened in), the search settings, and a cursor
+  // over the matches across sheet instances in hierarchy order.
+  const [findOpen, setFindOpen] = useState<false | 'find' | 'replace'>(false);
   const [searchData, setSearchData] = useState<SchSearchData>(defaultSearchData);
   const [findStatus, setFindStatus] = useState('');
   const findCursor = useRef(-1);
+  const lastMatch = useRef<{ id: string } | null>(null);
+  const openFindDialog = useCallback((mode: 'find' | 'replace') => {
+    setFindOpen(mode);
+    // Replace mode excludes reference designators from matches unless opted in.
+    setSearchData((d) => ({ ...d, searchAndReplace: mode === 'replace' }));
+  }, []);
   useEffect(() => {
     // Changed search settings restart the scan (upstream m_foundItemHighlight reset).
     findCursor.current = -1;
+    lastMatch.current = null;
     setFindStatus('');
   }, [searchData]);
 
@@ -563,6 +572,7 @@ export function SchematicEditor({
       });
       if (all.length === 0) {
         findCursor.current = -1;
+        lastMatch.current = null;
         setFindStatus(searchData.findString ? 'Not found' : '');
         return;
       }
@@ -573,6 +583,7 @@ export function SchematicEditor({
             : all.length - 1
           : (findCursor.current + dir + all.length) % all.length;
       const m = all[findCursor.current]!;
+      lastMatch.current = { id: m.id };
       if (m.sheet.path !== currentPath) switchSheet(m.sheet.path, m.sheet.file);
       setSelection(new Set([m.id]));
       // After a sheet switch the canvas fits first (rAF); centre on the frame after.
@@ -581,6 +592,44 @@ export function SchematicEditor({
     },
     [doc, currentFile, currentPath, flatSheets, libById, searchData, switchSheet],
   );
+
+  // ReplaceAndFindNext: replace inside the current match, then find the next
+  // one against the post-replace document (next frame, after setDoc lands).
+  const doFindRef = useRef(doFind);
+  doFindRef.current = doFind;
+  const doReplaceNext = useCallback(() => {
+    if (!searchData.findString) return;
+    if (findCursor.current === -1 || !lastMatch.current) {
+      doFind(1);
+      return;
+    }
+    runCommand(replaceCommand(searchData, new Set([lastMatch.current.id])));
+    // The replaced item usually drops out of the match list; step the cursor
+    // back so the follow-up FindNext lands on the item after it.
+    findCursor.current = Math.max(-1, findCursor.current - 1);
+    lastMatch.current = null;
+    requestAnimationFrame(() => doFindRef.current(1));
+  }, [searchData, runCommand, doFind]);
+
+  // ReplaceAll: substitute in every matched item — on the current sheet only,
+  // or in every document of the project, each through its own undo history.
+  const doReplaceAll = useCallback(() => {
+    if (!searchData.findString) return;
+    if (!searchData.searchCurrentSheetOnly) {
+      for (const [file, target] of project.current.docs) {
+        if (file === currentFile) continue;
+        if (!histories.current.has(file)) histories.current.set(file, new History());
+        project.current.docs.set(
+          file,
+          histories.current.get(file)!.execute(target, withCleanup(replaceCommand(searchData))),
+        );
+      }
+    }
+    runCommand(replaceCommand(searchData));
+    findCursor.current = -1;
+    lastMatch.current = null;
+    setFindStatus('');
+  }, [searchData, runCommand, currentFile]);
 
   // KiCad's Properties action: symbols have a full properties dialog; a text box
   // reopens its text editor (double-click = edit).
@@ -929,7 +978,8 @@ export function SchematicEditor({
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
       else if (id === 'openPreferences') setPrefsOpen(true);
       else if (id === 'close') onExitToHome();
-      else if (id === 'find') setFindOpen(true);
+      else if (id === 'find') openFindDialog('find');
+      else if (id === 'findReplace') openFindDialog('replace');
       // Hierarchy navigation (SCH_NAVIGATE_TOOL). Back/Forward move the history
       // cursor without pushing; Up and Previous/Next go through changeSheet.
       else if (id === 'navBack' || id === 'navFwd') {
@@ -1054,10 +1104,14 @@ export function SchematicEditor({
         // SCH_ACTIONS::placeGlobalLabel default hotkey (Ctrl+L).
         e.preventDefault();
         onToolSelect('placeGlobalLabel');
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'f') {
+        // ACTIONS::findAndReplace (Ctrl+Alt+F).
+        e.preventDefault();
+        openFindDialog('replace');
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.altKey) {
         // ACTIONS::find (Ctrl+F).
         e.preventDefault();
-        setFindOpen(true);
+        openFindDialog('find');
       } else if (e.key === 'F3' && (findOpen || searchData.findString)) {
         // ACTIONS::findNext / findPrevious (F3 / Shift+F3).
         e.preventDefault();
@@ -1227,6 +1281,7 @@ export function SchematicEditor({
     findOpen,
     searchData,
     doFind,
+    openFindDialog,
   ]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
@@ -1435,6 +1490,9 @@ export function SchematicEditor({
               onFindPrevious={() => doFind(-1)}
               onClose={() => setFindOpen(false)}
               status={findStatus}
+              replace={findOpen === 'replace'}
+              onReplace={doReplaceNext}
+              onReplaceAll={doReplaceAll}
             />
           )}
         </div>

@@ -7,7 +7,14 @@
 import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr';
 import { readSchematic } from '@ziroeda/eeschema';
-import { matchesText, findMatches, defaultSearchData, type SchSearchData } from '@ziroeda/eeschema';
+import {
+  matchesText,
+  findMatches,
+  replaceText,
+  replaceCommand,
+  defaultSearchData,
+  type SchSearchData,
+} from '@ziroeda/eeschema';
 
 const data = (over: Partial<SchSearchData>): SchSearchData => ({
   ...defaultSearchData(),
@@ -79,5 +86,66 @@ describe('findMatches', () => {
       data({ findString: '2', matchMode: 'wholeword', searchAllPins: true }),
     );
     expect(hits.map((h) => h.kind)).toEqual(['symbol']);
+  });
+
+  it('in replace mode, reference fields match only with replaceReferences', () => {
+    const base = { findString: 'R42', searchAndReplace: true };
+    expect(findMatches(doc, libById, data(base))).toHaveLength(0);
+    expect(findMatches(doc, libById, data({ ...base, replaceReferences: true }))).toHaveLength(1);
+  });
+});
+
+describe('replaceText (EDA_ITEM::Replace)', () => {
+  it('substitutes every occurrence, preserving the untouched text case', () => {
+    expect(replaceText('vcc and VCC_IO', data({ findString: 'VCC', replaceString: '+3V3' }))).toBe(
+      '+3V3 and +3V3_IO',
+    );
+  });
+
+  it('respects whole-word boundaries per occurrence', () => {
+    expect(
+      replaceText(
+        'VCC VCCIO',
+        data({ findString: 'VCC', replaceString: '+5V', matchMode: 'wholeword' }),
+      ),
+    ).toBe('+5V VCCIO');
+  });
+
+  it('returns null when nothing changes', () => {
+    expect(replaceText('GND', data({ findString: 'VCC', replaceString: '+5V' }))).toBeNull();
+  });
+});
+
+describe('replaceCommand', () => {
+  const doc = readSchematic(parse(SCH));
+  const d = data({
+    findString: 'VCC_RAIL',
+    replaceString: 'VBUS',
+    searchAndReplace: true,
+  });
+
+  it('replaces matched label text and is undoable', () => {
+    const cmd = replaceCommand(d);
+    const after = cmd.apply(doc);
+    expect(after.labels.find((l) => l.text === 'VBUS')).toBeTruthy();
+    expect(after.labels.find((l) => l.text === 'VCC_RAIL')).toBeUndefined();
+    const undone = cmd.invert(doc).apply(after);
+    expect(undone.labels.map((l) => l.text)).toEqual(doc.labels.map((l) => l.text));
+  });
+
+  it('never rewrites reference designators without replaceReferences', () => {
+    const refCmd = replaceCommand(data({ findString: 'R42', replaceString: 'R99' }));
+    const after = refCmd.apply(doc);
+    const ref = after.symbols[0]!.fields.find((f) => f.key === 'Reference');
+    expect(ref?.value).toBe('R42');
+    const withFlag = replaceCommand(
+      data({ findString: 'R42', replaceString: 'R99', replaceReferences: true }),
+    ).apply(doc);
+    expect(withFlag.symbols[0]!.fields.find((f) => f.key === 'Reference')?.value).toBe('R99');
+  });
+
+  it('limits replacement to the given ids', () => {
+    const cmd = replaceCommand(d, new Set(['no-such-id']));
+    expect(cmd.apply(doc).labels.find((l) => l.text === 'VBUS')).toBeUndefined();
   });
 });
