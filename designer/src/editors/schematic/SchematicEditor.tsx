@@ -33,6 +33,8 @@ import {
   replaceTextBox,
   replaceTable,
   replaceLabel,
+  replaceLine,
+  replaceJunction,
   makeImage,
   makeTextBox,
   makeTable,
@@ -71,6 +73,7 @@ import {
 } from './sch_navigate_tool.js';
 import { DialogSchematicFind } from './dialogs/dialog_schematic_find.js';
 import { DialogAnnotate } from './dialogs/dialog_annotate.js';
+import { DialogLineProperties } from './dialogs/dialog_line_properties.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
 import { settings, gridSizeToIU } from '../../prefs/settings.js';
@@ -247,6 +250,16 @@ export function SchematicEditor({
     name: string;
     file: string;
   } | null>(null);
+  // Editing a wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES) or a junction's
+  // diameter (DIALOG_JUNCTION_PROPS).
+  const [lineEdit, setLineEdit] = useState<{
+    index: number;
+    widthIU: number;
+    style: string;
+  } | null>(null);
+  const [junctionEdit, setJunctionEdit] = useState<{ index: number; diameterIU: number } | null>(
+    null,
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [localToggles, setLocalToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -1016,6 +1029,37 @@ export function SchematicEditor({
     });
   }, [doc, runCommand]);
 
+  const commitLineEdit = useCallback(
+    (widthIU: number, style: string) => {
+      setLineEdit((le) => {
+        if (!le || !doc) return null;
+        const orig = doc.lines[le.index];
+        if (orig) {
+          const stroke = {
+            ...(orig.stroke ?? { width: 0, type: 'default' }),
+            width: widthIU,
+            type: style,
+          };
+          runCommand(replaceLine(le.index, { ...orig, stroke }));
+        }
+        return null;
+      });
+    },
+    [doc, runCommand],
+  );
+
+  const commitJunctionEdit = useCallback(
+    (diameterIU: number) => {
+      setJunctionEdit((je) => {
+        if (!je || !doc) return null;
+        const orig = doc.junctions[je.index];
+        if (orig) runCommand(replaceJunction(je.index, { ...orig, diameter: diameterIU }));
+        return null;
+      });
+    },
+    [doc, runCommand],
+  );
+
   const onImagePlaced = useCallback(
     (at: Vec2) => {
       setPendingImage((img) => {
@@ -1351,6 +1395,22 @@ export function SchematicEditor({
             } else if (d.tables.some((t, i) => refId('table', t.uuid, i) === id)) {
               e.preventDefault();
               onEditItem(id, 'table');
+            } else if (d.lines.some((l, i) => refId('line', l.uuid, i) === id)) {
+              // Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES).
+              const li = d.lines.findIndex((l, i) => refId('line', l.uuid, i) === id);
+              const l = d.lines[li]!;
+              if (l.kind !== 'polyline') {
+                e.preventDefault();
+                setLineEdit({
+                  index: li,
+                  widthIU: l.stroke?.width ?? 0,
+                  style: l.stroke?.type ?? 'default',
+                });
+              }
+            } else if (d.junctions.some((j, i) => refId('junction', j.uuid, i) === id)) {
+              const ji = d.junctions.findIndex((j, i) => refId('junction', j.uuid, i) === id);
+              e.preventDefault();
+              setJunctionEdit({ index: ji, diameterIU: d.junctions[ji]!.diameter });
             } else {
               // E on a sheet opens its properties (double-click enters it).
               const si = d.sheets.findIndex((s, i) => refId('sheet', s.uuid, i) === id);
@@ -1704,6 +1764,27 @@ export function SchematicEditor({
           initialShape={labelEdit.shape}
           onOk={commitLabelEdit}
           onCancel={() => setLabelEdit(null)}
+        />
+      )}
+
+      {/* Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES, E on a wire). */}
+      {lineEdit && (
+        <DialogLineProperties
+          kind="wire"
+          widthIU={lineEdit.widthIU}
+          style={lineEdit.style}
+          onOk={commitLineEdit}
+          onCancel={() => setLineEdit(null)}
+        />
+      )}
+
+      {/* Junction diameter (DIALOG_JUNCTION_PROPS, E on a junction). */}
+      {junctionEdit && (
+        <DialogLineProperties
+          kind="junction"
+          diameterIU={junctionEdit.diameterIU}
+          onOk={commitJunctionEdit}
+          onCancel={() => setJunctionEdit(null)}
         />
       )}
 

@@ -32,6 +32,7 @@ import type {
   SchTable,
   SchTableCell,
   TextEffects,
+  Stroke,
   Vec2,
 } from '../../types.js';
 
@@ -361,11 +362,38 @@ function writeSymbol(sym: SchSymbol): SList {
   return { kind: 'list', items };
 }
 
+/** Patch (or append) a `(stroke (width ..) (type ..))` node to match `stroke`,
+ *  changing only width/type and leaving any other tokens (e.g. color) in place. */
+function patchStroke(node: SList, stroke: Stroke | undefined): SList {
+  if (!stroke) return node;
+  if (childNamed(node, 'stroke')) {
+    return mapChild(node, 'stroke', (s) => {
+      let out = s;
+      if (childNamed(out, 'width'))
+        out = mapChild(out, 'width', () => list(atom('width'), atom(mm(stroke.width))));
+      if (childNamed(out, 'type'))
+        out = mapChild(out, 'type', () => list(atom('type'), atom(stroke.type)));
+      return out;
+    });
+  }
+  return {
+    kind: 'list',
+    items: [
+      ...node.items,
+      list(
+        atom('stroke'),
+        list(atom('width'), atom(mm(stroke.width))),
+        list(atom('type'), atom(stroke.type)),
+      ),
+    ],
+  };
+}
+
 function writeLine(l: SchLine): SList {
   // A multi-point polyline patches each vertex from `points`; a wire/bus has just
   // its two endpoints. Extra source xy's beyond what we model are left untouched.
   const verts = l.points ?? [l.start, l.end];
-  return mapChild(l.source, 'pts', (pts) => {
+  const node = mapChild(l.source, 'pts', (pts) => {
     let i = 0;
     const items = pts.items.map((it) => {
       if (isList(it) && head(it) === 'xy') {
@@ -377,9 +405,16 @@ function writeLine(l: SchLine): SList {
     });
     return { kind: 'list', items };
   });
+  return patchStroke(node, l.stroke);
 }
 
-const writeJunction = (j: SchJunction): SList => patchAt(j.source, j.at);
+/** Patch a junction: position and `(diameter ..)`. */
+function writeJunction(j: SchJunction): SList {
+  let node = patchAt(j.source, j.at);
+  if (childNamed(node, 'diameter'))
+    node = mapChild(node, 'diameter', () => list(atom('diameter'), atom(mm(j.diameter))));
+  return node;
+}
 
 const writeNoConnect = (nc: SchNoConnect): SList => patchAt(nc.source, nc.at);
 

@@ -177,6 +177,32 @@ function removeSymbolCmd(lib: LibSymbol, sym: SchSymbol, keepLib: boolean): Edit
   };
 }
 
+/** Replace the wire/bus/line at `index` with `next` (e.g. after editing its stroke). */
+export function replaceLine(index: number, next: SchLine): EditCommand {
+  return {
+    label: 'Edit Line',
+    apply(doc: Schematic): Schematic {
+      return { ...doc, lines: doc.lines.map((l, i) => (i === index ? next : l)) };
+    },
+    invert(before: Schematic): EditCommand {
+      return replaceLine(index, before.lines[index]!);
+    },
+  };
+}
+
+/** Replace the junction at `index` with `next` (e.g. after editing its diameter). */
+export function replaceJunction(index: number, next: SchJunction): EditCommand {
+  return {
+    label: 'Edit Junction',
+    apply(doc: Schematic): Schematic {
+      return { ...doc, junctions: doc.junctions.map((j, i) => (i === index ? next : j)) };
+    },
+    invert(before: Schematic): EditCommand {
+      return replaceJunction(index, before.junctions[index]!);
+    },
+  };
+}
+
 /** Replace the label at `index` with `next` (e.g. after editing its text/shape). */
 export function replaceLabel(index: number, next: SchLabel): EditCommand {
   return {
