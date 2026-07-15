@@ -9,6 +9,7 @@ export * from './regulators_funct.js';
 export * from './tracks_width_versus_current_formula.js';
 export * from './via_size.js';
 export * from './electrical_spacing_values.js';
+export * from './iec60664.js';
 export * from './fusing_current.js';
 export * from './cable_size.js';
 export * from './wavelength.js';
