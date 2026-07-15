@@ -19,6 +19,11 @@ import {
   emptyBBox,
   isEmpty,
   includePoint,
+  instanceKey,
+  getSheetPageNumber,
+  getRootPageNumber,
+  setSheetPageNumberCommand,
+  setRootPageNumberCommand,
   findMatches,
   replaceCommand,
   defaultSearchData,
@@ -255,6 +260,8 @@ export function SchematicEditor({
     name: string;
     file: string;
   } | null>(null);
+  // Editing the current sheet's page number (SCH_ACTIONS::editPageNumber).
+  const [pageEdit, setPageEdit] = useState<{ page: string } | null>(null);
   // Editing a wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES) or a junction's
   // diameter (DIALOG_JUNCTION_PROPS).
   const [lineEdit, setLineEdit] = useState<{
@@ -415,6 +422,76 @@ export function SchematicEditor({
   useEffect(() => {
     navTool.current.cleanHistory(new Set(flatSheets.map((s) => s.path)));
   }, [flatSheets]);
+
+  // Bumped after editing a page number in a sheet's *parent* document, so any
+  // page-number display refreshes even though `doc`/`currentFile` didn't change.
+  const [, forcePageRefresh] = useState(0);
+
+  // Live documents with the on-screen sheet's edits folded in.
+  const liveDocs = useCallback((): Map<string, Schematic> => {
+    const docs = new Map(project.current.docs);
+    if (doc) docs.set(currentFile, doc);
+    return docs;
+  }, [doc, currentFile]);
+
+  // The stored page number of the sheet instance at `path`
+  // (SCH_SHEET_PATH::GetPageNumber): the root sheet from the document-level
+  // sheet_instances, a sub-sheet from its object's instances in the parent doc.
+  const pageNumberOf = useCallback(
+    (path: string): string => {
+      const docs = liveDocs();
+      const rootDoc = docs.get(project.current.root);
+      if (path === '/') return rootDoc ? getRootPageNumber(rootDoc) : '';
+      const rootUuid = rootDoc?.uuid;
+      if (!rootUuid) return '';
+      const chain = path.split('/').filter(Boolean);
+      const ownUuid = chain[chain.length - 1];
+      const parent = flatSheets.find((s) => s.path === (parentPath(path) ?? '/'));
+      const parentDoc = docs.get(parent?.file ?? project.current.root);
+      const sheet = parentDoc?.sheets.find((s) => s.uuid === ownUuid);
+      return sheet ? getSheetPageNumber(sheet, instanceKey(rootUuid, chain)) : '';
+    },
+    [liveDocs, flatSheets],
+  );
+
+  // Set the current sheet's page number (SCH_ACTIONS::editPageNumber →
+  // SCH_SHEET_PATH::SetPageNumber). The root edits its own document; a sub-sheet
+  // edits its object in the *parent* document (through that doc's own history).
+  const editPageNumber = useCallback(
+    (page: string) => {
+      if (currentPath === '/') {
+        runCommand(setRootPageNumberCommand(page));
+        return;
+      }
+      const docs = liveDocs();
+      const rootUuid = docs.get(project.current.root)?.uuid;
+      if (!rootUuid) return;
+      const chain = currentPath.split('/').filter(Boolean);
+      const ownUuid = chain[chain.length - 1];
+      const parent = flatSheets.find((s) => s.path === (parentPath(currentPath) ?? '/'));
+      const parentFile = parent?.file ?? project.current.root;
+      const parentDoc = parentFile === currentFile ? doc : project.current.docs.get(parentFile);
+      if (!parentDoc) return;
+      const sheetIndex = parentDoc.sheets.findIndex((s) => s.uuid === ownUuid);
+      if (sheetIndex === -1) return;
+      const cmd = setSheetPageNumberCommand(sheetIndex, instanceKey(rootUuid, chain), page);
+      if (parentFile === currentFile) {
+        runCommand(cmd);
+      } else {
+        // Edit the parent document via its own undo history (SCH_COMMIT on it).
+        if (!histories.current.has(parentFile)) histories.current.set(parentFile, new History());
+        project.current.docs.set(
+          parentFile,
+          histories.current.get(parentFile)!.execute(parentDoc, withCleanup(cmd)),
+        );
+        onProjectChange?.([
+          { name: parentFile, text: serializeSchematic(project.current.docs.get(parentFile)!) },
+        ]);
+        forcePageRefresh((n) => n + 1);
+      }
+    },
+    [currentPath, currentFile, doc, flatSheets, liveDocs, runCommand, onProjectChange],
+  );
 
   // Find / Find and Replace (SCH_FIND_REPLACE_TOOL): modeless dialog state
   // (false, or which mode it opened in), the search settings, and a cursor
@@ -1147,6 +1224,7 @@ export function SchematicEditor({
       else if (id === 'find') openFindDialog('find');
       else if (id === 'findReplace') openFindDialog('replace');
       else if (id === 'annotate') setAnnotateOpen(true);
+      else if (id === 'editPageNumber') setPageEdit({ page: pageNumberOf(currentPath) });
       // Hierarchy navigation (SCH_NAVIGATE_TOOL). Back/Forward move the history
       // cursor without pushing; Up and Previous/Next go through changeSheet.
       else if (id === 'navBack' || id === 'navFwd') {
@@ -1205,6 +1283,7 @@ export function SchematicEditor({
       doc,
       selection,
       libById,
+      pageNumberOf,
     ],
   );
 
@@ -1841,6 +1920,56 @@ export function SchematicEditor({
           onOk={commitJunctionEdit}
           onCancel={() => setJunctionEdit(null)}
         />
+      )}
+
+      {/* Edit Sheet Page Number (SCH_ACTIONS::editPageNumber). */}
+      {pageEdit && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setPageEdit(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              Edit Sheet Page Number
+              <span className="x" title="Cancel" onClick={() => setPageEdit(null)}>
+                ✕
+              </span>
+            </div>
+            <div
+              className="ze-label-dialog-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <label className="row">
+                <span>Page number</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  value={pageEdit.page}
+                  onChange={(e) => setPageEdit({ page: e.target.value })}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                      editPageNumber(pageEdit.page.trim());
+                      setPageEdit(null);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setPageEdit(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!pageEdit.page.trim()}
+                onClick={() => {
+                  editPageNumber(pageEdit.page.trim());
+                  setPageEdit(null);
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Editing an existing sheet's name/file (DIALOG_SHEET_PROPERTIES, E key). */}

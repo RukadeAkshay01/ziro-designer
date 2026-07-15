@@ -132,7 +132,7 @@ export function buildMenus(h: MenuHandlers, checks: MenuChecks = {}): Menu[] {
         stub('Interactive Delete Tool'),
         stub('Edit Text & Graphics Properties...'),
         stub('Change Symbols...'),
-        stub('Edit Sheet Page Number...'),
+        act('Edit Sheet Page Number...', 'editPageNumber', 'editPageNumber'),
         {
           label: 'Attributes',
           items: [
