@@ -1,117 +1,194 @@
 /**
- * "Fusing Current" panel — Preece / Onderdonk melting-current estimates.
- * Counterpart: KiCad `calculator_panels/panel_fusing_current.cpp`.
+ * "Fusing Current" panel — copper track fuse designer. Pick the unknown
+ * (width, thickness, current or time to fuse) with the radio, fill the rest,
+ * and Calculate. Counterpart: KiCad `calculator_panels/panel_fusing_current.cpp`.
  */
 
-import { useMemo, useState, type JSX } from 'react';
-import { fusingCurrent } from '@ziroeda/pcb_calculator';
-import { Field, Group, LEN_UNITS, NumField, TIME_UNITS, fmt } from '../fields.js';
+import { useState, type JSX } from 'react';
+import { type FusingSolveFor, fusingCurrent } from '@ziroeda/pcb_calculator';
+import { Field, LEN_UNITS, type UnitOpt, fmt, parseNum } from '../fields.js';
+
+const LEN_SHORT: UnitOpt[] = LEN_UNITS.filter((u) => ['mm', 'µm', 'mil'].includes(u.label));
+
+/** Radio + numeric input + length-unit dropdown (value held in metres). */
+function LenRow({
+  label,
+  solveFor,
+  active,
+  onActive,
+  baseM,
+  onBaseM,
+}: {
+  label: string;
+  solveFor: FusingSolveFor;
+  active: FusingSolveFor;
+  onActive: (s: FusingSolveFor) => void;
+  baseM: number;
+  onBaseM: (v: number) => void;
+}): JSX.Element {
+  const [unitIdx, setUnitIdx] = useState(0);
+  const mult = LEN_SHORT[unitIdx]?.mult ?? 1e-3;
+  const text = Number.isFinite(baseM) ? fmt(baseM / mult, 6) : '';
+  return (
+    <div className="calc-field">
+      <input
+        type="radio"
+        name="fuse-solve"
+        checked={active === solveFor}
+        onChange={() => onActive(solveFor)}
+      />
+      <span className="calc-field-label" style={{ minWidth: 120 }}>
+        {label}
+      </span>
+      <input
+        className={`calc-input${active === solveFor ? ' ro' : ''}`}
+        value={text}
+        readOnly={active === solveFor}
+        spellCheck={false}
+        onChange={(e) => onBaseM(parseNum(e.target.value) * mult)}
+      />
+      <select
+        className="calc-select calc-unit-select"
+        value={unitIdx}
+        onChange={(e) => setUnitIdx(Number(e.target.value))}
+      >
+        {LEN_SHORT.map((u, i) => (
+          <option key={u.label} value={i}>
+            {u.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/** Radio + numeric input + fixed unit text. */
+function NumRow({
+  label,
+  solveFor,
+  active,
+  onActive,
+  value,
+  onValue,
+  unit,
+}: {
+  label: string;
+  solveFor: FusingSolveFor;
+  active: FusingSolveFor;
+  onActive: (s: FusingSolveFor) => void;
+  value: string;
+  onValue: (v: string) => void;
+  unit: string;
+}): JSX.Element {
+  return (
+    <div className="calc-field">
+      <input
+        type="radio"
+        name="fuse-solve"
+        checked={active === solveFor}
+        onChange={() => onActive(solveFor)}
+      />
+      <span className="calc-field-label" style={{ minWidth: 120 }}>
+        {label}
+      </span>
+      <input
+        className={`calc-input${active === solveFor ? ' ro' : ''}`}
+        value={value}
+        readOnly={active === solveFor}
+        spellCheck={false}
+        onChange={(e) => onValue(e.target.value)}
+      />
+      <span className="calc-unit">{unit}</span>
+    </div>
+  );
+}
 
 export function PanelFusingCurrent(): JSX.Element {
-  const [ambientC, setAmbientC] = useState(25);
-  const [meltingC, setMeltingC] = useState(1084);
-  const [widthM, setWidthM] = useState(0.5e-3);
-  const [thicknessM, setThicknessM] = useState(35e-6);
-  const [timeS, setTimeS] = useState(1);
-  const [round, setRound] = useState(false);
+  const [ambient, setAmbient] = useState('25');
+  const [widthM, setWidthM] = useState(0.1e-3);
+  const [thicknessM, setThicknessM] = useState(0.035e-3);
+  const [current, setCurrent] = useState('10');
+  const [time, setTime] = useState('0.01');
+  const [solveFor, setSolveFor] = useState<FusingSolveFor>('current');
+  const [error, setError] = useState('');
 
-  const r = useMemo(() => {
-    const p = {
-      ambientC,
-      meltingC,
+  const calculate = (): void => {
+    setError('');
+    const r = fusingCurrent({
+      ambientC: parseNum(ambient),
+      meltingC: 1084, // copper
       widthM,
-      thicknessM: round ? 0 : thicknessM,
-      timeS,
-    };
-    if (!(p.widthM > 0) || !(p.timeS > 0) || !(p.meltingC > p.ambientC)) return null;
-    if (!round && !(p.thicknessM > 0)) return null;
-    return fusingCurrent(p);
-  }, [ambientC, meltingC, widthM, thicknessM, timeS, round]);
+      thicknessM,
+      currentA: parseNum(current),
+      timeS: parseNum(time),
+      solveFor,
+    });
+    if (r.error) {
+      setError(r.error);
+      return;
+    }
+    if (solveFor === 'width') setWidthM(r.widthM);
+    else if (solveFor === 'thickness') setThicknessM(r.thicknessM);
+    else if (solveFor === 'current') setCurrent(fmt(r.currentA, 6));
+    else setTime(fmt(r.timeS, 6));
+  };
 
   return (
     <div>
-      <h3>Fusing Current</h3>
-      <div className="calc-note">
-        Estimates the current that melts a copper conductor — Preece for steady state, Onderdonk for
-        a short event. These are estimates; treat them with a healthy safety margin.
-      </div>
-      <Group title="Parameters">
-        <Field
-          label="Ambient temperature:"
-          value={fmt(ambientC)}
-          onChange={(v) => setAmbientC(Number(v) || 0)}
-          unit="°C"
+      <div style={{ maxWidth: 460 }}>
+        <Field label="Ambient temperature:" value={ambient} onChange={setAmbient} unit="°C" />
+        <Field label="Melting point:" value="1084" readOnly unit="°C" title="Copper" />
+        <LenRow
+          label="Track width:"
+          solveFor="width"
+          active={solveFor}
+          onActive={setSolveFor}
+          baseM={widthM}
+          onBaseM={setWidthM}
         />
-        <Field
-          label="Melting point:"
-          value={fmt(meltingC)}
-          onChange={(v) => setMeltingC(Number(v) || 0)}
-          unit="°C"
+        <LenRow
+          label="Track thickness:"
+          solveFor="thickness"
+          active={solveFor}
+          onActive={setSolveFor}
+          baseM={thicknessM}
+          onBaseM={setThicknessM}
         />
-        <div className="calc-field">
-          <span className="calc-field-label">Conductor shape:</span>
-          <label className="calc-radio">
-            <input
-              type="radio"
-              name="fuse-shape"
-              checked={!round}
-              onChange={() => setRound(false)}
-            />
-            Rectangular (track)
-          </label>
-          <label className="calc-radio">
-            <input type="radio" name="fuse-shape" checked={round} onChange={() => setRound(true)} />
-            Round wire
-          </label>
-        </div>
-        <NumField
-          label={round ? 'Diameter:' : 'Width:'}
-          units={LEN_UNITS}
-          defaultUnit="mm"
-          base={widthM}
-          onBase={setWidthM}
-        />
-        {!round && (
-          <NumField
-            label="Thickness:"
-            units={LEN_UNITS}
-            defaultUnit="µm"
-            base={thicknessM}
-            onBase={setThicknessM}
-          />
-        )}
-        <NumField label="Duration (Onderdonk):" units={TIME_UNITS} base={timeS} onBase={setTimeS} />
-      </Group>
-      <Group title="Results">
-        <Field
-          label="Cross-section area:"
-          value={r ? fmt(r.areaM2 * 1e6) : '--'}
-          readOnly
-          unit="mm²"
-        />
-        <NumField
-          label="Equivalent wire diameter:"
-          units={LEN_UNITS}
-          defaultUnit="mm"
-          base={r ? r.equivDiaM : NaN}
-          readOnly
-        />
-        <Field label="Preece fusing current:" value={r ? fmt(r.preeceA) : '--'} readOnly unit="A" />
-        <Field
-          label="Onderdonk fusing current:"
-          value={r ? fmt(r.onderdonkA) : '--'}
-          readOnly
+        <NumRow
+          label="Current:"
+          solveFor="current"
+          active={solveFor}
+          onActive={setSolveFor}
+          value={current}
+          onValue={setCurrent}
           unit="A"
         />
-        {r && !r.onderdonkValid && (
-          <div className="calc-error">
-            Onderdonk is only valid for events of about 10 s or less.
-          </div>
-        )}
-      </Group>
-      {!r && (
-        <div className="calc-error">Check the inputs (positive sizes, melting above ambient).</div>
-      )}
+        <NumRow
+          label="Time to fuse:"
+          solveFor="time"
+          active={solveFor}
+          onActive={setSolveFor}
+          value={time}
+          onValue={setTime}
+          unit="s"
+        />
+        <div style={{ marginTop: 8 }}>
+          <button type="button" className="calc-btn primary" onClick={calculate}>
+            Calculate
+          </button>
+        </div>
+        {error && <div className="calc-error">{error}</div>}
+      </div>
+
+      <fieldset className="calc-group" style={{ marginTop: 14 }}>
+        <legend>Help</legend>
+        <div className="calc-note" style={{ lineHeight: 1.6 }}>
+          Checks whether a small track can carry a large current for a short time — a track-fuse
+          design aid, to be used only as an estimate. The model compares the energy needed to heat
+          the copper to its melting point (plus the latent heat of fusion) against the energy the
+          track dissipates as I²R over the fuse time. Copper only.
+        </div>
+      </fieldset>
     </div>
   );
 }

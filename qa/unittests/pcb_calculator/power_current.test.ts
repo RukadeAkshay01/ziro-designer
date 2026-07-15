@@ -94,38 +94,45 @@ describe('electrical spacing (IPC-2221)', () => {
   });
 });
 
-describe('fusing current', () => {
-  it('Onderdonk for 1 oz / 0.5 mm track melts in the tens of amps', () => {
-    const r = fusingCurrent({
-      ambientC: 25,
-      meltingC: 1084,
-      widthM: 0.5e-3,
-      thicknessM: 35e-6,
-      timeS: 1,
-    });
-    expect(r.onderdonkA).toBeGreaterThan(5);
-    expect(r.onderdonkA).toBeLessThan(100);
-    expect(r.onderdonkValid).toBe(true);
-    expect(r.preeceA).toBeGreaterThan(0);
+describe('fusing current (KiCad energy-balance model)', () => {
+  const base = {
+    ambientC: 25,
+    meltingC: 1084,
+    widthM: 0.5e-3,
+    thicknessM: 35e-6,
+    currentA: 10,
+    timeS: 1,
+  } as const;
+
+  it('solves current for a 0.5 mm × 35 µm track at 1 s', () => {
+    const r = fusingCurrent({ ...base, solveFor: 'current' });
+    expect(r.error).toBeUndefined();
+    expect(r.currentA).toBeGreaterThan(4);
+    expect(r.currentA).toBeLessThan(8); // ≈ 5.6 A
   });
 
-  it('longer events fuse at lower current', () => {
-    const p = { ambientC: 25, meltingC: 1084, widthM: 0.5e-3, thicknessM: 35e-6 };
-    const short = fusingCurrent({ ...p, timeS: 0.1 });
-    const long = fusingCurrent({ ...p, timeS: 5 });
-    expect(long.onderdonkA).toBeLessThan(short.onderdonkA);
+  it('current and time are mutually consistent (round-trip)', () => {
+    const cur = fusingCurrent({ ...base, solveFor: 'current' }).currentA;
+    const t = fusingCurrent({ ...base, currentA: cur, solveFor: 'time' }).timeS;
+    expect(t).toBeCloseTo(1, 6);
   });
 
-  it('Preece for 30 AWG (~0.255 mm) is around 10 A', () => {
-    const r = fusingCurrent({
-      ambientC: 25,
-      meltingC: 1084,
-      widthM: awgDiameterM(30),
-      thicknessM: 0,
-      timeS: 1,
-    });
-    expect(r.preeceA).toBeGreaterThan(5);
-    expect(r.preeceA).toBeLessThan(15);
+  it('solves width and thickness back from a target current', () => {
+    const cur = fusingCurrent({ ...base, solveFor: 'current' }).currentA;
+    const w = fusingCurrent({ ...base, currentA: cur, solveFor: 'width' }).widthM;
+    expect(w).toBeCloseTo(base.widthM, 9);
+    const th = fusingCurrent({ ...base, currentA: cur, solveFor: 'thickness' }).thicknessM;
+    expect(th).toBeCloseTo(base.thicknessM, 12);
+  });
+
+  it('longer fuse time lowers the current', () => {
+    const short = fusingCurrent({ ...base, timeS: 0.1, solveFor: 'current' }).currentA;
+    const long = fusingCurrent({ ...base, timeS: 5, solveFor: 'current' }).currentA;
+    expect(long).toBeLessThan(short);
+  });
+
+  it('flags melting below ambient', () => {
+    expect(fusingCurrent({ ...base, meltingC: 10, solveFor: 'current' }).error).toBeTruthy();
   });
 });
 
