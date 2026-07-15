@@ -146,6 +146,69 @@
   font: inherit;
 }
 
+.calc-unit-select {
+  min-width: 62px;
+  padding: 2px 4px;
+}
+
+/* --- modal dialog (sandbox-safe replacement for window.prompt/alert) --- */
+.calc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.calc-modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-active-border);
+  border-radius: 5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.calc-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  font-weight: 600;
+}
+
+.calc-modal-x {
+  background: none;
+  border: none;
+  color: var(--chrome-fg);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.calc-modal-body {
+  padding: 12px;
+  overflow: auto;
+}
+
+.calc-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.calc-toast {
+  color: #9fd49f;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
 .calc-btn {
   background: #3a3d43;
   color: var(--chrome-fg);

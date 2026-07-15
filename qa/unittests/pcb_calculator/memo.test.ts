@@ -61,4 +61,17 @@ describe('resistor colour code', () => {
     const r = colorCode(4990, 5, 4);
     expect(r.encodedOhms).toBe(5000);
   });
+
+  it('6-band adds a temperature-coefficient band', () => {
+    const r = colorCode(4700, 1, 6, 50);
+    expect(r.digits.map((d) => d.name)).toEqual(['Yellow', 'Violet', 'Black']);
+    expect(r.tolerance?.name).toBe('Brown');
+    expect(r.tempco?.name).toBe('Red'); // 50 ppm/K
+    expect(r.tempco?.ppm).toBe(50);
+  });
+
+  it('4/5-band carry no tempco band', () => {
+    expect(colorCode(4700, 5, 4).tempco).toBeNull();
+    expect(colorCode(4700, 1, 5).tempco).toBeNull();
+  });
 });

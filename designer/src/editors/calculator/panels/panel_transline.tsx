@@ -1,6 +1,10 @@
 /**
  * "Transmission Lines" panel — analysis/synthesis for the eight line types.
  * Counterpart: KiCad `calculator_panels/panel_transline.cpp`.
+ *
+ * Every physical dimension has a per-field unit selector (mm/mil/inch/µm…) and
+ * the frequency has its own Hz…GHz selector, matching KiCad's UNIT_SELECTOR
+ * fields; internally all lengths are held in metres.
  */
 
 import { useState, type JSX } from 'react';
@@ -20,7 +24,7 @@ import {
   twistedPairSynthesize,
   type TranslineAnalysis,
 } from '@ziroeda/pcb_calculator';
-import { Field, Group, fmt, parseNum } from '../fields.js';
+import { Field, FREQ_UNITS, Group, LEN_UNITS, NumField, fmt, parseNum } from '../fields.js';
 
 type LineType =
   | 'microstrip'
@@ -43,54 +47,72 @@ const LINE_TYPES: { id: LineType; name: string }[] = [
   { id: 'twistedpair', name: 'Twisted Pair' },
 ];
 
-/** Physical fields per line type; values are strings in mm (or turns/m). */
-const PHYS_FIELDS: Record<LineType, { key: string; label: string; unit: string; def: string }[]> = {
+interface PhysField {
+  key: string;
+  label: string;
+  /** 'len' → held in metres with a length unit selector; 'raw' → plain number. */
+  kind: 'len' | 'raw';
+  /** Default value in base units (metres for 'len'). */
+  def: number;
+  /** Starting unit for a length field. */
+  unit?: string;
+}
+
+const L = (key: string, label: string, defMm: number, unit = 'mm'): PhysField => ({
+  key,
+  label,
+  kind: 'len',
+  def: defMm * 1e-3,
+  unit,
+});
+
+const PHYS_FIELDS: Record<LineType, PhysField[]> = {
   microstrip: [
-    { key: 'w', label: 'Trace width (W):', unit: 'mm', def: '3' },
-    { key: 'h', label: 'Substrate height (H):', unit: 'mm', def: '1.6' },
-    { key: 't', label: 'Trace thickness (T):', unit: 'mm', def: '0.035' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '50' },
+    L('w', 'Trace width (W):', 3),
+    L('h', 'Substrate height (H):', 1.6),
+    L('t', 'Trace thickness (T):', 0.035, 'µm'),
+    L('l', 'Line length (L):', 50),
   ],
   cpw: [
-    { key: 'w', label: 'Trace width (W):', unit: 'mm', def: '0.5' },
-    { key: 's', label: 'Gap width (S):', unit: 'mm', def: '0.3' },
-    { key: 'h', label: 'Substrate height (H):', unit: 'mm', def: '1.6' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '50' },
+    L('w', 'Trace width (W):', 0.5),
+    L('s', 'Gap width (S):', 0.3),
+    L('h', 'Substrate height (H):', 1.6),
+    L('l', 'Line length (L):', 50),
   ],
   gcpw: [
-    { key: 'w', label: 'Trace width (W):', unit: 'mm', def: '0.5' },
-    { key: 's', label: 'Gap width (S):', unit: 'mm', def: '0.3' },
-    { key: 'h', label: 'Substrate height (H):', unit: 'mm', def: '1.6' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '50' },
+    L('w', 'Trace width (W):', 0.5),
+    L('s', 'Gap width (S):', 0.3),
+    L('h', 'Substrate height (H):', 1.6),
+    L('l', 'Line length (L):', 50),
   ],
   rectwaveguide: [
-    { key: 'a', label: 'Broad wall width (a):', unit: 'mm', def: '22.86' },
-    { key: 'b', label: 'Narrow wall height (b):', unit: 'mm', def: '10.16' },
-    { key: 'l', label: 'Guide length (L):', unit: 'mm', def: '100' },
+    L('a', 'Broad wall width (a):', 22.86),
+    L('b', 'Narrow wall height (b):', 10.16),
+    L('l', 'Guide length (L):', 100),
   ],
   coax: [
-    { key: 'din', label: 'Inner conductor diameter (d):', unit: 'mm', def: '0.9' },
-    { key: 'dout', label: 'Shield diameter (D):', unit: 'mm', def: '2.95' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '1000' },
+    L('din', 'Inner conductor diameter (d):', 0.9),
+    L('dout', 'Shield diameter (D):', 2.95),
+    L('l', 'Line length (L):', 1000),
   ],
   c_microstrip: [
-    { key: 'w', label: 'Trace width (W):', unit: 'mm', def: '0.3' },
-    { key: 's', label: 'Gap width (S):', unit: 'mm', def: '0.2' },
-    { key: 'h', label: 'Substrate height (H):', unit: 'mm', def: '0.2' },
-    { key: 't', label: 'Trace thickness (T):', unit: 'mm', def: '0.035' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '50' },
+    L('w', 'Trace width (W):', 0.3),
+    L('s', 'Gap width (S):', 0.2),
+    L('h', 'Substrate height (H):', 0.2),
+    L('t', 'Trace thickness (T):', 0.035, 'µm'),
+    L('l', 'Line length (L):', 50),
   ],
   stripline: [
-    { key: 'w', label: 'Strip width (W):', unit: 'mm', def: '0.7' },
-    { key: 'h', label: 'Ground spacing (B):', unit: 'mm', def: '1.6' },
-    { key: 't', label: 'Strip thickness (T):', unit: 'mm', def: '0.035' },
-    { key: 'l', label: 'Line length (L):', unit: 'mm', def: '50' },
+    L('w', 'Strip width (W):', 0.7),
+    L('h', 'Ground spacing (B):', 1.6),
+    L('t', 'Strip thickness (T):', 0.035, 'µm'),
+    L('l', 'Line length (L):', 50),
   ],
   twistedpair: [
-    { key: 'din', label: 'Conductor diameter (d):', unit: 'mm', def: '0.511' },
-    { key: 'dout', label: 'Insulation diameter (D):', unit: 'mm', def: '0.93' },
-    { key: 'twists', label: 'Twists per meter:', unit: '1/m', def: '100' },
-    { key: 'l', label: 'Cable length (L):', unit: 'mm', def: '1000' },
+    L('din', 'Conductor diameter (d):', 0.511),
+    L('dout', 'Insulation diameter (D):', 0.93),
+    { key: 'twists', label: 'Twists per meter:', kind: 'raw', def: 100 },
+    L('l', 'Cable length (L):', 1000),
   ],
 };
 
@@ -104,15 +126,15 @@ const SUBSTRATE_DEFAULTS = {
 
 export function PanelTransline(): JSX.Element {
   const [type, setType] = useState<LineType>('microstrip');
-  const [freq, setFreq] = useState('1'); // GHz
+  const [freqHz, setFreqHz] = useState(1e9);
   const [sub, setSub] = useState({ ...SUBSTRATE_DEFAULTS });
-  const [phys, setPhys] = useState<Record<string, string>>(() => defaults('microstrip'));
+  const [phys, setPhys] = useState<Record<string, number>>(() => defaults('microstrip'));
   const [z0, setZ0] = useState('50');
   const [angle, setAngle] = useState('90');
   const [result, setResult] = useState<TranslineAnalysis | null>(null);
   const [error, setError] = useState('');
 
-  function defaults(t: LineType): Record<string, string> {
+  function defaults(t: LineType): Record<string, number> {
     return Object.fromEntries(PHYS_FIELDS[t].map((f) => [f.key, f.def]));
   }
 
@@ -125,14 +147,13 @@ export function PanelTransline(): JSX.Element {
   };
 
   const el = () => ({
-    frequencyHz: parseNum(freq) * 1e9,
+    frequencyHz: freqHz,
     epsilonR: parseNum(sub.er),
     tanD: parseNum(sub.tand),
     sigma: parseNum(sub.sigma),
     murC: parseNum(sub.mur),
   });
-  const mm = (key: string): number => parseNum(phys[key] ?? '') * 1e-3;
-  const twists = (): number => parseNum(phys.twists ?? '');
+  const v = (key: string): number => phys[key] ?? 0;
 
   const analyze = (): void => {
     setError('');
@@ -142,45 +163,45 @@ export function PanelTransline(): JSX.Element {
       switch (type) {
         case 'microstrip':
           r = microstripAnalyze(
-            { widthM: mm('w'), heightM: mm('h'), thicknessM: mm('t'), lengthM: mm('l') },
+            { widthM: v('w'), heightM: v('h'), thicknessM: v('t'), lengthM: v('l') },
             e,
           );
           break;
         case 'cpw':
         case 'gcpw':
           r = coplanarAnalyze(
-            { widthM: mm('w'), gapM: mm('s'), heightM: mm('h'), lengthM: mm('l') },
+            { widthM: v('w'), gapM: v('s'), heightM: v('h'), lengthM: v('l') },
             e,
             type === 'gcpw',
           );
           break;
         case 'rectwaveguide':
-          r = rectWaveguideAnalyze({ aM: mm('a'), bM: mm('b'), lengthM: mm('l') }, e);
+          r = rectWaveguideAnalyze({ aM: v('a'), bM: v('b'), lengthM: v('l') }, e);
           break;
         case 'coax':
-          r = coaxAnalyze({ innerDiaM: mm('din'), outerDiaM: mm('dout'), lengthM: mm('l') }, e);
+          r = coaxAnalyze({ innerDiaM: v('din'), outerDiaM: v('dout'), lengthM: v('l') }, e);
           break;
         case 'c_microstrip':
           r = coupledMicrostripAnalyze(
             {
-              widthM: mm('w'),
-              gapM: mm('s'),
-              heightM: mm('h'),
-              thicknessM: mm('t'),
-              lengthM: mm('l'),
+              widthM: v('w'),
+              gapM: v('s'),
+              heightM: v('h'),
+              thicknessM: v('t'),
+              lengthM: v('l'),
             },
             e,
           );
           break;
         case 'stripline':
           r = striplineAnalyze(
-            { widthM: mm('w'), heightM: mm('h'), thicknessM: mm('t'), lengthM: mm('l') },
+            { widthM: v('w'), heightM: v('h'), thicknessM: v('t'), lengthM: v('l') },
             e,
           );
           break;
         case 'twistedpair':
           r = twistedPairAnalyze(
-            { dinM: mm('din'), doutM: mm('dout'), twistsPerM: twists(), lengthM: mm('l') },
+            { dinM: v('din'), doutM: v('dout'), twistsPerM: v('twists'), lengthM: v('l') },
             { ...e, epsilonRenv: parseNum(sub.erEnv) },
           );
           break;
@@ -202,28 +223,28 @@ export function PanelTransline(): JSX.Element {
       setError('Enter a positive Z0 and electrical length.');
       return;
     }
-    let next: Record<string, string> | null = null;
+    let next: Record<string, number> | null = null;
     switch (type) {
       case 'microstrip': {
         const s = microstripSynthesize(
-          { widthM: mm('w'), heightM: mm('h'), thicknessM: mm('t'), lengthM: mm('l') },
+          { widthM: v('w'), heightM: v('h'), thicknessM: v('t'), lengthM: v('l') },
           e,
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, w: fmt(s.widthM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, w: s.widthM, l: s.lengthM };
         break;
       }
       case 'cpw':
       case 'gcpw': {
         const s = coplanarSynthesize(
-          { widthM: mm('w'), gapM: mm('s'), heightM: mm('h'), lengthM: mm('l') },
+          { widthM: v('w'), gapM: v('s'), heightM: v('h'), lengthM: v('l') },
           e,
           type === 'gcpw',
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, s: fmt(s.gapM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, s: s.gapM, l: s.lengthM };
         break;
       }
       case 'rectwaveguide':
@@ -231,48 +252,48 @@ export function PanelTransline(): JSX.Element {
         return;
       case 'coax': {
         const s = coaxSynthesize(
-          { innerDiaM: mm('din'), outerDiaM: mm('dout'), lengthM: mm('l') },
+          { innerDiaM: v('din'), outerDiaM: v('dout'), lengthM: v('l') },
           e,
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, din: fmt(s.innerDiaM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, din: s.innerDiaM, l: s.lengthM };
         break;
       }
       case 'c_microstrip': {
         const s = coupledMicrostripSynthesize(
           {
-            widthM: mm('w'),
-            gapM: mm('s'),
-            heightM: mm('h'),
-            thicknessM: mm('t'),
-            lengthM: mm('l'),
+            widthM: v('w'),
+            gapM: v('s'),
+            heightM: v('h'),
+            thicknessM: v('t'),
+            lengthM: v('l'),
           },
           e,
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, s: fmt(s.gapM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, s: s.gapM, l: s.lengthM };
         break;
       }
       case 'stripline': {
         const s = striplineSynthesize(
-          { widthM: mm('w'), heightM: mm('h'), thicknessM: mm('t'), lengthM: mm('l') },
+          { widthM: v('w'), heightM: v('h'), thicknessM: v('t'), lengthM: v('l') },
           e,
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, w: fmt(s.widthM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, w: s.widthM, l: s.lengthM };
         break;
       }
       case 'twistedpair': {
         const s = twistedPairSynthesize(
-          { dinM: mm('din'), doutM: mm('dout'), twistsPerM: twists(), lengthM: mm('l') },
+          { dinM: v('din'), doutM: v('dout'), twistsPerM: v('twists'), lengthM: v('l') },
           { ...e, epsilonRenv: parseNum(sub.erEnv) },
           zTarget,
           angTarget,
         );
-        if (s) next = { ...phys, din: fmt(s.dinM * 1000, 5), l: fmt(s.lengthM * 1000, 5) };
+        if (s) next = { ...phys, din: s.dinM, l: s.lengthM };
         break;
       }
     }
@@ -325,48 +346,59 @@ export function PanelTransline(): JSX.Element {
           <Field
             label="Relative permittivity (εr):"
             value={sub.er}
-            onChange={(v) => setSub({ ...sub, er: v })}
+            onChange={(val) => setSub({ ...sub, er: val })}
             unit=""
           />
           <Field
             label="Loss tangent (tanδ):"
             value={sub.tand}
-            onChange={(v) => setSub({ ...sub, tand: v })}
+            onChange={(val) => setSub({ ...sub, tand: val })}
             unit=""
           />
           <Field
             label="Conductivity (σ):"
             value={sub.sigma}
-            onChange={(v) => setSub({ ...sub, sigma: v })}
+            onChange={(val) => setSub({ ...sub, sigma: val })}
             unit="S/m"
           />
           <Field
             label="Conductor permeability (µ):"
             value={sub.mur}
-            onChange={(v) => setSub({ ...sub, mur: v })}
+            onChange={(val) => setSub({ ...sub, mur: val })}
             unit=""
           />
           {type === 'twistedpair' && (
             <Field
               label="Environment εr:"
               value={sub.erEnv}
-              onChange={(v) => setSub({ ...sub, erEnv: v })}
+              onChange={(val) => setSub({ ...sub, erEnv: val })}
               unit=""
             />
           )}
-          <Field label="Frequency:" value={freq} onChange={setFreq} unit="GHz" />
+          <NumField label="Frequency:" units={FREQ_UNITS} base={freqHz} onBase={setFreqHz} />
         </Group>
 
         <Group title="Physical parameters">
-          {PHYS_FIELDS[type].map((f) => (
-            <Field
-              key={f.key}
-              label={f.label}
-              value={phys[f.key] ?? ''}
-              onChange={(v) => setPhys({ ...phys, [f.key]: v })}
-              unit={f.unit}
-            />
-          ))}
+          {PHYS_FIELDS[type].map((f) =>
+            f.kind === 'len' ? (
+              <NumField
+                key={f.key}
+                label={f.label}
+                units={LEN_UNITS}
+                defaultUnit={f.unit ?? 'mm'}
+                base={v(f.key)}
+                onBase={(val) => setPhys((p) => ({ ...p, [f.key]: val }))}
+              />
+            ) : (
+              <Field
+                key={f.key}
+                label={f.label}
+                value={fmt(v(f.key))}
+                onChange={(val) => setPhys((p) => ({ ...p, [f.key]: Number(val) || 0 }))}
+                unit="1/m"
+              />
+            ),
+          )}
         </Group>
 
         <Group title="Electrical parameters">
@@ -425,10 +457,10 @@ export function PanelTransline(): JSX.Element {
               <td className="rowhead">Skin depth</td>
               <td>{result ? `${fmt(result.skinDepthM * 1e6, 4)} µm` : '--'}</td>
             </tr>
-            {extraRows.map(([k, v]) => (
+            {extraRows.map(([k, val]) => (
               <tr key={k}>
                 <td className="rowhead">{k}</td>
-                <td>{v}</td>
+                <td>{val}</td>
               </tr>
             ))}
           </tbody>

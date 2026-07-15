@@ -10,11 +10,13 @@ import { Field, Group, fmt, parseNum } from '../fields.js';
 export function PanelRCalculator(): JSX.Element {
   const [required, setRequired] = useState('4123');
   const [serie, setSerie] = useState<ESeriesId>(ESeriesId.E24);
+  const [exclude, setExclude] = useState(['', '', '']);
 
   const target = parseNum(required);
+  const excludeVals = useMemo(() => exclude.map(parseNum).filter((v) => v > 0), [exclude]);
   const result = useMemo(
-    () => (target > 0 ? calculateResistorSubstitution(target, serie) : null),
-    [target, serie],
+    () => (target > 0 ? calculateResistorSubstitution(target, serie, excludeVals) : null),
+    [target, serie, excludeVals],
   );
 
   const solutions = result
@@ -48,6 +50,27 @@ export function PanelRCalculator(): JSX.Element {
               {e.name}
             </label>
           ))}
+        </div>
+        <div className="calc-field">
+          <span className="calc-field-label">Exclude values (Ω):</span>
+          {exclude.map((ex, i) => (
+            <input
+              // eslint-disable-next-line react/no-array-index-key
+              key={i}
+              className="calc-input"
+              style={{ width: 90 }}
+              value={ex}
+              placeholder="—"
+              spellCheck={false}
+              onChange={(e) =>
+                setExclude((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))
+              }
+            />
+          ))}
+        </div>
+        <div className="calc-note">
+          Excluded values (and their decade multiples) are dropped from the search — use it for
+          values you don&rsquo;t stock.
         </div>
       </Group>
 

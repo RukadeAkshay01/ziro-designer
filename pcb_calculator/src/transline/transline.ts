@@ -62,7 +62,7 @@ export function physicalLengthM(angleDeg: number, frequencyHz: number, epsEff: n
 export function ellipticRatio(k: number): number {
   if (k < 0 || k > 1) return NaN;
   const kp = Math.sqrt(1 - k * k);
-  if (k > 0.7071) {
+  if (k > Math.SQRT1_2) {
     // K/K' = ln(2(1+√k)/(1−√k)) / π  for 1/√2 ≤ k ≤ 1
     return Math.log((2 * (1 + Math.sqrt(k))) / (1 - Math.sqrt(k))) / Math.PI;
   }

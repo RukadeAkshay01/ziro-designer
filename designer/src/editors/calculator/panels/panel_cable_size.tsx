@@ -11,37 +11,36 @@ import {
   cableSize,
   nearestAwgIndex,
 } from '@ziroeda/pcb_calculator';
-import { Field, Group, fmt, parseNum } from '../fields.js';
+import { Field, Group, LEN_UNITS, NumField, fmt } from '../fields.js';
 
 export function PanelCableSize(): JSX.Element {
   const [awgIdx, setAwgIdx] = useState(27); // AWG 24
-  const [diameter, setDiameter] = useState(() => fmt(awgDiameterM(24) * 1000));
+  const [diameterM, setDiameterM] = useState(() => awgDiameterM(24));
   const [temp, setTemp] = useState('20');
   const [density, setDensity] = useState('3');
   const [current, setCurrent] = useState('1');
-  const [length, setLength] = useState('1');
+  const [lengthM, setLengthM] = useState(1);
 
   const pickAwg = (idx: number): void => {
     setAwgIdx(idx);
-    setDiameter(fmt(awgDiameterM(awgIndexToGauge(idx)) * 1000));
+    setDiameterM(awgDiameterM(awgIndexToGauge(idx)));
   };
-  const typeDiameter = (v: string): void => {
-    setDiameter(v);
-    const d = parseNum(v) * 1e-3;
+  const typeDiameter = (d: number): void => {
+    setDiameterM(d);
     if (d > 0) setAwgIdx(nearestAwgIndex(d));
   };
 
   const r = useMemo(() => {
     const p = {
-      diameterM: parseNum(diameter) * 1e-3,
-      conductorTempC: parseNum(temp),
-      currentDensity: parseNum(density),
-      currentA: parseNum(current),
-      lengthM: parseNum(length),
+      diameterM,
+      conductorTempC: Number(temp) || 0,
+      currentDensity: Number(density) || 0,
+      currentA: Number(current) || 0,
+      lengthM,
     };
     if (!(p.diameterM > 0) || !(p.currentDensity > 0)) return null;
     return cableSize(p);
-  }, [diameter, temp, density, current, length]);
+  }, [diameterM, temp, density, current, lengthM]);
 
   return (
     <div>
@@ -62,7 +61,13 @@ export function PanelCableSize(): JSX.Element {
               ))}
             </select>
           </div>
-          <Field label="Diameter:" value={diameter} onChange={typeDiameter} unit="mm" />
+          <NumField
+            label="Diameter:"
+            units={LEN_UNITS}
+            defaultUnit="mm"
+            base={diameterM}
+            onBase={typeDiameter}
+          />
           <Field
             label="Cross-section area:"
             value={r ? fmt(r.areaMm2) : '--'}
@@ -92,11 +97,17 @@ export function PanelCableSize(): JSX.Element {
         </Group>
         <Group title="Application">
           <Field label="Current:" value={current} onChange={setCurrent} unit="A" />
-          <Field label="Length:" value={length} onChange={setLength} unit="m" />
+          <NumField
+            label="Length:"
+            units={LEN_UNITS}
+            defaultUnit="m"
+            base={lengthM}
+            onBase={setLengthM}
+          />
           <Field label="Resistance:" value={r ? fmt(r.resistanceOhm) : '--'} readOnly unit="Ω" />
           <Field label="Voltage drop:" value={r ? fmt(r.voltageDrop) : '--'} readOnly unit="V" />
           <Field label="Dissipated power:" value={r ? fmt(r.powerLossW) : '--'} readOnly unit="W" />
-          {r && parseNum(current) > r.ampacityA && (
+          {r && (Number(current) || 0) > r.ampacityA && (
             <div className="calc-error">Current exceeds the ampacity for this density.</div>
           )}
         </Group>

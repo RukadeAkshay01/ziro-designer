@@ -7,6 +7,7 @@
 
 import { useState, type JSX } from 'react';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
+import { Modal } from './fields.js';
 import { PanelRegulator } from './panels/panel_regulator.js';
 import { PanelRCalculator } from './panels/panel_r_calculator.js';
 import { PanelElectricalSpacing } from './panels/panel_electrical_spacing.js';
@@ -74,6 +75,7 @@ const TREE: TreeGroup[] = [
 export function CalculatorTools({ onExitToHome }: { onExitToHome: () => void }): JSX.Element {
   const [active, setActive] = useState('regulators');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [aboutOpen, setAboutOpen] = useState(false);
 
   const menus: Menu[] = [
     { label: 'File', items: [{ label: 'Close', action: onExitToHome }] },
@@ -94,10 +96,7 @@ export function CalculatorTools({ onExitToHome }: { onExitToHome: () => void }):
       items: [
         {
           label: 'About Calculator Tools',
-          action: () =>
-            window.alert(
-              'Calculator Tools — engineering calculators for PCB design:\nregulators, track/via sizing, spacing, transmission lines, attenuators and reference tables.',
-            ),
+          action: () => setAboutOpen(true),
         },
       ],
     },
@@ -144,6 +143,27 @@ export function CalculatorTools({ onExitToHome }: { onExitToHome: () => void }):
           <Panel />
         </main>
       </div>
+      {aboutOpen && (
+        <Modal
+          title="About Calculator Tools"
+          onClose={() => setAboutOpen(false)}
+          footer={
+            <button type="button" className="calc-btn primary" onClick={() => setAboutOpen(false)}>
+              Close
+            </button>
+          }
+        >
+          <p style={{ margin: '0 0 8px' }}>
+            Engineering calculators for PCB design, organised like KiCad's Calculator Tools:
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+            <li>General system design — regulators, resistor substitution</li>
+            <li>Power, current & isolation — spacing, via, track width, fusing, cable</li>
+            <li>High speed — wavelength, RF attenuators, transmission lines</li>
+            <li>Memo — E-series, colour code, board classes, galvanic corrosion</li>
+          </ul>
+        </Modal>
+      )}
     </div>
   );
 }

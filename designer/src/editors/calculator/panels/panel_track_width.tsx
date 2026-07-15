@@ -5,37 +5,38 @@
 
 import { useMemo, useState, type JSX } from 'react';
 import { trackWidth } from '@ziroeda/pcb_calculator';
-import { Field, Group, fmt, parseNum } from '../fields.js';
+import { Field, Group, LEN_UNITS, NumField, type UnitOpt, fmt } from '../fields.js';
 
-const OZ_TO_M = 35e-6; // 1 oz/ft² copper ≈ 35 µm
+// Copper thickness selector: weight (oz/ft²) or an absolute thickness.
+const COPPER_UNITS: UnitOpt[] = [
+  { label: 'oz/ft²', mult: 35e-6 },
+  { label: 'µm', mult: 1e-6 },
+  { label: 'mm', mult: 1e-3 },
+];
 
 export function PanelTrackWidth(): JSX.Element {
-  const [current, setCurrent] = useState('1');
-  const [deltaT, setDeltaT] = useState('10');
-  const [length, setLength] = useState('20'); // cm
-  const [thicknessOz, setThicknessOz] = useState('1'); // oz/ft²
+  // State in base SI units; the widgets convert to/from the chosen unit.
+  const [currentA, setCurrentA] = useState(1);
+  const [deltaTC, setDeltaTC] = useState(10);
+  const [lengthM, setLengthM] = useState(0.2);
+  const [thicknessM, setThicknessM] = useState(35e-6);
 
+  const valid = currentA > 0 && deltaTC > 0 && lengthM >= 0 && thicknessM > 0;
   const params = useMemo(
-    () => ({
-      currentA: parseNum(current),
-      deltaTC: parseNum(deltaT),
-      lengthM: parseNum(length) / 100,
-      thicknessM: parseNum(thicknessOz) * OZ_TO_M,
-    }),
-    [current, deltaT, length, thicknessOz],
+    () => ({ currentA, deltaTC, lengthM, thicknessM }),
+    [currentA, deltaTC, lengthM, thicknessM],
   );
-  const valid =
-    params.currentA > 0 && params.deltaTC > 0 && params.lengthM >= 0 && params.thicknessM > 0;
   const ext = valid ? trackWidth(params, true) : null;
   const int_ = valid ? trackWidth(params, false) : null;
 
   const results = (r: ReturnType<typeof trackWidth> | null): JSX.Element => (
     <>
-      <Field
+      <NumField
         label="Required track width:"
-        value={r ? fmt(r.widthM * 1000) : '--'}
+        units={LEN_UNITS}
+        defaultUnit="mm"
+        base={r ? r.widthM : NaN}
         readOnly
-        unit="mm"
       />
       <Field
         label="Cross-section area:"
@@ -60,14 +61,30 @@ export function PanelTrackWidth(): JSX.Element {
         to 100 °C and copper up to 3 oz/ft².
       </div>
       <Group title="Parameters">
-        <Field label="Current:" value={current} onChange={setCurrent} unit="A" />
-        <Field label="Temperature rise:" value={deltaT} onChange={setDeltaT} unit="°C" />
-        <Field label="Conductor length:" value={length} onChange={setLength} unit="cm" />
+        <NumField
+          label="Current:"
+          units={[{ label: 'A', mult: 1 }]}
+          base={currentA}
+          onBase={setCurrentA}
+        />
         <Field
+          label="Temperature rise:"
+          value={fmt(deltaTC)}
+          onChange={(v) => setDeltaTC(Number(v) || 0)}
+          unit="°C"
+        />
+        <NumField
+          label="Conductor length:"
+          units={LEN_UNITS}
+          defaultUnit="cm"
+          base={lengthM}
+          onBase={setLengthM}
+        />
+        <NumField
           label="Copper thickness:"
-          value={thicknessOz}
-          onChange={setThicknessOz}
-          unit="oz/ft²"
+          units={COPPER_UNITS}
+          base={thicknessM}
+          onBase={setThicknessM}
         />
       </Group>
       {!valid && <div className="calc-error">Enter positive values.</div>}

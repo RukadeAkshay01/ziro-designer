@@ -31,4 +31,6 @@ html = html.replace(
 
 const out = new URL('calculator-tools.html', dir);
 writeFileSync(out, html);
-console.log(`wrote ${out.pathname} (${(html.length / 1024).toFixed(0)} KB, single self-contained file)`);
+console.log(
+  `wrote ${out.pathname} (${(html.length / 1024).toFixed(0)} KB, single self-contained file)`,
+);

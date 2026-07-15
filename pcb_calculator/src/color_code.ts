@@ -40,29 +40,53 @@ export const TOLERANCE_COLORS: readonly (BandColor & { pct: number })[] = [
   { name: 'Silver', css: '#c0c0c0', pct: 10 },
 ];
 
+/** Temperature-coefficient band (ppm/K) for 6-band resistors. */
+export const TEMPCO_COLORS: readonly (BandColor & { ppm: number })[] = [
+  { name: 'Black', css: '#000000', ppm: 250 },
+  { name: 'Brown', css: '#8b4513', ppm: 100 },
+  { name: 'Red', css: '#d40000', ppm: 50 },
+  { name: 'Orange', css: '#ff7f00', ppm: 15 },
+  { name: 'Yellow', css: '#f2d500', ppm: 25 },
+  { name: 'Green', css: '#00a651', ppm: 20 },
+  { name: 'Blue', css: '#0072bc', ppm: 10 },
+  { name: 'Violet', css: '#92278f', ppm: 5 },
+  { name: 'Grey', css: '#808080', ppm: 1 },
+];
+
 export interface ColorCodeResult {
   /** Digit bands (2 or 3 entries). */
   digits: BandColor[];
   multiplier: BandColor & { exp: number };
   tolerance: (BandColor & { pct: number }) | null;
+  /** Temperature-coefficient band (6-band only), else null. */
+  tempco: (BandColor & { ppm: number }) | null;
   /** The value actually encoded by the bands (after rounding), ohms. */
   encodedOhms: number;
   error?: string;
 }
 
 /**
- * Encode `ohms` into 4-band (2 digits) or 5-band (3 digits) colours.
- * `tolerancePct` picks the tolerance band (must exist in TOLERANCE_COLORS).
+ * Encode `ohms` into 4-band (2 digits), 5-band (3 digits) or 6-band (3 digits
+ * + temperature coefficient) colours. `tolerancePct` picks the tolerance band;
+ * `tempcoPpm` picks the 6th band (ignored for 4/5 bands).
  */
-export function colorCode(ohms: number, tolerancePct: number, bands: 4 | 5): ColorCodeResult {
-  const nDigits = bands === 5 ? 3 : 2;
+export function colorCode(
+  ohms: number,
+  tolerancePct: number,
+  bands: 4 | 5 | 6,
+  tempcoPpm = 100,
+): ColorCodeResult {
+  const nDigits = bands === 4 ? 2 : 3;
   const tolerance = TOLERANCE_COLORS.find((t) => t.pct === tolerancePct) ?? null;
+  const tempco =
+    bands === 6 ? (TEMPCO_COLORS.find((t) => t.ppm === tempcoPpm) ?? TEMPCO_COLORS[1]!) : null;
   const blackMult = MULTIPLIER_COLORS[2] as BandColor & { exp: number };
   if (!(ohms > 0) || !Number.isFinite(ohms)) {
     return {
       digits: [],
       multiplier: blackMult,
       tolerance,
+      tempco,
       encodedOhms: NaN,
       error: 'Enter a positive resistance.',
     };
@@ -81,6 +105,7 @@ export function colorCode(ohms: number, tolerancePct: number, bands: 4 | 5): Col
       digits: [],
       multiplier: blackMult,
       tolerance,
+      tempco,
       encodedOhms: NaN,
       error: 'Value out of range for a colour code.',
     };
@@ -88,5 +113,5 @@ export function colorCode(ohms: number, tolerancePct: number, bands: 4 | 5): Col
 
   const digitStr = mantissa.toString().padStart(nDigits, '0');
   const digits = [...digitStr].map((ch) => DIGIT_COLORS[Number(ch)] ?? DIGIT_COLORS[0]!);
-  return { digits, multiplier: mult, tolerance, encodedOhms: mantissa * 10 ** exp };
+  return { digits, multiplier: mult, tolerance, tempco, encodedOhms: mantissa * 10 ** exp };
 }

@@ -5,28 +5,28 @@
 
 import { useMemo, useState, type JSX } from 'react';
 import { fusingCurrent } from '@ziroeda/pcb_calculator';
-import { Field, Group, fmt, parseNum } from '../fields.js';
+import { Field, Group, LEN_UNITS, NumField, TIME_UNITS, fmt } from '../fields.js';
 
 export function PanelFusingCurrent(): JSX.Element {
-  const [ambient, setAmbient] = useState('25');
-  const [melting, setMelting] = useState('1084');
-  const [width, setWidth] = useState('0.5');
-  const [thickness, setThickness] = useState('0.035');
-  const [time, setTime] = useState('1');
+  const [ambientC, setAmbientC] = useState(25);
+  const [meltingC, setMeltingC] = useState(1084);
+  const [widthM, setWidthM] = useState(0.5e-3);
+  const [thicknessM, setThicknessM] = useState(35e-6);
+  const [timeS, setTimeS] = useState(1);
   const [round, setRound] = useState(false);
 
   const r = useMemo(() => {
     const p = {
-      ambientC: parseNum(ambient),
-      meltingC: parseNum(melting),
-      widthM: parseNum(width) * 1e-3,
-      thicknessM: round ? 0 : parseNum(thickness) * 1e-3,
-      timeS: parseNum(time),
+      ambientC,
+      meltingC,
+      widthM,
+      thicknessM: round ? 0 : thicknessM,
+      timeS,
     };
     if (!(p.widthM > 0) || !(p.timeS > 0) || !(p.meltingC > p.ambientC)) return null;
     if (!round && !(p.thicknessM > 0)) return null;
     return fusingCurrent(p);
-  }, [ambient, melting, width, thickness, time, round]);
+  }, [ambientC, meltingC, widthM, thicknessM, timeS, round]);
 
   return (
     <div>
@@ -36,8 +36,18 @@ export function PanelFusingCurrent(): JSX.Element {
         a short event. These are estimates; treat them with a healthy safety margin.
       </div>
       <Group title="Parameters">
-        <Field label="Ambient temperature:" value={ambient} onChange={setAmbient} unit="°C" />
-        <Field label="Melting point:" value={melting} onChange={setMelting} unit="°C" />
+        <Field
+          label="Ambient temperature:"
+          value={fmt(ambientC)}
+          onChange={(v) => setAmbientC(Number(v) || 0)}
+          unit="°C"
+        />
+        <Field
+          label="Melting point:"
+          value={fmt(meltingC)}
+          onChange={(v) => setMeltingC(Number(v) || 0)}
+          unit="°C"
+        />
         <div className="calc-field">
           <span className="calc-field-label">Conductor shape:</span>
           <label className="calc-radio">
@@ -54,9 +64,23 @@ export function PanelFusingCurrent(): JSX.Element {
             Round wire
           </label>
         </div>
-        <Field label={round ? 'Diameter:' : 'Width:'} value={width} onChange={setWidth} unit="mm" />
-        {!round && <Field label="Thickness:" value={thickness} onChange={setThickness} unit="mm" />}
-        <Field label="Duration (Onderdonk):" value={time} onChange={setTime} unit="s" />
+        <NumField
+          label={round ? 'Diameter:' : 'Width:'}
+          units={LEN_UNITS}
+          defaultUnit="mm"
+          base={widthM}
+          onBase={setWidthM}
+        />
+        {!round && (
+          <NumField
+            label="Thickness:"
+            units={LEN_UNITS}
+            defaultUnit="µm"
+            base={thicknessM}
+            onBase={setThicknessM}
+          />
+        )}
+        <NumField label="Duration (Onderdonk):" units={TIME_UNITS} base={timeS} onBase={setTimeS} />
       </Group>
       <Group title="Results">
         <Field
@@ -65,11 +89,12 @@ export function PanelFusingCurrent(): JSX.Element {
           readOnly
           unit="mm²"
         />
-        <Field
+        <NumField
           label="Equivalent wire diameter:"
-          value={r ? fmt(r.equivDiaM * 1000) : '--'}
+          units={LEN_UNITS}
+          defaultUnit="mm"
+          base={r ? r.equivDiaM : NaN}
           readOnly
-          unit="mm"
         />
         <Field label="Preece fusing current:" value={r ? fmt(r.preeceA) : '--'} readOnly unit="A" />
         <Field

@@ -7,6 +7,7 @@ import { useMemo, useState, type JSX } from 'react';
 import {
   DIGIT_COLORS,
   MULTIPLIER_COLORS,
+  TEMPCO_COLORS,
   TOLERANCE_COLORS,
   colorCode,
 } from '@ziroeda/pcb_calculator';
@@ -15,13 +16,22 @@ import { Field, Group, fmt, parseNum } from '../fields.js';
 export function PanelColorCode(): JSX.Element {
   const [value, setValue] = useState('4700');
   const [tolerance, setTolerance] = useState(5);
-  const [bands, setBands] = useState<4 | 5>(4);
+  const [bands, setBands] = useState<4 | 5 | 6>(4);
+  const [tempco, setTempco] = useState(100);
 
-  const r = useMemo(() => colorCode(parseNum(value), tolerance, bands), [value, tolerance, bands]);
+  const r = useMemo(
+    () => colorCode(parseNum(value), tolerance, bands, tempco),
+    [value, tolerance, bands, tempco],
+  );
 
   const allBands = r.error
     ? []
-    : [...r.digits, r.multiplier, ...(r.tolerance ? [r.tolerance] : [])];
+    : [
+        ...r.digits,
+        r.multiplier,
+        ...(r.tolerance ? [r.tolerance] : []),
+        ...(r.tempco ? [r.tempco] : []),
+      ];
 
   return (
     <div>
@@ -62,7 +72,32 @@ export function PanelColorCode(): JSX.Element {
             />
             5 band (3 digits)
           </label>
+          <label className="calc-radio">
+            <input
+              type="radio"
+              name="cc-bands"
+              checked={bands === 6}
+              onChange={() => setBands(6)}
+            />
+            6 band (+ tempco)
+          </label>
         </div>
+        {bands === 6 && (
+          <div className="calc-field">
+            <span className="calc-field-label">Temp. coefficient:</span>
+            <select
+              className="calc-select"
+              value={tempco}
+              onChange={(e) => setTempco(Number(e.target.value))}
+            >
+              {TEMPCO_COLORS.map((t) => (
+                <option key={t.ppm} value={t.ppm}>
+                  {t.ppm} ppm/K ({t.name})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </Group>
 
       {r.error ? (

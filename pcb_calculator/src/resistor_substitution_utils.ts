@@ -35,10 +35,10 @@ interface Node {
 }
 
 const fmtOhms = (v: number): string => {
-  if (v >= 1e6) return trim(v / 1e6) + 'M';
-  if (v >= 1e3) return trim(v / 1e3) + 'k';
+  if (v >= 1e6) return `${trim(v / 1e6)}M`;
+  if (v >= 1e3) return `${trim(v / 1e3)}k`;
   if (v >= 1) return trim(v);
-  return trim(v * 1000) + 'm';
+  return `${trim(v * 1000)}m`;
 };
 const trim = (v: number): string => Number(v.toPrecision(6)).toString();
 
@@ -64,17 +64,32 @@ const wrap = (n: Node): string => (n.count > 1 ? `(${n.formula})` : n.formula);
 export function calculateResistorSubstitution(
   target: number,
   serieId: ESeriesId,
+  exclude: readonly number[] = [],
 ): ResistorCalcResult | null {
   if (!(target > 0) || !Number.isFinite(target)) return null;
 
   const dec = Math.floor(Math.log10(target));
+  // Values the user does not stock: drop them (and their decade multiples,
+  // matched on the normalised mantissa) from the pool — like KiCad's
+  // "Exclude value" fields.
+  const excludedMantissas = new Set(
+    exclude
+      .filter((e) => e > 0 && Number.isFinite(e))
+      .map((e) => (e / 10 ** Math.floor(Math.log10(e))).toPrecision(4)),
+  );
+  const isExcluded = (val: number): boolean =>
+    excludedMantissas.has((val / 10 ** Math.floor(Math.log10(val))).toPrecision(4));
+
   // Base pool: two decades below to one above covers every series/parallel
   // combination that can reach the target with meaningful contribution.
-  const pool: Node[] = eseriesInRange(serieId, dec - 2, dec + 1).map((v) => ({
-    value: v,
-    formula: fmtOhms(v),
-    count: 1,
-  }));
+  const pool: Node[] = eseriesInRange(serieId, dec - 2, dec + 1)
+    .filter((v) => !isExcluded(v))
+    .map((v) => ({
+      value: v,
+      formula: fmtOhms(v),
+      count: 1,
+    }));
+  if (pool.length === 0) return null;
 
   const better = (best: Node | null, cand: Node): Node | null => {
     if (!best) return cand;

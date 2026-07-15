@@ -61,4 +61,14 @@ describe('resistor substitution', () => {
     expect(calculateResistorSubstitution(-5, ESeriesId.E24)).toBeNull();
     expect(calculateResistorSubstitution(Number.NaN, ESeriesId.E24)).toBeNull();
   });
+
+  it('honours excluded values', () => {
+    // 4700 is exact in E24; excluding 4.7k (all decades) forces a worse single.
+    const excl = calculateResistorSubstitution(4700, ESeriesId.E24, [4700])!;
+    expect(excl.r1.value).not.toBe(4700);
+    // The excluded mantissa must not appear as a single-resistor pick.
+    expect(Math.round(excl.r1.value)).not.toBe(4700);
+    // A multi-resistor network can still approach the target closely.
+    expect(Math.abs(excl.r4.deviationPct)).toBeLessThan(2);
+  });
 });

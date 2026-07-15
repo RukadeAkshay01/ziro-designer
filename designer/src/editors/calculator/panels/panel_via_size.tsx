@@ -5,52 +5,72 @@
 
 import { useMemo, useState, type JSX } from 'react';
 import { viaSize } from '@ziroeda/pcb_calculator';
-import { Field, Group, fmt, parseNum } from '../fields.js';
+import { Field, Group, LEN_UNITS, NumField, fmt } from '../fields.js';
 
 export function PanelViaSize(): JSX.Element {
-  const [hole, setHole] = useState('0.4');
-  const [plating, setPlating] = useState('0.035');
-  const [length, setLength] = useState('1.6');
-  const [pad, setPad] = useState('0.6');
-  const [clearance, setClearance] = useState('1.0');
+  const [holeDiaM, setHoleDiaM] = useState(0.4e-3);
+  const [platingM, setPlatingM] = useState(0.035e-3);
+  const [lengthM, setLengthM] = useState(1.6e-3);
+  const [padDiaM, setPadDiaM] = useState(0.6e-3);
+  const [clearanceDiaM, setClearanceDiaM] = useState(1.0e-3);
   const [er, setEr] = useState('4.5');
   const [current, setCurrent] = useState('1');
   const [deltaT, setDeltaT] = useState('10');
 
   const r = useMemo(() => {
     const p = {
-      holeDiaM: parseNum(hole) * 1e-3,
-      platingM: parseNum(plating) * 1e-3,
-      lengthM: parseNum(length) * 1e-3,
-      padDiaM: parseNum(pad) * 1e-3,
-      clearanceDiaM: parseNum(clearance) * 1e-3,
-      epsilonR: parseNum(er),
-      currentA: parseNum(current),
-      deltaTC: parseNum(deltaT),
+      holeDiaM,
+      platingM,
+      lengthM,
+      padDiaM,
+      clearanceDiaM,
+      epsilonR: Number(er) || 0,
+      currentA: Number(current) || 0,
+      deltaTC: Number(deltaT) || 0,
     };
     if (!(p.holeDiaM > 0) || !(p.platingM > 0) || !(p.lengthM > 0) || !(p.deltaTC > 0)) return null;
     return viaSize(p);
-  }, [hole, plating, length, pad, clearance, er, current, deltaT]);
+  }, [holeDiaM, platingM, lengthM, padDiaM, clearanceDiaM, er, current, deltaT]);
 
   return (
     <div>
       <h3>Via Size</h3>
       <div className="calc-row">
         <Group title="Parameters">
-          <Field label="Finished hole diameter:" value={hole} onChange={setHole} unit="mm" />
-          <Field label="Plating thickness:" value={plating} onChange={setPlating} unit="mm" />
-          <Field
-            label="Via length (board thickness):"
-            value={length}
-            onChange={setLength}
-            unit="mm"
+          <NumField
+            label="Finished hole diameter:"
+            units={LEN_UNITS}
+            defaultUnit="mm"
+            base={holeDiaM}
+            onBase={setHoleDiaM}
           />
-          <Field label="Via pad diameter:" value={pad} onChange={setPad} unit="mm" />
-          <Field
+          <NumField
+            label="Plating thickness:"
+            units={LEN_UNITS}
+            defaultUnit="µm"
+            base={platingM}
+            onBase={setPlatingM}
+          />
+          <NumField
+            label="Via length (board thickness):"
+            units={LEN_UNITS}
+            defaultUnit="mm"
+            base={lengthM}
+            onBase={setLengthM}
+          />
+          <NumField
+            label="Via pad diameter:"
+            units={LEN_UNITS}
+            defaultUnit="mm"
+            base={padDiaM}
+            onBase={setPadDiaM}
+          />
+          <NumField
             label="Clearance hole diameter:"
-            value={clearance}
-            onChange={setClearance}
-            unit="mm"
+            units={LEN_UNITS}
+            defaultUnit="mm"
+            base={clearanceDiaM}
+            onBase={setClearanceDiaM}
           />
           <Field label="Board permittivity (εr):" value={er} onChange={setEr} unit="" />
           <Field label="Applied current:" value={current} onChange={setCurrent} unit="A" />
