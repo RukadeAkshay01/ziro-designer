@@ -1,71 +1,75 @@
 /**
- * "E-Series" memo panel — the IEC 60063 preferred-value tables.
+ * "E-Series" memo panel — the IEC 60063 preferred-value tables, shown as two
+ * colour-coded grids (E1/E3/E6/E12 and E24/E48/E96) like KiCad.
  * Counterpart: KiCad `calculator_panels/panel_eseries_display.cpp`.
  */
 
 import type { JSX } from 'react';
-import { E12_VALUES, E24_VALUES, E48_VALUES, E96_VALUES } from '@ziroeda/pcb_calculator';
+import {
+  E1_VALUES,
+  E3_VALUES,
+  E6_VALUES,
+  E12_VALUES,
+  E24_VALUES,
+  E48_VALUES,
+  E96_VALUES,
+} from '@ziroeda/pcb_calculator';
 
-/** E24 column table with membership marks for the coarser series. */
-function SmallSeriesTable(): JSX.Element {
-  const inE1 = new Set([1.0]);
-  const inE3 = new Set([1.0, 2.2, 4.7]);
-  const inE6 = new Set([1.0, 1.5, 2.2, 3.3, 4.7, 6.8]);
-  const inE12 = new Set(E12_VALUES);
-  return (
-    <table className="calc-table">
-      <thead>
-        <tr>
-          <th>E24</th>
-          <th>E12</th>
-          <th>E6</th>
-          <th>E3</th>
-          <th>E1</th>
-        </tr>
-      </thead>
-      <tbody>
-        {E24_VALUES.map((v) => (
-          <tr key={v}>
-            <td>{v.toFixed(1)}</td>
-            <td>{inE12.has(v) ? v.toFixed(1) : ''}</td>
-            <td>{inE6.has(v) ? v.toFixed(1) : ''}</td>
-            <td>{inE3.has(v) ? v.toFixed(1) : ''}</td>
-            <td>{inE1.has(v) ? v.toFixed(1) : ''}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+/** Per-series background colours, matching KiCad's palette (BGR → RGB). */
+interface SeriesCol {
+  name: string;
+  values: readonly number[];
+  colour: string;
+  decimals: number;
 }
 
-/** E48/E96 laid out in compact columns. */
-function LargeSeriesTable({
-  values,
-  cols,
-  title,
-}: {
-  values: readonly number[];
-  cols: number;
-  title: string;
-}): JSX.Element {
-  const rows = Math.ceil(values.length / cols);
+const GRID_112: SeriesCol[] = [
+  { name: 'E1', values: E1_VALUES, colour: '#f0fff0', decimals: 1 },
+  { name: 'E3', values: E3_VALUES, colour: '#98fb98', decimals: 1 },
+  { name: 'E6', values: E6_VALUES, colour: '#6495ed', decimals: 1 },
+  { name: 'E12', values: E12_VALUES, colour: '#dda0dd', decimals: 1 },
+];
+
+const GRID_2496: SeriesCol[] = [
+  { name: 'E24', values: E24_VALUES, colour: '#87ceeb', decimals: 1 },
+  { name: 'E48', values: E48_VALUES, colour: '#6be823', decimals: 2 },
+  { name: 'E96', values: E96_VALUES, colour: '#ffa07a', decimals: 2 },
+];
+
+function SeriesGrid({ title, cols }: { title: string; cols: SeriesCol[] }): JSX.Element {
+  const rows = Math.max(...cols.map((c) => c.values.length));
   return (
-    <div>
-      <h4 style={{ margin: '6px 0' }}>{title}</h4>
-      <table className="calc-table">
-        <tbody>
-          {Array.from({ length: rows }, (_, r) => (
-            // eslint-disable-next-line react/no-array-index-key
-            <tr key={r}>
-              {Array.from({ length: cols }, (_, c) => {
-                const v = values[c * rows + r];
-                return <td key={`${r}-${c}`}>{v != null ? v.toFixed(2) : ''}</td>;
-              })}
+    <fieldset className="calc-group">
+      <legend>{title}</legend>
+      <div className="es-scroll">
+        <table className="es-grid">
+          <thead>
+            <tr>
+              {cols.map((c) => (
+                <th key={c.name} style={{ background: c.colour }}>
+                  {c.name}
+                </th>
+              ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {Array.from({ length: rows }, (_, r) => (
+              // eslint-disable-next-line react/no-array-index-key
+              <tr key={r}>
+                {cols.map((c) => {
+                  const v = c.values[r];
+                  return (
+                    <td key={c.name} style={{ background: c.colour }}>
+                      {v != null ? v.toFixed(c.decimals) : ''}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </fieldset>
   );
 }
 
@@ -74,13 +78,12 @@ export function PanelEseriesDisplay(): JSX.Element {
     <div>
       <h3>E-Series (IEC 60063 preferred values)</h3>
       <div className="calc-note">
-        Base values of the first decade (1 … 10). Series tolerance pairing: E6 ±20 %, E12 ±10 %, E24
-        ±5 %, E48 ±2 %, E96 ±1 %.
+        First-decade base values (1 … 10). Series/tolerance pairing: E6 ±20 %, E12 ±10 %, E24 ±5 %,
+        E48 ±2 %, E96 ±1 %.
       </div>
       <div className="calc-row">
-        <SmallSeriesTable />
-        <LargeSeriesTable values={E48_VALUES} cols={4} title="E48 (±2 %)" />
-        <LargeSeriesTable values={E96_VALUES} cols={6} title="E96 (±1 %)" />
+        <SeriesGrid title="E1, E3, E6, E12" cols={GRID_112} />
+        <SeriesGrid title="E24, E48, E96" cols={GRID_2496} />
       </div>
     </div>
   );

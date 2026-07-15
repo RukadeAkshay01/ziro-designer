@@ -209,6 +209,30 @@
   margin-left: 8px;
 }
 
+/* --- E-series coloured grids --- */
+.es-grid {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.es-grid th,
+.es-grid td {
+  border: 1px solid #22242899;
+  padding: 2px 10px;
+  text-align: center;
+  color: #101215;
+  min-width: 52px;
+}
+
+.es-grid th {
+  font-weight: 700;
+}
+
+.es-scroll {
+  max-height: 620px;
+  overflow-y: auto;
+}
+
 .calc-btn {
   background: #3a3d43;
   color: var(--chrome-fg);
