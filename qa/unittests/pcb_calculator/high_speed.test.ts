@@ -183,14 +183,17 @@ describe('coax', () => {
 });
 
 describe('rectangular waveguide', () => {
-  it('WR-90: a=22.86 mm → fc(TE10)=6.557 GHz; @10 GHz λg≈39.7 mm', () => {
+  it('WR-90: a=22.86 mm → fc(TE10)=6.557 GHz; @10 GHz λg≈39.71 mm, Z0≈499 Ω', () => {
     const r = rectWaveguideAnalyze(
       { aM: 22.86e-3, bM: 10.16e-3, lengthM: 0.1 },
       { ...el, frequencyHz: 10e9, epsilonR: 1 },
     );
-    expect(r.extra.fcTE10Hz / 1e9).toBeCloseTo(6.557, 2);
-    expect(r.extra.guideWavelengthM * 1000).toBeCloseTo(39.7, 0);
-    expect(r.z0).toBeGreaterThan(377);
+    expect(r.extra.fcTE10Hz / 1e9).toBeCloseTo(6.5576, 3);
+    expect(r.extra.guideWavelengthM * 1000).toBeCloseTo(39.71, 1);
+    // KiCad Z0 = ZF0·√(µr/εr)/√(1−(fc/f)²).
+    expect(r.z0).toBeCloseTo(498.97, 1);
+    expect(r.conductorLossDb).toBeGreaterThan(0);
+    expect(r.teModes).toContain('H(1,0)');
   });
 
   it('below cutoff reports NaN', () => {
