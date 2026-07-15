@@ -104,7 +104,10 @@ export function annotateSymbols(
   const reserved = new Map<string, Set<number>>(); // prefix → numbers already taken
   const reserve = (prefix: string, n: number): void => {
     let set = reserved.get(prefix);
-    if (!set) reserved.set(prefix, (set = new Set()));
+    if (!set) {
+      set = new Set();
+      reserved.set(prefix, set);
+    }
     set.add(n);
   };
 
