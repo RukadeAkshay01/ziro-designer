@@ -26,6 +26,9 @@ importers:
       '@ziroeda/kimath':
         specifier: workspace:*
         version: link:../libs/kimath
+      '@ziroeda/sexpr':
+        specifier: workspace:*
+        version: link:../libs/sexpr
 
   designer:
     dependencies:

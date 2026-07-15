@@ -13,11 +13,20 @@ import { useAuth } from '../auth/AuthProvider.js';
 import { syncAllProjects, pushProject, deleteCloudProject } from '../cloud/sync.js';
 import { LoadingOverlay, nextPaint } from '../ui/LoadingOverlay.js';
 import { loadTemplates, createFromTemplate, type TemplateMeta } from './templates.js';
+import { loadDemos, openDemo, type DemoMeta } from './demos.js';
 import '../ui/shell.css';
 import type { PickedHomeFile } from './files.js';
-import { EMPTY_PCB, newProjectFiles, sanitizeProjectName } from './new_project.js';
+import {
+  EMPTY_PCB,
+  copyProjectFiles,
+  newProjectFiles,
+  sanitizeProjectName,
+} from './new_project.js';
 import {
   buildDirTree,
+  deleteTreeEntries,
+  isViewableTextFile,
+  renameTreeEntry,
   treeIconFor,
   isHiddenFile,
   inArchiveAllowList,
@@ -30,7 +39,10 @@ import {
 
 export type { PickedHomeFile } from './files.js';
 import { archiveEntries, zipArchive, expandArchive } from './project_archiver.js';
-import { NewProjectDialog } from './dialogs/dialog_new_project.js';
+import { AboutDialog } from './dialogs/dialog_about.js';
+import { TextViewerDialog } from './dialogs/dialog_text_viewer.js';
+import { buildManagerMenus } from './menubar.js';
+import { PreferencesDialog } from '../prefs/PreferencesDialog.js';
 import { TemplateDialog } from './dialogs/dialog_template_selector.js';
 import { ProjectTreePane, TreeIcon, mgrUrl } from './project_tree_pane.js';
 import {
@@ -90,6 +102,7 @@ const TILES: Tile[] = [
     id: 'drawingsheet',
     name: 'Drawing Sheet Editor',
     desc: 'Edit drawing sheet borders and title blocks for use in schematics and PCB designs',
+    enabled: true,
   },
   {
     id: 'pcm',
@@ -101,16 +114,24 @@ const TILES: Tile[] = [
 // KiCad project-manager left toolbar (toolbars_kicad_manager.cpp). "Browse
 // Project Files" is dropped: a browser can't open the OS file manager, and the
 // left panel already is the project tree.
-type MgrAction = 'open' | 'new' | 'template' | 'archive' | 'unarchive' | 'refresh';
+type MgrAction = 'open' | 'new' | 'archive' | 'unarchive' | 'refresh';
 const MGR_TOOLS: ({ icon: string; title: string; action: MgrAction } | 'sep')[] = [
-  { icon: 'new_project_from_template', title: 'New Project from Template…', action: 'template' },
-  { icon: 'open_project', title: 'Open Project…', action: 'open' },
+  { icon: 'new_project', title: 'New Project\u2026', action: 'new' },
+  { icon: 'open_project', title: 'Open Project\u2026', action: 'open' },
   'sep',
-  { icon: 'zip', title: 'Archive Project…', action: 'archive' },
-  { icon: 'unzip', title: 'Unarchive Project…', action: 'unarchive' },
+  { icon: 'zip', title: 'Archive Project\u2026', action: 'archive' },
+  { icon: 'unzip', title: 'Unarchive Project\u2026', action: 'unarchive' },
   'sep',
   { icon: 'refresh', title: 'Refresh', action: 'refresh' },
 ];
+
+// Upstream v10: File > New Project opens the template selector itself, with a
+// built-in blank "Default" template first in the list.
+const DEFAULT_TEMPLATE: TemplateMeta = {
+  id: '\0default',
+  title: 'Default',
+  description: 'An empty project: a project file, a root schematic and a board.',
+} as TemplateMeta;
 
 const tileIcon = (id: string): JSX.Element => {
   const url = tileUrl(id);
@@ -119,9 +140,9 @@ const tileIcon = (id: string): JSX.Element => {
 
 /**
  * KiCad-style project manager: open a project folder, see its files in the
- * tree, then launch the Schematic Editor on it — the same workflow as the
- * desktop app's project window. Until a project is opened, the bundled demo
- * project is shown.
+ * tree, then launch an editor on it — the same workflow as the desktop app's
+ * project window. Until a project is opened, the tree shows open/select/drop
+ * hints; bundled demos are under File > Open Demo Project.
  */
 export function HomePage({
   onOpenSchematic,
@@ -129,6 +150,7 @@ export function HomePage({
   onOpenPcb,
   onOpenSymbolEditor,
   onOpenFootprintEditor,
+  onOpenDrawingSheetEditor,
   initialFiles,
 }: {
   onOpenSchematic: () => void;
@@ -140,6 +162,8 @@ export function HomePage({
   /** Launch the Footprint Editor (with the open project's `.pretty` libraries, if any).
    *  `startFile` is a `.kicad_mod` to open straight away (KiCad's MAIL_FP_EDIT). */
   onOpenFootprintEditor?: (files?: PickedHomeFile[], startFile?: string) => void;
+  /** Launch the Drawing Sheet Editor (pl_editor); a standalone tool. */
+  onOpenDrawingSheetEditor?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
@@ -154,12 +178,22 @@ export function HomePage({
   // Expanded directory-tree folder paths (collapsed by default, like KiCad).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Selected tree row (single click). Double click opens — like KiCad's tree.
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectPath = (path: string, additive: boolean): void =>
+    setSelected((prev) => {
+      if (!additive) return new Set([path]);
+      const n = new Set(prev);
+      if (n.has(path)) n.delete(path);
+      else n.add(path);
+      return n;
+    });
   // Whether the project root node is expanded (its twisty collapses the tree).
   const [rootOpen, setRootOpen] = useState(true);
-  // New Project dialog (KiCad's File > New Project name prompt).
-  const [newName, setNewName] = useState<string | null>(null);
-  // New Project from Template (KiCad's DIALOG_TEMPLATE_SELECTOR).
+  // Chrome dialogs: About, read-only text viewer, Preferences.
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [textView, setTextView] = useState<PickedHomeFile | null>(null);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  // New Project / New from Template (upstream v10: one template selector).
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
   const [tplOpen, setTplOpen] = useState(false);
   const [tplSel, setTplSel] = useState<TemplateMeta | null>(null);
@@ -167,6 +201,21 @@ export function HomePage({
   useEffect(() => {
     void loadTemplates().then(setTemplates);
   }, []);
+  // Bundled demo projects (File > Open Demo Project).
+  const [demos, setDemos] = useState<DemoMeta[]>([]);
+  useEffect(() => {
+    void loadDemos().then(setDemos);
+  }, []);
+  const openDemoProject = async (id: string): Promise<void> => {
+    const d = demos.find((x) => x.id === id);
+    if (!d) return;
+    // Demos open as themselves and are not persisted over an existing store
+    // entry unless the user saves — mirror a plain folder open (persist like
+    // any opened project so it lands in Recent).
+    const files = await openDemo(d);
+    if (files.length === 0) return;
+    await ingest(files.map((f) => ({ name: f.name, bytesOf: async () => f.bytes! })));
+  };
   // Project-tree pane width (px), draggable like KiCad's wxAUI sash.
   const [panelWidth, setPanelWidth] = useState(290);
   // Non-null while opening/saving a project — drives KiCad's "Load Schematic"
@@ -255,41 +304,43 @@ export function HomePage({
   // KiCad writes — .kicad_pro, root .kicad_sch, .kicad_pcb), show it in the
   // manager tree, and persist it like an opened project. KiCad leaves the new
   // project in the manager; the user then launches an editor from a tile.
-  const createNewProject = async (): Promise<void> => {
-    const name = sanitizeProjectName(newName ?? '');
-    if (!name) return;
-    const files = newProjectFiles(name);
-    setPicked(files);
-    setExpanded(new Set());
-    setNewName(null);
-    if (storageAvailable()) {
-      try {
-        // Reuse an existing record of the same name (overwrite, don't duplicate).
-        const existing = (await listProjects()).find((p) => p.name === name);
-        const pid = await saveProject(
-          name,
-          files.map((f) => ({ name: f.name, bytes: f.bytes! })),
-          existing?.id,
-        );
-        refreshSaved();
-        if (userId)
-          void pushProject(userId, pid).catch((e) => console.warn('Cloud push failed:', e));
-      } catch {
-        /* storage disabled (private mode) — the app still works */
-      }
-    }
+  const openNewProjectDialog = (): void => {
+    setTplSel(DEFAULT_TEMPLATE);
+    setTplName('');
+    setTplOpen(true);
   };
 
-  // File > New Project from Template: copy the chosen template's files (renamed
-  // to the project name, like KiCad's CreateProject) and ingest them.
+  // Upstream v10 NewProject flow: the template selector creates the project —
+  // the built-in "Default" template scaffolds the three blank project files,
+  // real templates copy their contents (renamed, like CreateProject).
   const createFromTpl = async (): Promise<void> => {
     const name = sanitizeProjectName(tplName);
     if (!name || !tplSel) return;
     setTplOpen(false);
     setExpanded(new Set());
-    const files = await createFromTemplate(tplSel, name);
+    const files =
+      tplSel.id === DEFAULT_TEMPLATE.id
+        ? newProjectFiles(name)
+        : await createFromTemplate(tplSel, name);
     if (files.length === 0) return;
     await ingest(files.map((f) => ({ name: f.name, bytesOf: async () => f.bytes! })));
+  };
+
+  // File > Save As: copy the whole project under a new name and persist it.
+  const saveAsProject = async (): Promise<void> => {
+    if (!picked) return;
+    const name = sanitizeProjectName(window.prompt('Save project as:', `${projName}-copy`) ?? '');
+    if (!name) return;
+    const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
+    const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
+    const strip =
+      firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
+        ? firstSeg
+        : '';
+    const files = copyProjectFiles(picked, strip, projName, name);
+    await ingest(
+      files.map((f) => ({ name: f.name, bytesOf: async () => f.bytes ?? enc.encode(f.text) })),
+    );
   };
 
   // Reopen a project straight from IndexedDB — no folder picker needed.
@@ -347,6 +398,15 @@ export function HomePage({
   // works for Downloads/Desktop) and ingest every file found.
   const onDropProject = async (e: React.DragEvent): Promise<void> => {
     e.preventDefault();
+    // A single dropped .zip routes through Unarchive (upstream accepts zip drops).
+    const plain = [...e.dataTransfer.files];
+    if (plain.length === 1 && /\.zip$/i.test(plain[0]!.name)) {
+      const expanded = expandArchive(new Uint8Array(await plain[0]!.arrayBuffer()));
+      if (expanded) {
+        await ingest(expanded.map(({ name, data }) => ({ name, bytesOf: async () => data })));
+        return;
+      }
+    }
     const entries = [...e.dataTransfer.items]
       .map((i) => i.webkitGetAsEntry() as unknown as DropEntry | null)
       .filter((x): x is DropEntry => !!x);
@@ -391,12 +451,7 @@ export function HomePage({
         void openProjectPicker();
         break;
       case 'new':
-        setNewName('');
-        break;
-      case 'template':
-        setTplSel(templates[0] ?? null);
-        setTplName('');
-        setTplOpen(true);
+        openNewProjectDialog();
         break;
       case 'archive':
         void archiveProject();
@@ -464,16 +519,56 @@ export function HomePage({
   // The on-disk directory tree, sorted exactly like KiCad's project window
   // (dirs first, root files next, then case-insensitive by name). Footprint/3D
   // libraries stay inside collapsible folders instead of flooding the list.
-  const dirRoot = useMemo<DirNode | null>(() => {
-    if (!picked) return null;
+  const stripPrefix = useMemo<string>(() => {
+    if (!picked) return '';
     const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
     const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
-    const strip =
-      firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
-        ? firstSeg
-        : '';
-    return buildDirTree(picked, strip, projLower);
-  }, [picked, proFile, projLower]);
+    return firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
+      ? firstSeg
+      : '';
+  }, [picked, proFile]);
+
+  const dirRoot = useMemo<DirNode | null>(
+    () => (picked ? buildDirTree(picked, stripPrefix, projLower) : null),
+    [picked, stripPrefix, projLower],
+  );
+
+  // The tree-selected file, when it is a single text document our viewer can show.
+  const fileAtPath = (path: string): PickedHomeFile | null =>
+    picked?.find((x) => x.name.replace(/\\/g, '/') === stripPrefix + path) ?? null;
+  const selectedTextFile = useMemo<PickedHomeFile | null>(() => {
+    if (!picked || selected.size !== 1) return null;
+    const [path] = selected;
+    const f = picked.find((x) => x.name.replace(/\\/g, '/') === stripPrefix + path);
+    return f && isViewableTextFile(f.name) ? f : null;
+  }, [picked, selected, stripPrefix]);
+
+  // Tree file operations (upstream onRenameFile/onDeleteFile): apply the pure
+  // list transform, then persist the changed project like any other ingest.
+  const applyTreeOp = async (next: PickedHomeFile[] | null): Promise<void> => {
+    if (!next) return;
+    setSelected(new Set());
+    await ingest(
+      next.map((f) => ({
+        name: f.name,
+        bytesOf: async () => f.bytes ?? enc.encode(f.text),
+      })),
+    );
+  };
+  const renamePath = (path: string): void => {
+    const current = path.split('/').pop()!;
+    const name = window.prompt(`Change filename: '${current}'`, current);
+    if (!name || !picked) return;
+    const next = renameTreeEntry(picked, stripPrefix, path, name);
+    if (!next) window.alert('That name is empty or already taken.');
+    else void applyTreeOp(next);
+  };
+  const deletePaths = (paths: Set<string>): void => {
+    if (!picked || paths.size === 0) return;
+    const what = paths.size === 1 ? `'${[...paths][0]}'` : `${paths.size} items`;
+    if (!window.confirm(`Delete ${what} and their contents?`)) return;
+    void applyTreeOp(deleteTreeEntries(picked, stripPrefix, paths));
+  };
 
   const toggleDir = (path: string): void =>
     setExpanded((prev) => {
@@ -483,49 +578,64 @@ export function HomePage({
       return n;
     });
 
-  // KiCad's project-manager File menu (the working subset).
-  const menus: Menu[] = [
-    {
-      label: 'File',
-      items: [
-        { label: 'New Project…', action: () => setNewName(''), shortcut: 'Ctrl+N' },
-        {
-          label: 'New Project from Template…',
-          action: () => {
-            setTplSel(templates[0] ?? null);
-            setTplName('');
-            setTplOpen(true);
-          },
-          disabled: templates.length === 0,
-        },
-        {
-          label: 'Open Project…',
-          icon: 'open',
-          action: () => void openProjectPicker(),
-          shortcut: 'Ctrl+O',
-        },
-        { label: 'Select Project Files…', action: () => filesInputRef.current?.click() },
-        { sep: true },
-        { label: 'Archive Project…', action: () => void archiveProject(), disabled: !picked },
-        { label: 'Unarchive Project…', action: () => zipInputRef.current?.click() },
-        { sep: true },
-        { label: 'Close Project', action: () => setPicked(null), disabled: !picked },
-      ],
-    },
-    { label: 'View', items: [{ label: 'Refresh', action: () => {} }] },
-    {
-      label: 'Tools',
-      items: [
-        { label: 'Edit Schematic', action: () => launchSchematic(), shortcut: 'Ctrl+E' },
-        {
-          label: 'Edit Schematic Symbols',
-          action: () => onOpenSymbolEditor?.(picked ?? undefined),
-          shortcut: 'Ctrl+L',
-        },
-      ],
-    },
-    { label: 'Help', items: [{ label: 'About Ziro Designer', action: () => {} }] },
-  ];
+  // Menu bar transcribed from the upstream manager (see home/menubar.ts).
+  const clearRecent = async (): Promise<void> => {
+    if (
+      !window.confirm(
+        'Remove all projects saved in this browser? Cloud copies are kept for signed-in accounts.',
+      )
+    )
+      return;
+    for (const pr of saved) await deleteProject(pr.id);
+    refreshSaved();
+  };
+
+  const menus: Menu[] = buildManagerMenus({
+    newProject: openNewProjectDialog,
+    openProject: () => void openProjectPicker(),
+    selectProjectFiles: () => filesInputRef.current?.click(),
+    openRecent: (id) => void openStored(id),
+    clearRecent: () => void clearRecent(),
+    closeProject: () => setPicked(null),
+    saveAs: () => void saveAsProject(),
+    archiveProject: () => void archiveProject(),
+    unarchiveProject: () => zipInputRef.current?.click(),
+    refresh: refreshSaved,
+    openTextViewer: () => setTextView(selectedTextFile),
+    editSchematic: () => launchSchematic(),
+    editSymbols: () => onOpenSymbolEditor?.(picked ?? undefined),
+    editPcb: launchPcb,
+    editFootprints: () => onOpenFootprintEditor?.(picked ?? undefined),
+    openPreferences: () => setPrefsOpen(true),
+    showAbout: () => setAboutOpen(true),
+    openDemo: (id) => void openDemoProject(id),
+    hasProject: !!picked,
+    hasTextFileSelected: !!selectedTextFile,
+    recent: saved,
+    demos,
+  });
+
+  // Manager hotkeys, matching the upstream defaults (Ctrl+N/O/E/L/P/F). F5 is
+  // left to the browser (reload) rather than hijacked for tree refresh.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      const run = (fn: () => void): void => {
+        e.preventDefault();
+        fn();
+      };
+      if (k === 'n') run(openNewProjectDialog);
+      else if (k === 'o') run(() => void openProjectPicker());
+      else if (k === 'e') run(() => launchSchematic());
+      else if (k === 'l') run(() => onOpenSymbolEditor?.(picked ?? undefined));
+      else if (k === 'p' && picked) run(launchPcb);
+      else if (k === 'f') run(() => onOpenFootprintEditor?.(picked ?? undefined));
+      else if (k === ',') run(() => setPrefsOpen(true));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   return (
     <div className="ze-app">
@@ -615,7 +725,10 @@ export function HomePage({
           expanded={expanded}
           onToggleDir={toggleDir}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={selectPath}
+          onRenamePath={renamePath}
+          onDeletePaths={deletePaths}
+          onViewTextPath={(path) => setTextView(fileAtPath(path))}
           rootOpen={rootOpen}
           onToggleRoot={() => setRootOpen((o) => !o)}
           onOpenPcbFile={onOpenPcb ? (f) => onOpenPcb(f, picked ?? undefined) : undefined}
@@ -654,7 +767,9 @@ export function HomePage({
                     ? (): void => onOpenSymbolEditor?.(picked ?? undefined)
                     : t.id === 'footprints'
                       ? (): void => onOpenFootprintEditor?.(picked ?? undefined)
-                      : (): void => launchSchematic();
+                      : t.id === 'drawingsheet'
+                        ? (): void => onOpenDrawingSheetEditor?.()
+                        : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}
@@ -712,20 +827,18 @@ export function HomePage({
         <span className="cell grow">
           {picked ? `Project: ${proFile?.name ?? projName ?? '—'}` : 'No project loaded'}
         </span>
+        <span className="cell">
+          {storageAvailable()
+            ? session
+              ? 'Saved in browser · cloud sync on'
+              : 'Saved in browser'
+            : 'In-memory only (storage unavailable)'}
+        </span>
       </div>
-
-      {newName !== null && (
-        <NewProjectDialog
-          name={newName}
-          onChange={setNewName}
-          onCancel={() => setNewName(null)}
-          onCreate={() => void createNewProject()}
-        />
-      )}
 
       {tplOpen && (
         <TemplateDialog
-          templates={templates}
+          templates={[DEFAULT_TEMPLATE, ...templates]}
           selected={tplSel}
           name={tplName}
           onSelect={setTplSel}
@@ -736,6 +849,16 @@ export function HomePage({
       )}
 
       {/* KiCad's "Load Schematic" progress dialog, web-style. */}
+      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
+      {textView && (
+        <TextViewerDialog
+          name={textView.name}
+          text={textView.text}
+          onClose={() => setTextView(null)}
+        />
+      )}
+      {prefsOpen && <PreferencesDialog onClose={() => setPrefsOpen(false)} />}
+
       <LoadingOverlay label={loading} />
     </div>
   );

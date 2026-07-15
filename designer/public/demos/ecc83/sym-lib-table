@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "ecc83-pp")(type "KiCad")(uri "${KIPRJMOD}/ecc83-pp.kicad_sym")(options "")(descr ""))
+)

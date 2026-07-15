@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY?: string;
   /** Base URL of the hosted 3D-model library (R2); falls back to /models3d. */
   readonly VITE_MODELS3D_URL?: string;
+  /** Hosted demo-corpus base URL (R2); falls back to the bundled /demos. */
+  readonly VITE_DEMOS_URL?: string;
 }
 
 interface ImportMeta {

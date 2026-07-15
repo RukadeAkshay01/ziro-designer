@@ -190,3 +190,61 @@ export function buildDirTree(
   sortRec(root);
   return root;
 }
+
+// --- Tree file operations (upstream: PROJECT_TREE_PANE::onRenameFile /
+// onDeleteFile). Our project is an in-memory file list, so these are pure
+// list transforms over tree-relative paths (after the picked-folder strip).
+
+/** The tree-relative path of a picked file (strip the picked-folder prefix). */
+const relOf = (name: string, stripPrefix: string): string => {
+  let rel = name.replace(/\\/g, '/');
+  if (stripPrefix && rel.startsWith(stripPrefix)) rel = rel.slice(stripPrefix.length);
+  return rel.replace(/^\/+/, '');
+};
+
+/** Rename the file or directory at `path` to `newBase` (a bare name, no
+ * slashes). Directory renames move every file underneath. Returns the new
+ * list, or null when the name is invalid or collides with a sibling. */
+export function renameTreeEntry(
+  files: readonly PickedHomeFile[],
+  stripPrefix: string,
+  path: string,
+  newBase: string,
+): PickedHomeFile[] | null {
+  const clean = newBase.replace(/[/\\:*?"<>|]/g, '').trim();
+  if (!clean) return null;
+  const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : '';
+  const newPath = parent + clean;
+  if (newPath === path) return files.slice();
+  const taken = files.some((f) => {
+    const rel = relOf(f.name, stripPrefix);
+    return rel === newPath || rel.startsWith(`${newPath}/`);
+  });
+  if (taken) return null;
+  return files.map((f) => {
+    const rel = relOf(f.name, stripPrefix);
+    if (rel === path) return { ...f, name: stripPrefix + newPath };
+    if (rel.startsWith(`${path}/`))
+      return { ...f, name: stripPrefix + newPath + rel.slice(path.length) };
+    return f;
+  });
+}
+
+/** Delete the files/directories at `paths` (directories take their contents). */
+export function deleteTreeEntries(
+  files: readonly PickedHomeFile[],
+  stripPrefix: string,
+  paths: ReadonlySet<string>,
+): PickedHomeFile[] {
+  return files.filter((f) => {
+    const rel = relOf(f.name, stripPrefix);
+    for (const p of paths) if (rel === p || rel.startsWith(`${p}/`)) return false;
+    return true;
+  });
+}
+
+/** Text documents the in-app viewer can show (View > Open Text Viewer and the
+ * tree's "Edit in a Text Viewer" — the web take on upstream's text editor). */
+export const isViewableTextFile = (name: string): boolean =>
+  /\.(txt|md|rpt|net|cir|csv|log|pos|gbrjob|kicad_dru)$/i.test(name) ||
+  /(^|\/)(fp|sym|design-block)-lib-table$/.test(name);

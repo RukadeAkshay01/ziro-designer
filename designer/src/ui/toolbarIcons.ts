@@ -183,6 +183,18 @@ const BITMAP: Record<string, string> = {
   setAnchor: 'anchor',
   graphicsOutlines: 'pad_sketch',
   textOutlines: 'text_sketch',
+  // drawing sheet editor (icons per PL_ACTIONS .Icon() in pl_actions.cpp)
+  dsAddLine: 'add_graphical_segments',
+  dsAddRect: 'add_rectangle',
+  dsAddText: 'text',
+  dsAddBitmap: 'image',
+  dsAppend: 'import',
+  dsDelete: 'delete_cursor',
+  appendSheet: 'import',
+  inspect: 'spreadsheet',
+  previewSettings: 'sheetset',
+  layoutNormalMode: 'pagelayout_normal_view_mode',
+  layoutEditMode: 'pagelayout_special_view_mode',
 };
 
 /** KiCad icon URL for a toolbar tool id, or undefined if none is mapped. */

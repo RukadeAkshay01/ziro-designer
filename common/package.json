@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@ziroeda/core": "workspace:*",
-    "@ziroeda/kimath": "workspace:*"
+    "@ziroeda/kimath": "workspace:*",
+    "@ziroeda/sexpr": "workspace:*"
   }
 }

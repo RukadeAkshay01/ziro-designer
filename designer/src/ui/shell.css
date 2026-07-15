@@ -1541,3 +1541,78 @@ body {
   border: 1px solid var(--chrome-border);
   background: none;
 }
+
+/* ---- Drawing Sheet Editor properties panel (PropertiesFrame) ---- */
+.ze-ds-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--chrome-border, rgba(128, 128, 128, 0.35));
+  flex: 0 0 auto;
+}
+.ze-ds-tabs button {
+  flex: 1;
+  padding: 5px 4px;
+  font-size: 11px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ze-ds-tabs button.active {
+  border-bottom-color: #4aa3ff;
+  font-weight: 600;
+}
+.ze-ds-group {
+  border: 1px solid var(--chrome-border, rgba(128, 128, 128, 0.35));
+  border-radius: 3px;
+  margin: 6px 6px;
+  padding: 2px 4px 4px;
+}
+.ze-ds-group legend {
+  font-size: 10px;
+  padding: 0 4px;
+  opacity: 0.8;
+}
+.ze-ds-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 6px;
+}
+.ze-ds-label {
+  width: 92px;
+  font-size: 11px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+.ze-ds-textedit {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 4px 6px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+}
+.ze-ds-fmtbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 6px 6px;
+  flex-wrap: wrap;
+}
+.ze-ds-fmt {
+  min-width: 24px;
+  padding: 2px 5px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.ze-ds-fmt.active {
+  outline: 1px solid #4aa3ff;
+  background: rgba(74, 163, 255, 0.18);
+}
+.ze-ds-fmtsep {
+  width: 1px;
+  height: 16px;
+  background: var(--chrome-border, rgba(128, 128, 128, 0.35));
+  margin: 0 3px;
+}

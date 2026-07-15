@@ -4,15 +4,18 @@
  * KiCad-sorted directory tree, and the empty-state open/select/drop hints.
  * Single click selects, double click routes each document type to its editor
  * (PROJECT_TREE_ITEM::Activate). State stays in the launcher — this pane is
- * fully controlled.
+ * fully controlled. Ctrl/Cmd-click multi-selects; right-click opens the
+ * context menu (the web-applicable subset of upstream's popup: text viewer,
+ * rename, delete).
  */
 
-import type { JSX } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import type { PickedHomeFile } from './files.js';
 import {
   basename,
   isHiddenFile,
   isRootFileName,
+  isViewableTextFile,
   treeIconFor,
   type DirNode,
 } from './project_tree.js';
@@ -46,6 +49,9 @@ export function ProjectTreePane({
   onSelect,
   rootOpen,
   onToggleRoot,
+  onRenamePath,
+  onDeletePaths,
+  onViewTextPath,
   onOpenPcbFile,
   onOpenSchematic,
   onOpenSymbolFile,
@@ -61,10 +67,14 @@ export function ProjectTreePane({
   width: number;
   expanded: Set<string>;
   onToggleDir: (path: string) => void;
-  selected: string | null;
-  onSelect: (path: string) => void;
+  /** Selected tree paths (multi-select via Ctrl/Cmd-click, like upstream). */
+  selected: ReadonlySet<string>;
+  onSelect: (path: string, additive: boolean) => void;
   rootOpen: boolean;
   onToggleRoot: () => void;
+  onRenamePath?: (path: string) => void;
+  onDeletePaths?: (paths: Set<string>) => void;
+  onViewTextPath?: (path: string) => void;
   onOpenPcbFile?: (file: PickedHomeFile) => void;
   onOpenSchematic: (startFile?: string) => void;
   onOpenSymbolFile?: (file: PickedHomeFile) => void;
@@ -78,6 +88,25 @@ export function ProjectTreePane({
   const isHiddenNode = (name: string): boolean =>
     isHiddenFile(name) || (/\.kicad_sch$/i.test(name) && !isRootFileName(name, projLower));
 
+  // Right-click context menu (upstream popup, web-applicable subset).
+  const [menu, setMenu] = useState<{ x: number; y: number; paths: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (): void => setMenu(null);
+    window.addEventListener('mousedown', close);
+    return () => window.removeEventListener('mousedown', close);
+  }, [menu]);
+
+  const openContextMenu = (e: React.MouseEvent, path: string): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Right-clicking an unselected row selects it (like upstream's tree).
+    const paths = selected.has(path) ? new Set(selected) : new Set([path]);
+    paths.delete(ROOT_SELECTION);
+    if (!selected.has(path)) onSelect(path, false);
+    if (paths.size > 0) setMenu({ x: e.clientX, y: e.clientY, paths });
+  };
+
   const renderDir = (node: DirNode, depth: number): JSX.Element | null => {
     if (node.isDir) {
       const kids = node.children.filter((c) => c.isDir || !isHiddenNode(c.name));
@@ -86,9 +115,12 @@ export function ProjectTreePane({
       return (
         <div key={node.path}>
           <div
-            className="ze-tree-item"
+            className={`ze-tree-item${selected.has(node.path) ? ' active' : ''}`}
             style={{ paddingLeft: 8 + depth * 16, cursor: 'pointer' }}
-            onClick={() => onToggleDir(node.path)}
+            onClick={(e) =>
+              e.ctrlKey || e.metaKey ? onSelect(node.path, true) : onToggleDir(node.path)
+            }
+            onContextMenu={(e) => openContextMenu(e, node.path)}
             title={node.path}
           >
             <span className={`twisty expandable${open ? ' open' : ''}`} />
@@ -130,10 +162,11 @@ export function ProjectTreePane({
     return (
       <div
         key={node.path}
-        className={`ze-tree-item${selected === node.path ? ' active' : ''}`}
+        className={`ze-tree-item${selected.has(node.path) ? ' active' : ''}`}
         style={{ paddingLeft: 8 + depth * 16 + 15, cursor: openFn ? 'pointer' : 'default' }}
         title={openTitle}
-        onClick={() => onSelect(node.path)}
+        onClick={(e) => onSelect(node.path, e.ctrlKey || e.metaKey)}
+        onContextMenu={(e) => openContextMenu(e, node.path)}
         onDoubleClick={openFn}
       >
         <TreeIcon name={treeIconFor(node.name)} />
@@ -151,9 +184,9 @@ export function ProjectTreePane({
             {/* project root (.kicad_pro): bold, selectable, and its twisty
                 collapses the whole tree — like KiCad's tree root. */}
             <div
-              className={`ze-tree-item root${selected === ROOT_SELECTION ? ' active' : ''}`}
+              className={`ze-tree-item root${selected.has(ROOT_SELECTION) ? ' active' : ''}`}
               style={{ cursor: 'pointer' }}
-              onClick={() => onSelect(ROOT_SELECTION)}
+              onClick={() => onSelect(ROOT_SELECTION, false)}
             >
               <span
                 className={`twisty expandable${rootOpen ? ' open' : ''}`}
@@ -191,6 +224,57 @@ export function ProjectTreePane({
           </>
         )}
       </div>
+      {menu && (
+        <div
+          className="ze-dropdown"
+          style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 1000 }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const paths = [...menu.paths];
+            const single = paths.length === 1 ? paths[0]! : null;
+            const singleText = single !== null && isViewableTextFile(single);
+            const item = (
+              label: string,
+              onClick: (() => void) | undefined,
+              disabled = false,
+            ): JSX.Element => (
+              <div
+                key={label}
+                className={`ze-mitem${disabled || !onClick ? ' disabled' : ''}`}
+                onClick={() => {
+                  if (disabled || !onClick) return;
+                  setMenu(null);
+                  onClick();
+                }}
+              >
+                <span className="mico" />
+                <span className="lbl">{label}</span>
+              </div>
+            );
+            return (
+              <>
+                {/* "New Directory…" needs file-move to be useful in the
+                    file-list project model — arrives with drag-move. */}
+                {item('New Directory…', undefined, true)}
+                <div className="ze-msep" />
+                {item(
+                  'Edit in a Text Viewer',
+                  singleText && onViewTextPath ? () => onViewTextPath(single) : undefined,
+                  !singleText,
+                )}
+                <div className="ze-msep" />
+                {item(
+                  paths.length > 1 ? 'Rename Files…' : 'Rename File…',
+                  single && onRenamePath ? () => onRenamePath(single) : undefined,
+                  paths.length !== 1,
+                )}
+                {item('Delete', onDeletePaths ? () => onDeletePaths(new Set(paths)) : undefined)}
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>
   );
 }

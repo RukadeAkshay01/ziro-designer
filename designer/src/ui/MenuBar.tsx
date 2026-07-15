@@ -12,7 +12,10 @@ export interface MenuItem {
   shortcut?: string;
   /** ACTION_MENU::CHECK items — shows a checkmark when true. */
   checked?: boolean;
-  /** Nested submenu (KiCad ACTION_MENU submenus: Import, Export, Attributes…). */
+  /** Nested items rendered as a flyout submenu (KiCad ACTION_MENU submenus:
+   *  Import, Export, Attributes, Open Recent…). `items` and `submenu` are
+   *  accepted interchangeably so callers from either editor keep working. */
+  submenu?: MenuItem[];
   items?: MenuItem[];
 }
 
@@ -21,56 +24,45 @@ export interface Menu {
   items: MenuItem[];
 }
 
-function DropdownItems({ items, close }: { items: MenuItem[]; close: () => void }): JSX.Element {
-  const [openSub, setOpenSub] = useState<number | null>(null);
+/** One dropdown row: separator, plain/CHECK item, or item with a flyout submenu. */
+function MenuEntry({ item, close }: { item: MenuItem; close: () => void }): JSX.Element {
+  const [subOpen, setSubOpen] = useState(false);
+  if (item.sep) return <div className="ze-msep" />;
+  const sub = item.submenu ?? item.items;
+  const hasSub = !!sub && sub.length > 0;
   return (
-    <>
-      {items.map((it, i) =>
-        it.sep ? (
-          <div key={`s${i}`} className="ze-msep" />
-        ) : it.items ? (
-          <div
-            key={it.label ?? i}
-            className={`ze-mitem ze-msub${it.disabled ? ' disabled' : ''}`}
-            onMouseEnter={() => setOpenSub(i)}
-            onMouseLeave={() => setOpenSub((o) => (o === i ? null : o))}
-          >
-            <span className="mico">
-              {it.icon && toolbarIconUrl(it.icon) ? (
-                <img src={toolbarIconUrl(it.icon)} alt="" />
-              ) : null}
-            </span>
-            <span className="lbl">{it.label}</span>
-            <span className="sub-arrow">▸</span>
-            {openSub === i && !it.disabled && (
-              <div className="ze-dropdown ze-subdropdown">
-                <DropdownItems items={it.items} close={close} />
-              </div>
-            )}
-          </div>
-        ) : (
-          <div
-            key={it.label ?? i}
-            className={`ze-mitem${it.disabled ? ' disabled' : ''}`}
-            onClick={() => {
-              if (it.disabled) return;
-              close();
-              it.action?.();
-            }}
-          >
-            <span className="mico">
-              {it.checked ? (
-                <span className="mcheck">✓</span>
-              ) : it.icon && toolbarIconUrl(it.icon) ? (
-                <img src={toolbarIconUrl(it.icon)} alt="" />
-              ) : null}
-            </span>
-            <span className="lbl">{it.label}</span>
-            {it.shortcut && <span className="sc">{it.shortcut}</span>}
-          </div>
-        ),
+    <div
+      className={`ze-mitem${item.disabled ? ' disabled' : ''}${hasSub ? ' has-sub' : ''}`}
+      style={hasSub ? { position: 'relative' } : undefined}
+      onMouseEnter={hasSub ? () => setSubOpen(true) : undefined}
+      onMouseLeave={hasSub ? () => setSubOpen(false) : undefined}
+      onClick={() => {
+        if (item.disabled || hasSub) return;
+        close();
+        item.action?.();
+      }}
+    >
+      <span className="mico">
+        {item.checked ? (
+          <span className="mcheck">✓</span>
+        ) : item.icon && toolbarIconUrl(item.icon) ? (
+          <img src={toolbarIconUrl(item.icon)} alt="" />
+        ) : null}
+      </span>
+      <span className="lbl">{item.label}</span>
+      {item.shortcut && <span className="sc">{item.shortcut}</span>}
+      {hasSub && <span className="sub-arrow">▸</span>}
+      {hasSub && subOpen && !item.disabled && (
+        <div
+          className="ze-dropdown ze-submenu"
+          style={{ position: 'absolute', left: '100%', top: -4 }}
+        >
+          {sub!.map((s, i) => (
+            <MenuEntry key={s.label ?? `s${i}`} item={s} close={close} />
+          ))}
+        </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -112,7 +104,9 @@ export function MenuBar({
           {menu.label}
           {open === menu.label && (
             <div className="ze-dropdown" onClick={(e) => e.stopPropagation()}>
-              <DropdownItems items={menu.items} close={() => setOpen(null)} />
+              {menu.items.map((it, i) => (
+                <MenuEntry key={it.label ?? `s${i}`} item={it} close={() => setOpen(null)} />
+              ))}
             </div>
           )}
         </div>

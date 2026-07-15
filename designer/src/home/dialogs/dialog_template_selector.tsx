@@ -54,6 +54,18 @@ export function TemplateDialog({
               <>
                 <h3>{selected.title}</h3>
                 <p className="ze-tpl-desc">{selected.description}</p>
+                {'files' in selected &&
+                  Array.isArray(selected.files) &&
+                  selected.files.length > 0 && (
+                    <ul
+                      className="ze-tpl-files"
+                      style={{ opacity: 0.65, fontSize: 12, paddingLeft: 18 }}
+                    >
+                      {selected.files.map((f) => (
+                        <li key={f}>{f}</li>
+                      ))}
+                    </ul>
+                  )}
               </>
             ) : (
               <p style={{ opacity: 0.6 }}>Select a template.</p>

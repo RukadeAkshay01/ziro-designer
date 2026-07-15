@@ -1,0 +1,32 @@
+{
+  "demos": [
+    {
+      "id": "ecc83",
+      "base": "ecc83",
+      "title": "ECC83 Tube Push-Pull Amplifier",
+      "description": "Upstream demo project (ecc83-pp.kicad_pro).",
+      "files": [
+        "3d_shapes/ecc83.wrl",
+        "ecc83-pp.kicad_pcb",
+        "ecc83-pp.kicad_pro",
+        "ecc83-pp.kicad_sch",
+        "ecc83-pp.kicad_sym",
+        "ecc83-pp_v2.kicad_pcb",
+        "ecc83-pp_v2.kicad_pro",
+        "ecc83-pp_v2.kicad_sch",
+        "footprints.pretty/Altech_AK300_1x02_P5.00mm_45-Degree.kicad_mod",
+        "footprints.pretty/CP_Radial_D10.0mm_P5.00mm.kicad_mod",
+        "footprints.pretty/CP_Radial_D12.5mm_P7.50mm.kicad_mod",
+        "footprints.pretty/C_Axial_L12.0mm_D6.5mm_P20.00mm_Horizontal.kicad_mod",
+        "footprints.pretty/C_Disc_D4.7mm_W2.5mm_P5.00mm.kicad_mod",
+        "footprints.pretty/MountingHole_3.2mm_M3_DIN965_Pad.kicad_mod",
+        "footprints.pretty/PinHeader_1x02_P2.54mm_Vertical.kicad_mod",
+        "footprints.pretty/R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal.kicad_mod",
+        "footprints.pretty/Valve_ECC-83-1.kicad_mod",
+        "footprints.pretty/Valve_ECC-83-2.kicad_mod",
+        "fp-lib-table",
+        "sym-lib-table"
+      ]
+    }
+  ]
+}
