@@ -1101,6 +1101,7 @@ export function SchematicEditor({
       else if (id === 'zoomIn') controller.current?.zoomIn();
       else if (id === 'zoomOut') controller.current?.zoomOut();
       else if (id === 'zoomRedraw') controller.current?.redraw();
+      else if (id === 'zoomTool') setActiveTool('zoomTool');
       else if (id === 'zoomFitSelection') {
         // Zoom to Selected Objects: fit the view to the selection's extent.
         const box = emptyBBox();
@@ -1316,6 +1317,10 @@ export function SchematicEditor({
         // ACTIONS::zoomRedraw (Ctrl+R): repaint without changing the view.
         e.preventDefault();
         controller.current?.redraw();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'F5') {
+        // ACTIONS::zoomTool (Ctrl+F5): drag a rectangle to zoom to it.
+        e.preventDefault();
+        setActiveTool('zoomTool');
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
         // ACTIONS::toggleGridOverrides (Ctrl+Shift+G).
         e.preventDefault();
@@ -1682,6 +1687,10 @@ export function SchematicEditor({
             pendingImage={pendingImage}
             onImagePlaced={onImagePlaced}
             grabRequest={grabRequest}
+            onZoomArea={(box) => {
+              controller.current?.zoomToBox(box);
+              setActiveTool('select');
+            }}
             onSelect={onSelect}
             onHighlight={onHighlight}
             onRequestTool={onToolSelect}

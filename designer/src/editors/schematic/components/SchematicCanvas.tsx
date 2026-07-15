@@ -328,6 +328,9 @@ interface Props {
    *  wires behind, 'drag' keeps them attached. A fresh nonce starts a move of
    *  the current selection that follows the cursor until clicked to drop. */
   grabRequest?: { kind: 'move' | 'drag'; nonce: number } | null;
+  /** Zoom to Selection Area (ACTIONS::zoomTool): the user dragged a rectangle;
+   *  fit the view to it (and the parent returns the tool to select). */
+  onZoomArea?: (box: { minX: number; minY: number; maxX: number; maxY: number }) => void;
 }
 
 type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box' | 'lasso';
@@ -370,6 +373,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     pendingImage,
     onImagePlaced,
     grabRequest,
+    onZoomArea,
   },
   ref,
 ): JSX.Element {
@@ -436,6 +440,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const boxOriginRef = useRef<Vec2 | null>(null);
   const boxEndRef = useRef<Vec2 | null>(null);
   const boxModifiersRef = useRef({ additive: false, subtractive: false });
+  // Zoom to Selection Area (zoomTool): the box drag zooms instead of selecting.
+  const zoomAreaRef = useRef(false);
   // Lasso-selection trace (KiCad selectLasso): the freehand polygon in world coords.
   const lassoPointsRef = useRef<Vec2[]>([]);
 
@@ -999,6 +1005,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         return;
       }
 
+      // Zoom to Selection Area: a left drag draws the zoom rectangle.
+      if (activeTool === 'zoomTool' && e.button === 0) {
+        (e.target as Element).setPointerCapture(e.pointerId);
+        modeRef.current = 'box';
+        zoomAreaRef.current = true;
+        boxOriginRef.current = world;
+        boxEndRef.current = world;
+        return;
+      }
+
       // A pending paste follows the cursor; a left click drops it (KiCad's paste-then-move).
       if (pastePending) {
         if (e.button !== 0) return;
@@ -1342,6 +1358,28 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         panLastRef.current = null;
         return;
       }
+      // Zoom to Selection Area: release fits the view to the drawn rectangle.
+      if (zoomAreaRef.current && modeRef.current === 'box') {
+        (e.target as Element).releasePointerCapture(e.pointerId);
+        const bo = boxOriginRef.current;
+        const be = boxEndRef.current;
+        const vp = viewportRef.current;
+        const movedPx = bo && be && vp ? Math.hypot(be.x - bo.x, be.y - bo.y) * vp.scale : 0;
+        if (bo && be && movedPx > 4) {
+          onZoomArea?.({
+            minX: Math.min(bo.x, be.x),
+            minY: Math.min(bo.y, be.y),
+            maxX: Math.max(bo.x, be.x),
+            maxY: Math.max(bo.y, be.y),
+          });
+        }
+        zoomAreaRef.current = false;
+        boxOriginRef.current = null;
+        boxEndRef.current = null;
+        modeRef.current = 'idle';
+        draw();
+        return;
+      }
       if (activeTool !== 'select' && activeTool !== 'selectLasso') return;
       (e.target as Element).releasePointerCapture(e.pointerId);
       let committedMove = false;
@@ -1401,7 +1439,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = null;
       if (!committedMove) draw();
     },
-    [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, draw],
+    [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, onZoomArea, draw],
   );
 
   const onDoubleClick = useCallback(

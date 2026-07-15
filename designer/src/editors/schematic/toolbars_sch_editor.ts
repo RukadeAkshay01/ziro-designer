@@ -38,7 +38,7 @@ export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'zoomOut', icon: 'zoomOut', title: 'Zoom Out' },
   { id: 'zoomFit', icon: 'zoomFit', title: 'Zoom to Fit (Ctrl+0)' },
   { id: 'zoomFitObjects', icon: 'zoomFitObjects', title: 'Zoom to All Objects (Ctrl+Home)' },
-  { id: 'zoomTool', icon: 'zoomTool', title: 'Zoom to Selection Area (Ctrl+F5)', disabled: true },
+  { id: 'zoomTool', icon: 'zoomTool', title: 'Zoom to Selection Area (Ctrl+F5)' },
   sep,
   { id: 'navBack', icon: 'navBack', title: 'Navigate Back (Alt+Left)' },
   { id: 'navUp', icon: 'navUp', title: 'Navigate Up (Alt+Up)' },

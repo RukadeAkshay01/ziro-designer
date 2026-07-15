@@ -166,7 +166,7 @@ export function buildMenus(h: MenuHandlers, checks: MenuChecks = {}): Menu[] {
         act('Zoom to Fit', 'zoomFit', 'zoomFit', 'Ctrl+0'),
         act('Zoom to All Objects', 'zoomFitObjects', 'zoomFitObjects', 'Ctrl+Home'),
         act('Zoom to Selected Objects', 'zoomFitSelection', 'zoomFitSelection'),
-        stub('Zoom to Selection Area', 'Ctrl+F5'),
+        act('Zoom to Selection Area', 'zoomTool', 'zoomTool', 'Ctrl+F5'),
         act('Refresh', 'zoomRedraw', 'zoomRedraw', 'Ctrl+R'),
         SEP,
         act('Navigate Back', 'navBack', 'navBack', 'Alt+Left'),
