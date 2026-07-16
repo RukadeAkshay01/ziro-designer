@@ -1,0 +1,383 @@
+/* Calculator Tools frame — matches the app chrome (shell.css variables). */
+
+.calc-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+  font:
+    13px / 1.45 system-ui,
+    sans-serif;
+}
+
+.calc-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- left navigation tree --- */
+.calc-tree {
+  width: 218px;
+  flex: none;
+  overflow-y: auto;
+  background: var(--chrome-bg2);
+  border-right: 1px solid var(--chrome-border);
+  padding: 4px 0;
+  user-select: none;
+}
+
+.calc-tree-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.calc-tree-group .twisty {
+  width: 12px;
+  color: #7fb2e5;
+  font-size: 10px;
+}
+
+.calc-tree-item {
+  padding: 4px 8px 4px 40px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.calc-tree-item:hover {
+  background: var(--chrome-hover);
+}
+
+.calc-tree-item.active {
+  background: var(--chrome-active);
+  outline: 1px solid var(--chrome-active-border);
+}
+
+/* --- content --- */
+.calc-panel {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 18px 40px;
+}
+
+.calc-panel h3 {
+  margin: 4px 0 10px;
+  font-size: 14px;
+}
+
+.calc-row {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.calc-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 260px;
+}
+
+.calc-group {
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  min-inline-size: 0;
+}
+
+.calc-group legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+.calc-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0;
+}
+
+.calc-field-label {
+  min-width: 170px;
+  text-align: right;
+}
+
+.calc-input {
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 3px 6px;
+  width: 110px;
+  font: inherit;
+}
+
+.calc-input:focus {
+  outline: 1px solid var(--chrome-active-border);
+}
+
+.calc-input.ro {
+  background: #2c2e33;
+  color: #9fd49f;
+}
+
+.calc-input.error {
+  outline: 1px solid #d9534f;
+}
+
+.calc-unit {
+  min-width: 34px;
+  color: #b8bcc4;
+}
+
+.calc-select {
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.calc-unit-select {
+  min-width: 62px;
+  padding: 2px 4px;
+}
+
+/* --- modal dialog (sandbox-safe replacement for window.prompt/alert) --- */
+.calc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.calc-modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-active-border);
+  border-radius: 5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  max-width: 92vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.calc-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  font-weight: 600;
+}
+
+.calc-modal-x {
+  background: none;
+  border: none;
+  color: var(--chrome-fg);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.calc-modal-body {
+  padding: 12px;
+  overflow: auto;
+}
+
+.calc-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--chrome-border);
+}
+
+.calc-toast {
+  color: #9fd49f;
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+/* --- sub-tabs (e.g. Electrical Spacing: IPC-2221 / IEC 60664) --- */
+.calc-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--chrome-border);
+  margin-bottom: 12px;
+}
+
+.calc-tab {
+  padding: 6px 16px;
+  cursor: pointer;
+  background: var(--chrome-bg2);
+  border: 1px solid var(--chrome-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #b8bcc4;
+}
+
+.calc-tab.active {
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+  font-weight: 600;
+  outline: 1px solid var(--chrome-active-border);
+}
+
+/* --- E-series coloured grids --- */
+.es-grid {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.es-grid th,
+.es-grid td {
+  border: 1px solid #22242899;
+  padding: 2px 10px;
+  text-align: center;
+  color: #101215;
+  min-width: 52px;
+}
+
+.es-grid th {
+  font-weight: 700;
+}
+
+.es-scroll {
+  max-height: 620px;
+  overflow-y: auto;
+}
+
+.calc-btn {
+  background: #3a3d43;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 4px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.calc-btn:hover {
+  background: var(--chrome-hover);
+}
+
+.calc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.calc-btn.primary {
+  background: var(--chrome-active);
+  border-color: var(--chrome-active-border);
+}
+
+.calc-radio {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.calc-error {
+  color: #f08a8a;
+  margin: 6px 0;
+}
+
+.calc-note {
+  color: #a9adb5;
+  font-size: 12px;
+  margin: 6px 0;
+}
+
+.calc-formula {
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 8px 12px;
+  text-align: center;
+  font-weight: 600;
+}
+
+/* --- tables (spacing, board classes, corrosion, e-series) --- */
+.calc-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+
+.calc-table th,
+.calc-table td {
+  border: 1px solid #55585e;
+  padding: 3px 10px;
+  text-align: center;
+}
+
+.calc-table th {
+  background: var(--panel-header);
+}
+
+.calc-table td.hl {
+  background: var(--chrome-active);
+}
+
+.calc-table td.bad {
+  background: #6e2a2a;
+}
+
+.calc-table td.rowhead,
+.calc-table th.rowhead {
+  text-align: left;
+}
+
+/* --- regulator panel layout (per the screenshot) --- */
+.reg-mtm-header {
+  display: grid;
+  grid-template-columns: 150px 120px 120px 120px 60px;
+  gap: 10px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.reg-mtm-row {
+  display: grid;
+  grid-template-columns: 150px 120px 120px 120px 60px;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.reg-mtm-row .calc-input {
+  width: auto;
+}
+
+/* --- colour code bands --- */
+.cc-resistor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #d2b48c;
+  border: 1px solid #55585e;
+  border-radius: 12px;
+  padding: 10px 26px;
+  width: fit-content;
+  margin: 10px 0;
+}
+
+.cc-band {
+  width: 14px;
+  height: 44px;
+  border: 1px solid #333;
+}
+
+.calc-svg {
+  max-width: 100%;
+}

@@ -5,6 +5,7 @@ import { SchematicEditor, type PickedFile } from './editors/schematic/SchematicE
 import { PcbEditor } from './editors/pcb/PcbEditor.js';
 import { SymbolEditor } from './editors/symbol/SymbolEditor.js';
 import { FootprintEditor } from './editors/footprint/FootprintEditor.js';
+import { CalculatorTools } from './editors/calculator/CalculatorTools.js';
 import { DrawingSheetEditor } from './editors/drawingsheet/DrawingSheetEditor.js';
 import {
   storageAvailable,
@@ -40,7 +41,7 @@ const pcbBasename = (p: string): string => p.split('/').pop()!.split('\\').pop()
  */
 export function App(): JSX.Element {
   const [view, setView] = useState<
-    'home' | 'schematic' | 'pcb' | 'symbols' | 'footprints' | 'drawingsheet'
+    'home' | 'schematic' | 'pcb' | 'symbols' | 'footprints' | 'calculator' | 'drawingsheet'
   >('home');
   const [projectFiles, setProjectFiles] = useState<PickedFile[] | null>(null);
   const [startFile, setStartFile] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function App(): JSX.Element {
   const [pcbMounted, setPcbMounted] = useState(false);
   const [symMounted, setSymMounted] = useState(false);
   const [fpMounted, setFpMounted] = useState(false);
+  const [calcMounted, setCalcMounted] = useState(false);
   const [dsMounted, setDsMounted] = useState(false);
   // "Add symbol to schematic": the symbol editor hands eeschema a symbol to place.
   const [placeRequest, setPlaceRequest] = useState<{ lib: LibSymbol; nonce: number } | null>(null);
@@ -80,6 +82,7 @@ export function App(): JSX.Element {
         else if (s.view === 'pcb') setPcbMounted(true);
         else if (s.view === 'symbols') setSymMounted(true);
         else if (s.view === 'footprints') setFpMounted(true);
+        else if (s.view === 'calculator') setCalcMounted(true);
         else if (s.view === 'drawingsheet') setDsMounted(true);
         setView(s.view);
       } catch {
@@ -228,6 +231,10 @@ export function App(): JSX.Element {
           setView('footprints');
           setFpRequest((prev) => ({ file: startFile ?? null, nonce: (prev?.nonce ?? 0) + 1 }));
         }}
+        onOpenCalculator={() => {
+          setCalcMounted(true);
+          setView('calculator');
+        }}
         onOpenDrawingSheetEditor={() => {
           setDsMounted(true);
           setView('drawingsheet');
@@ -282,6 +289,11 @@ export function App(): JSX.Element {
             initialProject={projectFiles}
             openRequest={fpRequest}
           />
+        </div>
+      )}
+      {calcMounted && (
+        <div style={{ display: view === 'calculator' ? 'contents' : 'none' }}>
+          <CalculatorTools onExitToHome={goHome} />
         </div>
       )}
       {dsMounted && (

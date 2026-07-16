@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:calc": "vite build --config vite.calc.config.ts && node scripts/inline-calc.mjs",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc --noEmit"
   },
@@ -15,6 +16,7 @@
     "@ziroeda/common": "workspace:*",
     "@ziroeda/eeschema": "workspace:*",
     "@ziroeda/kimath": "workspace:*",
+    "@ziroeda/pcb_calculator": "workspace:*",
     "@ziroeda/pcbnew": "workspace:*",
     "@ziroeda/sexpr": "workspace:*",
     "earcut": "^3.2.3",

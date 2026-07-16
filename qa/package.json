@@ -16,6 +16,7 @@
     "@ziroeda/designer": "workspace:*",
     "@ziroeda/eeschema": "workspace:*",
     "@ziroeda/kimath": "workspace:*",
+    "@ziroeda/pcb_calculator": "workspace:*",
     "@ziroeda/pcbnew": "workspace:*",
     "@ziroeda/sexpr": "workspace:*"
   },

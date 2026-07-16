@@ -1,0 +1,12 @@
+{
+  "name": "@ziroeda/pcb_calculator",
+  "version": "0.0.0",
+  "description": "Calculator Tools engine ported from KiCad's pcb_calculator/: regulators, track width, via size, electrical spacing, transmission lines, RF attenuators, E-series, cable size, fusing current, and the memo tables.",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

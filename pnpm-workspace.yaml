@@ -2,6 +2,7 @@ packages:
   - "common"
   - "eeschema"
   - "pcbnew"
+  - "pcb_calculator"
   - "designer"
   - "libs/*"
   - "qa"

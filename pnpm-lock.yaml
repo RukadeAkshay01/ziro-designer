@@ -44,6 +44,9 @@ importers:
       '@ziroeda/kimath':
         specifier: workspace:*
         version: link:../libs/kimath
+      '@ziroeda/pcb_calculator':
+        specifier: workspace:*
+        version: link:../pcb_calculator
       '@ziroeda/pcbnew':
         specifier: workspace:*
         version: link:../pcbnew
@@ -113,6 +116,8 @@ importers:
 
   libs/sexpr: {}
 
+  pcb_calculator: {}
+
   pcbnew:
     dependencies:
       '@ziroeda/common':
@@ -145,6 +150,9 @@ importers:
       '@ziroeda/kimath':
         specifier: workspace:*
         version: link:../libs/kimath
+      '@ziroeda/pcb_calculator':
+        specifier: workspace:*
+        version: link:../pcb_calculator
       '@ziroeda/pcbnew':
         specifier: workspace:*
         version: link:../pcbnew
