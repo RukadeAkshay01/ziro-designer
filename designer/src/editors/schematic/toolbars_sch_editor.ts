@@ -19,7 +19,7 @@ const sep: ToolEntry = 'sep';
 export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'save', icon: 'save', title: 'Save (Ctrl+S)' },
   sep,
-  { id: 'schematicSetup', icon: 'setup', title: 'Schematic Setup...', disabled: true },
+  { id: 'schematicSetup', icon: 'setup', title: 'Schematic Setup...' },
   sep,
   { id: 'pageSettings', icon: 'page', title: 'Page Settings...' },
   { id: 'print', icon: 'print', title: 'Print... (Ctrl+P)' },

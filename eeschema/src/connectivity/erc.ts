@@ -31,85 +31,40 @@
 import type { Schematic, LibSymbol, Vec2 } from '../types.js';
 import { refId } from '../tools/hittest.js';
 import { computeNetlist, enumeratePins, type PinNode } from './nets.js';
+import {
+  OK,
+  WAR,
+  ERR,
+  typeIndex,
+  TYPE_NAMES,
+  defaultErcSettings,
+  type PinError,
+  type ErcCode,
+  type ErcSeverity,
+  type ErcSettings,
+} from '../erc/erc_settings.js';
 
-/** ELECTRICAL_PINTYPE order, matching the ERC matrix rows/columns. */
-const PIN_TYPES = [
-  'input',
-  'output',
-  'bidirectional',
-  'tri_state',
-  'passive',
-  'free',
-  'unspecified',
-  'power_in',
-  'power_out',
-  'open_collector',
-  'open_emitter',
-  'no_connect',
-] as const;
-
-type PinTypeIndex = number;
-
-const typeIndex = (token: string): PinTypeIndex => {
-  const i = PIN_TYPES.indexOf(token as (typeof PIN_TYPES)[number]);
-  return i === -1 ? 6 : i; // unknown token -> unspecified, as KiCad's parser does
-};
-
-const OK = 0,
-  WAR = 1,
-  ERR = 2;
-type PinError = typeof OK | typeof WAR | typeof ERR;
-
-/** ERC_SETTINGS::m_defaultPinMap — the exact default conflict matrix. */
-const PIN_MAP: PinError[][] = [
-  /*         I,   O,    Bi,   3S,   Pas,  NIC,  UnS,  PwrI, PwrO, OC,   OE,   NC */
-  /* I  */ [OK, OK, OK, OK, OK, OK, WAR, OK, OK, OK, OK, ERR],
-  /* O  */ [OK, ERR, OK, WAR, OK, OK, WAR, OK, ERR, ERR, ERR, ERR],
-  /* Bi */ [OK, OK, OK, OK, OK, OK, WAR, OK, WAR, OK, WAR, ERR],
-  /* 3S */ [OK, WAR, OK, OK, OK, OK, WAR, WAR, ERR, WAR, WAR, ERR],
-  /*Pas */ [OK, OK, OK, OK, OK, OK, WAR, OK, OK, OK, OK, ERR],
-  /*NIC */ [OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, OK, ERR],
-  /*UnS */ [WAR, WAR, WAR, WAR, WAR, OK, WAR, WAR, WAR, WAR, WAR, ERR],
-  /*PwrI*/ [OK, OK, OK, WAR, OK, OK, WAR, OK, OK, OK, OK, ERR],
-  /*PwrO*/ [OK, ERR, WAR, ERR, OK, OK, WAR, OK, ERR, ERR, ERR, ERR],
-  /* OC */ [OK, ERR, OK, WAR, OK, OK, WAR, OK, ERR, OK, OK, ERR],
-  /* OE */ [OK, ERR, WAR, WAR, OK, OK, WAR, OK, ERR, OK, OK, ERR],
-  /* NC */ [ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR, ERR],
-];
+// Re-export the ERC settings surface so `@ziroeda/eeschema` consumers keep
+// importing these names from the ERC module (the Schematic Setup panels do).
+export {
+  PIN_TYPES,
+  TYPE_NAMES,
+  TYPE_ABBREV,
+  ERC_ITEMS,
+  DEFAULT_PIN_MAP,
+  DEFAULT_SEVERITIES,
+  defaultErcSettings,
+  type ErcCode,
+  type ErcSeverity,
+  type ErcSeverityLevel,
+  type ErcSettings,
+  type PinError,
+} from '../erc/erc_settings.js';
 
 // erc.cpp pin-type driver sets.
 const DRIVING = new Set(['output', 'power_out', 'passive', 'tri_state', 'bidirectional']);
 const DRIVING_POWER = new Set(['power_out']);
 const DRIVEN = new Set(['input', 'power_in']);
-
-/** Human names, as ElectricalPinTypeGetText produces them. */
-const TYPE_NAMES: Record<string, string> = {
-  input: 'Input',
-  output: 'Output',
-  bidirectional: 'Bidirectional',
-  tri_state: 'Tri-state',
-  passive: 'Passive',
-  free: 'Free',
-  unspecified: 'Unspecified',
-  power_in: 'Power input',
-  power_out: 'Power output',
-  open_collector: 'Open collector',
-  open_emitter: 'Open emitter',
-  no_connect: 'Unconnected',
-};
-
-export type ErcCode =
-  | 'pin_not_connected'
-  | 'pin_not_driven'
-  | 'power_pin_not_driven'
-  | 'pin_to_pin_warning'
-  | 'pin_to_pin_error'
-  | 'no_connect_connected'
-  | 'no_connect_dangling'
-  | 'label_not_connected'
-  | 'label_single_pin';
-
-export type ErcSeverity = 'error' | 'warning';
 
 export interface ErcViolation {
   code: ErcCode;
@@ -120,22 +75,13 @@ export interface ErcViolation {
   items: string[];
 }
 
-// ERC_SETTINGS default severities: error unless listed otherwise.
-const SEVERITY: Record<ErcCode, ErcSeverity> = {
-  pin_not_connected: 'error',
-  pin_not_driven: 'error',
-  power_pin_not_driven: 'error',
-  pin_to_pin_warning: 'warning',
-  pin_to_pin_error: 'error',
-  no_connect_connected: 'warning',
-  no_connect_dangling: 'warning',
-  label_not_connected: 'error',
-  label_single_pin: 'warning',
-};
+// The active ERC configuration for the current run (set at the top of runErc).
+let g_settings: ErcSettings = defaultErcSettings();
 
 const violation = (code: ErcCode, message: string, at: Vec2, items: string[]): ErcViolation => ({
   code,
-  severity: SEVERITY[code],
+  // 'ignore' rules are dropped after the run; the survivors are error/warning.
+  severity: g_settings.severities[code] as ErcSeverity,
   message,
   at,
   items,
@@ -152,7 +98,12 @@ const stacked = (a: PinNode, b: PinNode): boolean =>
   a.symId === b.symId && a.at.x === b.at.x && a.at.y === b.at.y;
 
 /** Run the electrical rules check on a single sheet. */
-export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViolation[] {
+export function runErc(
+  sch: Schematic,
+  libById: Map<string, LibSymbol>,
+  settings: ErcSettings = defaultErcSettings(),
+): ErcViolation[] {
+  g_settings = settings;
   const out: ErcViolation[] = [];
   const netlist = computeNetlist(sch, libById);
   const pins = enumeratePins(sch, libById);
@@ -325,7 +276,7 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
       for (let j = i + 1; j < gpins.length; j++) {
         const test = gpins[j]!;
         if (stacked(ref, test)) continue; // stacked pins don't conflict
-        const erc = PIN_MAP[typeIndex(refType)]![typeIndex(test.electricalType)]!;
+        const erc = g_settings.pinMap[typeIndex(refType)]![typeIndex(test.electricalType)]!;
         if (erc !== OK) {
           mismatches.push([i, j, erc]);
           mismatchCounts.set(i, (mismatchCounts.get(i) ?? 0) + 1);
@@ -408,13 +359,16 @@ export function runErc(sch: Schematic, libById: Map<string, LibSymbol>): ErcViol
     }
   }
 
+  // Drop rules set to "ignore" in the Schematic Setup severities panel.
+  const kept = out.filter((v) => g_settings.severities[v.code] !== 'ignore');
+
   // Stable order: errors first, then by position (KiCad sorts its report).
-  out.sort((a, b) =>
+  kept.sort((a, b) =>
     a.severity === b.severity
       ? a.at.y - b.at.y || a.at.x - b.at.x
       : a.severity === 'error'
         ? -1
         : 1,
   );
-  return out;
+  return kept;
 }

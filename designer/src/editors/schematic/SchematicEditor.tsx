@@ -88,6 +88,11 @@ import { DialogSchematicFind } from './dialogs/dialog_schematic_find.js';
 import { DialogAnnotate } from './dialogs/dialog_annotate.js';
 import { DialogLineProperties } from './dialogs/dialog_line_properties.js';
 import { DialogPageSettings } from './dialogs/dialog_page_settings.js';
+import {
+  DialogSchematicSetup,
+  defaultSchematicSetup,
+  type SchematicSetup,
+} from './dialogs/dialog_schematic_setup.js';
 import { DialogPrint } from './dialogs/dialog_print.js';
 import { DialogPlot, type PlotFormat } from './dialogs/dialog_plot.js';
 import { printSheet, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
@@ -521,6 +526,10 @@ export function SchematicEditor({
   const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
   const [printOpen, setPrintOpen] = useState(false);
   const [plotOpen, setPlotOpen] = useState(false);
+  // Schematic Setup (DIALOG_SCHEMATIC_SETUP): project-scoped settings, incl. the
+  // ERC severities + pin-conflict map that the ERC checker reads.
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setup, setSetup] = useState<SchematicSetup>(defaultSchematicSetup);
   const runAnnotate = useCallback(
     (opts: AnnotateOptions) => {
       runCommand(annotateCommand(libById, opts, selection));
@@ -991,10 +1000,11 @@ export function SchematicEditor({
   // ----- ERC (Inspect > Electrical Rules Checker) ------------------------------
   const runErcNow = useCallback(() => {
     setDoc((d) => {
-      if (d) setErcResult(runErc(d, new Map(d.libSymbols.map((l) => [l.libId, l]))));
+      // The ERC severities + pin-conflict map come from Schematic Setup.
+      if (d) setErcResult(runErc(d, new Map(d.libSymbols.map((l) => [l.libId, l])), setup.erc));
       return d;
     });
-  }, []);
+  }, [setup.erc]);
 
   // Clicking a violation centres the fault and selects the offending items.
   const locateViolation = useCallback((v: ErcViolation) => {
@@ -1277,6 +1287,7 @@ export function SchematicEditor({
       else if (id === 'find') openFindDialog('find');
       else if (id === 'findReplace') openFindDialog('replace');
       else if (id === 'annotate') setAnnotateOpen(true);
+      else if (id === 'schematicSetup') setSetupOpen(true);
       else if (id === 'pageSettings') setPageSettingsOpen(true);
       else if (id === 'print') setPrintOpen(true);
       else if (id === 'plot') setPlotOpen(true);
@@ -1897,6 +1908,16 @@ export function SchematicEditor({
           )}
           {printOpen && <DialogPrint onPrint={doPrint} onClose={() => setPrintOpen(false)} />}
           {plotOpen && <DialogPlot onPlot={doPlot} onClose={() => setPlotOpen(false)} />}
+          {setupOpen && (
+            <DialogSchematicSetup
+              value={setup}
+              onOk={(next) => {
+                setSetup(next);
+                setSetupOpen(false);
+              }}
+              onCancel={() => setSetupOpen(false)}
+            />
+          )}
         </div>
 
         <Toolbar

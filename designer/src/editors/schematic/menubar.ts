@@ -100,7 +100,7 @@ export function buildMenus(h: MenuHandlers, checks: MenuChecks = {}): Menu[] {
           items: [stub('Drawing to Clipboard'), stub('Netlist...'), stub('Symbols...')],
         },
         SEP,
-        stub('Schematic Setup...'),
+        act('Schematic Setup...', 'setup', 'schematicSetup'),
         SEP,
         act('Page Settings...', 'page', 'pageSettings'),
         act('Print...', 'print', 'print', 'Ctrl+P'),
