@@ -12,6 +12,7 @@ import {
 import {
   hitTest,
   planMove,
+  moveItems,
   moveWithConnections,
   orthoMove,
   addItems,
@@ -54,6 +55,7 @@ import {
   renderSchematic,
   drawErcMarkers,
   fitToContent,
+  fitToBBox,
   setRenderInvalidator,
   DEFAULT_RENDER_OPTS,
   type RenderOpts,
@@ -253,6 +255,10 @@ function constrain(anchor: Vec2, pt: Vec2, mode: LineMode): Vec2 {
 
 export interface CanvasController {
   zoomToFit: () => void;
+  /** Fit the view to a world-space box (Zoom to Selected Objects). */
+  zoomToBox: (box: { minX: number; minY: number; maxX: number; maxY: number }) => void;
+  /** Force a repaint without changing the view (Refresh / zoomRedraw). */
+  redraw: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
   /** Centre the viewport on a world point (used by ERC click-to-locate). */
@@ -318,6 +324,13 @@ interface Props {
   pendingImage?: { data: string } | null;
   /** The pending image was dropped at `at`. */
   onImagePlaced?: (at: Vec2) => void;
+  /** Keyboard-initiated grabbed move (SCH_MOVE_TOOL): 'move' leaves connected
+   *  wires behind, 'drag' keeps them attached. A fresh nonce starts a move of
+   *  the current selection that follows the cursor until clicked to drop. */
+  grabRequest?: { kind: 'move' | 'drag'; nonce: number } | null;
+  /** Zoom to Selection Area (ACTIONS::zoomTool): the user dragged a rectangle;
+   *  fit the view to it (and the parent returns the tool to select). */
+  onZoomArea?: (box: { minX: number; minY: number; maxX: number; maxY: number }) => void;
 }
 
 type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box' | 'lasso';
@@ -359,6 +372,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     onSheetPinClick,
     pendingImage,
     onImagePlaced,
+    grabRequest,
+    onZoomArea,
   },
   ref,
 ): JSX.Element {
@@ -408,6 +423,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const moveStartRef = useRef<Vec2 | null>(null);
   const moveDeltaRef = useRef<Vec2 | null>(null);
   const moveSpecRef = useRef<MoveSpec | null>(null);
+  // 'move' leaves connected wires behind (moveItems), 'drag' rubber-bands them
+  // (moveWithConnections/orthoMove) — SCH_MOVE_TOOL's two modes.
+  const moveKindRef = useRef<'move' | 'drag'>('drag');
+  // A keyboard-initiated grabbed move follows the cursor with no button held and
+  // commits on the next left click (vs a button-drag, committed on pointer-up).
+  const grabbedRef = useRef(false);
+  const effSelRef = useRef<ReadonlySet<string>>(new Set());
   // Connectable snapping during a move: the moved items' own connection points and the
   // anchors of everything else, so a dragged pin/wire-end snaps onto a matching anchor.
   const movePointsRef = useRef<Vec2[]>([]);
@@ -418,6 +440,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   const boxOriginRef = useRef<Vec2 | null>(null);
   const boxEndRef = useRef<Vec2 | null>(null);
   const boxModifiersRef = useRef({ additive: false, subtractive: false });
+  // Zoom to Selection Area (zoomTool): the box drag zooms instead of selecting.
+  const zoomAreaRef = useRef(false);
   // Lasso-selection trace (KiCad selectLasso): the freehand polygon in world coords.
   const lassoPointsRef = useRef<Vec2[]>([]);
 
@@ -474,13 +498,57 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     [anchors, lineMode],
   );
 
-  // In H/V line mode, moves keep connected wires orthogonal (adding 90° bends);
-  // in free/45 mode the connected wire simply stretches.
+  // 'move' (M) translates only the selected items, leaving connected wires
+  // behind. 'drag' (G) keeps them attached: in H/V line mode it adds 90° bends
+  // (orthoMove); in free/45 mode the connected wire simply stretches.
   const buildMove = useCallback(
-    (spec: MoveSpec, delta: Vec2): EditCommand =>
-      lineMode === '90' ? orthoMove(schematic, spec, delta) : moveWithConnections(spec, delta),
+    (spec: MoveSpec, delta: Vec2): EditCommand => {
+      if (moveKindRef.current === 'move') return moveItems(effSelRef.current, delta);
+      return lineMode === '90'
+        ? orthoMove(schematic, spec, delta)
+        : moveWithConnections(spec, delta);
+    },
     [schematic, lineMode],
   );
+
+  // Keyboard-initiated grabbed move (SCH_MOVE_TOOL Move/Drag): the selection
+  // follows the cursor from the current position until a left click drops it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: nonce-driven, like placeRequest
+  useEffect(() => {
+    if (!grabRequest || selection.size === 0) return;
+    const anchors = selectionAnchors(schematic, libById, selection);
+    const origin = cursorRef.current ? snap(cursorRef.current) : (anchors[0] ?? null);
+    if (!origin) return;
+    moveKindRef.current = grabRequest.kind;
+    effSelRef.current = selection;
+    const spec = planMove(schematic, libById, selection);
+    moveSpecRef.current = spec;
+    movePointsRef.current = anchors;
+    const moving = new Set([...selection, ...spec.wireStart, ...spec.wireEnd]);
+    moveAnchorsRef.current = collectAnchors(schematic, libById, moving);
+    moveStartRef.current = origin;
+    moveDeltaRef.current = { x: 0, y: 0 };
+    modeRef.current = 'move';
+    grabbedRef.current = true;
+    draw();
+
+    // Escape cancels the grabbed move (nothing was committed, so just drop the
+    // ghost). Capture phase + stopPropagation so the editor's Escape doesn't
+    // also clear the selection.
+    const onEsc = (ev: KeyboardEvent): void => {
+      if (ev.key === 'Escape' && grabbedRef.current) {
+        ev.stopPropagation();
+        grabbedRef.current = false;
+        modeRef.current = 'idle';
+        moveSpecRef.current = null;
+        moveDeltaRef.current = null;
+        moveStartRef.current = null;
+        draw();
+      }
+    };
+    window.addEventListener('keydown', onEsc, true);
+    return () => window.removeEventListener('keydown', onEsc, true);
+  }, [grabRequest?.nonce]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -700,6 +768,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         viewportRef.current = fitToContent(schematic, c.width, c.height);
         draw();
       },
+      zoomToBox: (box) => {
+        const c = canvasRef.current;
+        if (!c || !sizedRef.current) return;
+        viewportRef.current = fitToBBox(box, c.width, c.height);
+        draw();
+      },
+      redraw: () => draw(),
       zoomIn: () => {
         const c = canvasRef.current;
         if (c) zoomAbout(c.width / 2, c.height / 2, 1.25);
@@ -896,6 +971,21 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       if (!vp) return;
       const world = toWorld(e.clientX, e.clientY);
 
+      // A keyboard grabbed move (M/G) commits on the next left click.
+      if (grabbedRef.current) {
+        if (e.button !== 0) return;
+        const d = moveDeltaRef.current;
+        const spec = moveSpecRef.current;
+        if (d && spec && (d.x !== 0 || d.y !== 0)) onCommand(buildMove(spec, d));
+        grabbedRef.current = false;
+        modeRef.current = 'idle';
+        moveSpecRef.current = null;
+        moveDeltaRef.current = null;
+        moveStartRef.current = null;
+        draw();
+        return;
+      }
+
       // Middle/right-button drag pans or zooms per the Drag Gestures settings.
       if (e.button === 1 || e.button === 2) {
         const action = e.button === 1 ? inputPrefs.mouseMiddle : inputPrefs.mouseRight;
@@ -912,6 +1002,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       if (pendingImage) {
         if (e.button !== 0) return;
         onImagePlaced?.(snap(world));
+        return;
+      }
+
+      // Zoom to Selection Area: a left drag draws the zoom rectangle.
+      if (activeTool === 'zoomTool' && e.button === 0) {
+        (e.target as Element).setPointerCapture(e.pointerId);
+        modeRef.current = 'box';
+        zoomAreaRef.current = true;
+        boxOriginRef.current = world;
+        boxEndRef.current = world;
         return;
       }
 
@@ -1074,6 +1174,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
             : new Set([hit.id]);
         onSelect(hit.id, additive);
         modeRef.current = 'move';
+        moveKindRef.current = 'drag'; // button-drag keeps connections
+        effSelRef.current = effSel;
         moveStartRef.current = world;
         moveDeltaRef.current = { x: 0, y: 0 };
         const spec = planMove(schematic, libById, effSel);
@@ -1256,6 +1358,28 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         panLastRef.current = null;
         return;
       }
+      // Zoom to Selection Area: release fits the view to the drawn rectangle.
+      if (zoomAreaRef.current && modeRef.current === 'box') {
+        (e.target as Element).releasePointerCapture(e.pointerId);
+        const bo = boxOriginRef.current;
+        const be = boxEndRef.current;
+        const vp = viewportRef.current;
+        const movedPx = bo && be && vp ? Math.hypot(be.x - bo.x, be.y - bo.y) * vp.scale : 0;
+        if (bo && be && movedPx > 4) {
+          onZoomArea?.({
+            minX: Math.min(bo.x, be.x),
+            minY: Math.min(bo.y, be.y),
+            maxX: Math.max(bo.x, be.x),
+            maxY: Math.max(bo.y, be.y),
+          });
+        }
+        zoomAreaRef.current = false;
+        boxOriginRef.current = null;
+        boxEndRef.current = null;
+        modeRef.current = 'idle';
+        draw();
+        return;
+      }
       if (activeTool !== 'select' && activeTool !== 'selectLasso') return;
       (e.target as Element).releasePointerCapture(e.pointerId);
       let committedMove = false;
@@ -1278,7 +1402,11 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         draw();
         return;
       }
-      if (modeRef.current === 'move') {
+      if (modeRef.current === 'move' && grabbedRef.current) {
+        // A keyboard grabbed move ignores button-up; it commits on the next
+        // left click (handled in onPointerDown). Nothing to do here.
+        return;
+      } else if (modeRef.current === 'move') {
         const d = moveDeltaRef.current;
         const spec = moveSpecRef.current;
         if (d && spec && (d.x !== 0 || d.y !== 0)) {
@@ -1311,7 +1439,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = null;
       if (!committedMove) draw();
     },
-    [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, draw],
+    [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, onZoomArea, draw],
   );
 
   const onDoubleClick = useCallback(

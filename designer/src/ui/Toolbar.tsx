@@ -1,7 +1,17 @@
 import type { JSX } from 'react';
 import { Icon } from './icons.js';
 import { toolbarIconUrl } from './toolbarIcons.js';
-import type { ToolEntry } from './toolbars.js';
+
+export interface ToolButton {
+  id: string;
+  icon: string;
+  title: string;
+  toggle?: boolean;
+  /** Feature not implemented yet — shown greyed in its upstream position. */
+  disabled?: boolean;
+}
+
+export type ToolEntry = ToolButton | 'sep';
 
 interface Props {
   entries: ToolEntry[];
@@ -31,11 +41,12 @@ export function Toolbar({
         return (
           <button
             key={e.id}
-            className={`ze-tbtn${isActive ? ' active' : ''}`}
+            className={`ze-tbtn${isActive ? ' active' : ''}${e.disabled ? ' disabled' : ''}`}
             title={e.title}
             aria-label={e.title}
             aria-pressed={isActive}
-            onClick={() => onActivate?.(e.id)}
+            disabled={e.disabled}
+            onClick={() => !e.disabled && onActivate?.(e.id)}
           >
             {url ? <img src={url} alt="" /> : <Icon name={e.icon} />}
           </button>

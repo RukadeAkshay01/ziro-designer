@@ -9,7 +9,7 @@ import {
   type ScrollModifier,
 } from './settings.js';
 import { BUILTIN_THEMES, KICAD_DEFAULT, type Theme } from '../editors/schematic/theme.js';
-import { TOOL_HOTKEYS } from '../ui/menus.js';
+import { TOOL_HOTKEYS } from '../editors/schematic/menubar.js';
 
 /**
  * The Preferences dialog — the web mirror of KiCad's PAGED_DIALOG preferences

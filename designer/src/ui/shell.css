@@ -117,6 +117,15 @@ body {
   background: var(--chrome-hover);
   border-color: var(--chrome-border);
 }
+.ze-tbtn.disabled,
+.ze-tbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.ze-tbtn.disabled:hover,
+.ze-tbtn:disabled:hover {
+  background: transparent;
+}
 .ze-tbtn.active {
   background: var(--chrome-active);
   border-color: var(--chrome-active-border);
@@ -604,6 +613,104 @@ body {
   height: 1px;
   background: var(--chrome-border);
   margin: 4px 0;
+}
+
+/* Modeless Find dialog (DIALOG_SCH_FIND): floats over the canvas, top-right. */
+.ze-find-dialog {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 320px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  z-index: 60;
+}
+.ze-find-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ze-find-body .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ze-find-body .row input {
+  flex: 1;
+}
+.ze-find-body .opts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+.ze-find-body .opts label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ze-find-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.ze-find-buttons .status {
+  flex: 1;
+  color: #8a8c90;
+  font-size: 12px;
+}
+
+/* Annotate Schematic dialog (DIALOG_ANNOTATE). */
+.ze-annotate-dialog {
+  width: 380px;
+}
+.ze-annotate-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ze-annotate-body fieldset {
+  border: 1px solid var(--chrome-border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ze-annotate-body legend {
+  padding: 0 4px;
+  color: #8a8c90;
+  font-size: 12px;
+}
+.ze-annotate-body label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.ze-annotate-body label.disabled {
+  opacity: 0.4;
+}
+.ze-annotate-body .start-num {
+  width: 70px;
+  margin-left: 6px;
+}
+.ze-mitem .mcheck {
+  font-size: 12px;
+  line-height: 1;
+}
+.ze-mitem .sub-arrow {
+  color: #8a8c90;
+  padding-left: 20px;
+}
+.ze-msub {
+  position: relative;
+}
+.ze-subdropdown {
+  top: -5px;
+  left: 100%;
 }
 
 /* Symbol chooser modal (KiCad-style centered dialog) */
@@ -1433,4 +1540,79 @@ body {
   padding: 0;
   border: 1px solid var(--chrome-border);
   background: none;
+}
+
+/* ---- Drawing Sheet Editor properties panel (PropertiesFrame) ---- */
+.ze-ds-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--chrome-border, rgba(128, 128, 128, 0.35));
+  flex: 0 0 auto;
+}
+.ze-ds-tabs button {
+  flex: 1;
+  padding: 5px 4px;
+  font-size: 11px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ze-ds-tabs button.active {
+  border-bottom-color: #4aa3ff;
+  font-weight: 600;
+}
+.ze-ds-group {
+  border: 1px solid var(--chrome-border, rgba(128, 128, 128, 0.35));
+  border-radius: 3px;
+  margin: 6px 6px;
+  padding: 2px 4px 4px;
+}
+.ze-ds-group legend {
+  font-size: 10px;
+  padding: 0 4px;
+  opacity: 0.8;
+}
+.ze-ds-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 3px 6px;
+}
+.ze-ds-label {
+  width: 92px;
+  font-size: 11px;
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+.ze-ds-textedit {
+  display: block;
+  width: calc(100% - 12px);
+  margin: 4px 6px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 12px;
+}
+.ze-ds-fmtbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 2px 6px 6px;
+  flex-wrap: wrap;
+}
+.ze-ds-fmt {
+  min-width: 24px;
+  padding: 2px 5px;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.ze-ds-fmt.active {
+  outline: 1px solid #4aa3ff;
+  background: rgba(74, 163, 255, 0.18);
+}
+.ze-ds-fmtsep {
+  width: 1px;
+  height: 16px;
+  background: var(--chrome-border, rgba(128, 128, 128, 0.35));
+  margin: 0 3px;
 }

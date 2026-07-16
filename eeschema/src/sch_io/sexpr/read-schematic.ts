@@ -41,6 +41,7 @@ import type {
   SchTable,
   SchTableCell,
   SchTextBox,
+  SheetInstance,
   SheetPin,
   Stroke,
   TextEffects,
@@ -436,6 +437,30 @@ function readSheetPin(node: SList): SheetPin {
   return pin;
 }
 
+/** Parse a `(path "…" (page "…"))` node into a SheetInstance. */
+function readInstancePath(pathNode: SList, project: string | undefined): SheetInstance {
+  const inst: { -readonly [K in keyof SheetInstance]: SheetInstance[K] } = {
+    path: arg(pathNode, 0) ?? '',
+    source: pathNode,
+  };
+  if (project !== undefined) inst.project = project;
+  const page = stringField(pathNode, 'page');
+  if (page !== undefined) inst.page = page;
+  return inst;
+}
+
+/** A sheet's `(instances (project "name" (path …(page …))))` records. */
+function readSheetInstances(node: SList): SheetInstance[] {
+  const instancesNode = childNamed(node, 'instances');
+  if (!instancesNode) return [];
+  const out: SheetInstance[] = [];
+  for (const proj of childrenNamed(instancesNode, 'project')) {
+    const name = arg(proj, 0) ?? '';
+    for (const p of childrenNamed(proj, 'path')) out.push(readInstancePath(p, name));
+  }
+  return out;
+}
+
 /** Parse a `(sheet ...)`: rectangle + Sheetname/Sheetfile fields + hierarchical pins. */
 function readSheet(node: SList): SchSheet {
   const { at } = readAt(node);
@@ -448,6 +473,7 @@ function readSheet(node: SList): SchSheet {
     },
     fields: childrenNamed(node, 'property').map((p) => readField(p)),
     pins: childrenNamed(node, 'pin').map(readSheetPin),
+    instances: readSheetInstances(node),
     source: node,
   };
   const stroke = readStroke(node);
@@ -747,6 +773,11 @@ export function readSchematic(root: SList): Schematic {
     graphics,
     textBoxes,
     tables,
+    // Document-level (sheet_instances (path "/" (page "1"))): the root sheet's page.
+    sheetInstances: (() => {
+      const n = childNamed(root, 'sheet_instances');
+      return n ? childrenNamed(n, 'path').map((p) => readInstancePath(p, undefined)) : [];
+    })(),
     source: root,
   };
   const generator = stringField(root, 'generator');

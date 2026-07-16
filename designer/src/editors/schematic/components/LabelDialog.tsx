@@ -21,15 +21,25 @@ interface Props {
   kind: LabelKind;
   onOk: (text: string, shape: LabelShape) => void;
   onCancel: () => void;
+  /** Pre-fill when editing an existing label (Properties), vs placing a new one. */
+  initialText?: string;
+  initialShape?: LabelShape;
 }
 
 /**
  * KiCad-style label properties dialog: enter the net/label name and (for
- * global/hierarchical labels) pick the flag shape, before placing the label.
+ * global/hierarchical labels) pick the flag shape. Used both to place a new
+ * label and to edit an existing one (DIALOG_LABEL_PROPERTIES).
  */
-export function LabelDialog({ kind, onOk, onCancel }: Props): JSX.Element {
-  const [text, setText] = useState('');
-  const [shape, setShape] = useState<LabelShape>('bidirectional');
+export function LabelDialog({
+  kind,
+  onOk,
+  onCancel,
+  initialText,
+  initialShape,
+}: Props): JSX.Element {
+  const [text, setText] = useState(initialText ?? '');
+  const [shape, setShape] = useState<LabelShape>(initialShape ?? 'bidirectional');
   const inputRef = useRef<HTMLInputElement>(null);
   const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
 

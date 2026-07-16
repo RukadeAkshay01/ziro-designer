@@ -2009,4 +2009,25 @@ export function fitToContent(sch: Schematic, canvasWidth: number, canvasHeight: 
   return { scale, offsetX, offsetY };
 }
 
+/** Fit the viewport to an explicit world-space box (Zoom to Selected Objects). */
+export function fitToBBox(
+  box: { minX: number; minY: number; maxX: number; maxY: number },
+  canvasWidth: number,
+  canvasHeight: number,
+): Viewport {
+  const pad = 8 * MM;
+  const minX = box.minX - pad;
+  const minY = box.minY - pad;
+  const maxX = box.maxX + pad;
+  const maxY = box.maxY + pad;
+  const w = maxX - minX || 1;
+  const h = maxY - minY || 1;
+  const scale = Math.min(canvasWidth / w, canvasHeight / h);
+  return {
+    scale,
+    offsetX: canvasWidth / 2 - ((minX + maxX) / 2) * scale,
+    offsetY: canvasHeight / 2 - ((minY + maxY) / 2) * scale,
+  };
+}
+
 export { iuToMM };

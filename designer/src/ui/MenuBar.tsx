@@ -10,13 +10,60 @@ export interface MenuItem {
   disabled?: boolean;
   /** Keyboard hint shown right-aligned (e.g. "Ctrl+S"). */
   shortcut?: string;
-  /** Nested items — renders a flyout submenu (e.g. "Open Recent"). */
+  /** ACTION_MENU::CHECK items — shows a checkmark when true. */
+  checked?: boolean;
+  /** Nested items rendered as a flyout submenu (KiCad ACTION_MENU submenus:
+   *  Import, Export, Attributes, Open Recent…). `items` and `submenu` are
+   *  accepted interchangeably so callers from either editor keep working. */
   submenu?: MenuItem[];
+  items?: MenuItem[];
 }
 
 export interface Menu {
   label: string;
   items: MenuItem[];
+}
+
+/** One dropdown row: separator, plain/CHECK item, or item with a flyout submenu. */
+function MenuEntry({ item, close }: { item: MenuItem; close: () => void }): JSX.Element {
+  const [subOpen, setSubOpen] = useState(false);
+  if (item.sep) return <div className="ze-msep" />;
+  const sub = item.submenu ?? item.items;
+  const hasSub = !!sub && sub.length > 0;
+  return (
+    <div
+      className={`ze-mitem${item.disabled ? ' disabled' : ''}${hasSub ? ' has-sub' : ''}`}
+      style={hasSub ? { position: 'relative' } : undefined}
+      onMouseEnter={hasSub ? () => setSubOpen(true) : undefined}
+      onMouseLeave={hasSub ? () => setSubOpen(false) : undefined}
+      onClick={() => {
+        if (item.disabled || hasSub) return;
+        close();
+        item.action?.();
+      }}
+    >
+      <span className="mico">
+        {item.checked ? (
+          <span className="mcheck">✓</span>
+        ) : item.icon && toolbarIconUrl(item.icon) ? (
+          <img src={toolbarIconUrl(item.icon)} alt="" />
+        ) : null}
+      </span>
+      <span className="lbl">{item.label}</span>
+      {item.shortcut && <span className="sc">{item.shortcut}</span>}
+      {hasSub && <span className="sub-arrow">▸</span>}
+      {hasSub && subOpen && !item.disabled && (
+        <div
+          className="ze-dropdown ze-submenu"
+          style={{ position: 'absolute', left: '100%', top: -4 }}
+        >
+          {sub!.map((s, i) => (
+            <MenuEntry key={s.label ?? `s${i}`} item={s} close={close} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /** A KiCad-style menu bar with click-to-open dropdowns and hover-to-switch. */
@@ -66,45 +113,6 @@ export function MenuBar({
       ))}
       {title && <div className="ze-menubar-title">{title}</div>}
       {rightSlot}
-    </div>
-  );
-}
-
-/** One dropdown row: separator, plain item, or item with a flyout submenu. */
-function MenuEntry({ item, close }: { item: MenuItem; close: () => void }): JSX.Element {
-  const [subOpen, setSubOpen] = useState(false);
-  if (item.sep) return <div className="ze-msep" />;
-  const hasSub = !!item.submenu;
-  return (
-    <div
-      className={`ze-mitem${item.disabled ? ' disabled' : ''}${hasSub ? ' has-sub' : ''}`}
-      style={hasSub ? { position: 'relative' } : undefined}
-      onMouseEnter={hasSub ? () => setSubOpen(true) : undefined}
-      onMouseLeave={hasSub ? () => setSubOpen(false) : undefined}
-      onClick={() => {
-        if (item.disabled || hasSub) return;
-        close();
-        item.action?.();
-      }}
-    >
-      <span className="mico">
-        {item.icon && toolbarIconUrl(item.icon) ? (
-          <img src={toolbarIconUrl(item.icon)} alt="" />
-        ) : null}
-      </span>
-      <span className="lbl">{item.label}</span>
-      {item.shortcut && <span className="sc">{item.shortcut}</span>}
-      {hasSub && <span className="sub-arrow">▸</span>}
-      {hasSub && subOpen && !item.disabled && (
-        <div
-          className="ze-dropdown ze-submenu"
-          style={{ position: 'absolute', left: '100%', top: -4 }}
-        >
-          {item.submenu!.map((s, i) => (
-            <MenuEntry key={s.label ?? `s${i}`} item={s} close={close} />
-          ))}
-        </div>
-      )}
     </div>
   );
 }

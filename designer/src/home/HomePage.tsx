@@ -103,6 +103,7 @@ const TILES: Tile[] = [
     id: 'drawingsheet',
     name: 'Drawing Sheet Editor',
     desc: 'Edit drawing sheet borders and title blocks for use in schematics and PCB designs',
+    enabled: true,
   },
   {
     id: 'pcm',
@@ -151,6 +152,7 @@ export function HomePage({
   onOpenSymbolEditor,
   onOpenFootprintEditor,
   onOpenCalculator,
+  onOpenDrawingSheetEditor,
   initialFiles,
 }: {
   onOpenSchematic: () => void;
@@ -164,6 +166,8 @@ export function HomePage({
   onOpenFootprintEditor?: (files?: PickedHomeFile[], startFile?: string) => void;
   /** Launch the Calculator Tools (standalone, no project needed). */
   onOpenCalculator?: () => void;
+  /** Launch the Drawing Sheet Editor (pl_editor); a standalone tool. */
+  onOpenDrawingSheetEditor?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
@@ -769,7 +773,9 @@ export function HomePage({
                       ? (): void => onOpenFootprintEditor?.(picked ?? undefined)
                       : t.id === 'calculator'
                         ? (): void => onOpenCalculator?.()
-                        : (): void => launchSchematic();
+                        : t.id === 'drawingsheet'
+                          ? (): void => onOpenDrawingSheetEditor?.()
+                          : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}

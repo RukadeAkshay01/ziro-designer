@@ -13,9 +13,28 @@ import {
   editSymbolProperties,
   copySelectionText,
   parsePastedText,
+  boxSelect,
+  symbolBodyBBox,
+  labelBox,
+  emptyBBox,
+  isEmpty,
+  includePoint,
+  instanceKey,
+  getSheetPageNumber,
+  getRootPageNumber,
+  setSheetPageNumberCommand,
+  setRootPageNumberCommand,
+  findMatches,
+  replaceCommand,
+  defaultSearchData,
+  annotateCommand,
+  clearAnnotationCommand,
+  type SchSearchData,
+  type AnnotateOptions,
   runErc,
   buildSheetTree,
   sheetFile,
+  sheetName,
   findRootFile,
   addItems,
   makeSheet,
@@ -23,6 +42,9 @@ import {
   replaceSheet,
   replaceTextBox,
   replaceTable,
+  replaceLabel,
+  replaceLine,
+  replaceJunction,
   makeImage,
   makeTextBox,
   makeTable,
@@ -50,9 +72,18 @@ import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
 import { ErcDialog } from './components/ErcDialog.js';
 import { SymbolChooser } from './components/SymbolChooser.js';
 import { Toolbar } from '../../ui/Toolbar.js';
-import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from '../../ui/toolbars.js';
+import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from './toolbars_sch_editor.js';
 import { MenuBar } from '../../ui/MenuBar.js';
-import { buildMenus, TOOL_HOTKEYS } from '../../ui/menus.js';
+import { buildMenus, TOOL_HOTKEYS } from './menubar.js';
+import {
+  SchNavigateTool,
+  flattenHierarchy,
+  parentPath,
+  type SheetRef,
+} from './sch_navigate_tool.js';
+import { DialogSchematicFind } from './dialogs/dialog_schematic_find.js';
+import { DialogAnnotate } from './dialogs/dialog_annotate.js';
+import { DialogLineProperties } from './dialogs/dialog_line_properties.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
 import { settings, gridSizeToIU } from '../../prefs/settings.js';
@@ -210,6 +241,37 @@ export function SchematicEditor({
     texts: string[];
   } | null>(null);
   const [pendingImage, setPendingImage] = useState<{ data: string } | null>(null);
+  // Keyboard-initiated grabbed move (SCH_MOVE_TOOL): M leaves connected wires
+  // behind, G drags them along. A fresh nonce restarts the grab.
+  const [grabRequest, setGrabRequest] = useState<{
+    kind: 'move' | 'drag';
+    nonce: number;
+  } | null>(null);
+  // Editing an existing label's text/shape (DIALOG_LABEL_PROPERTIES).
+  const [labelEdit, setLabelEdit] = useState<{
+    index: number;
+    kind: LabelKind;
+    text: string;
+    shape?: LabelShape;
+  } | null>(null);
+  // Editing a hierarchical sheet's name/file (DIALOG_SHEET_PROPERTIES).
+  const [sheetEdit, setSheetEdit] = useState<{
+    index: number;
+    name: string;
+    file: string;
+  } | null>(null);
+  // Editing the current sheet's page number (SCH_ACTIONS::editPageNumber).
+  const [pageEdit, setPageEdit] = useState<{ page: string } | null>(null);
+  // Editing a wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES) or a junction's
+  // diameter (DIALOG_JUNCTION_PROPS).
+  const [lineEdit, setLineEdit] = useState<{
+    index: number;
+    widthIU: number;
+    style: string;
+  } | null>(null);
+  const [junctionEdit, setJunctionEdit] = useState<{ index: number; diameterIU: number } | null>(
+    null,
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [localToggles, setLocalToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
   const [prefsOpen, setPrefsOpen] = useState(false);
@@ -350,6 +412,123 @@ export function SchematicEditor({
     return buildSheetTree(docs, project.current.root);
   }, [doc, currentFile]);
 
+  // Depth-first hierarchy order (virtual page numbers) + Back/Forward history
+  // (SCH_NAVIGATE_TOOL). Sheet edits prune dead history entries (CleanHistory).
+  const flatSheets = useMemo<SheetRef[]>(
+    () => (sheetTree ? flattenHierarchy(sheetTree) : []),
+    [sheetTree],
+  );
+  const navTool = useRef(new SchNavigateTool());
+  useEffect(() => {
+    navTool.current.cleanHistory(new Set(flatSheets.map((s) => s.path)));
+  }, [flatSheets]);
+
+  // Bumped after editing a page number in a sheet's *parent* document, so any
+  // page-number display refreshes even though `doc`/`currentFile` didn't change.
+  const [, forcePageRefresh] = useState(0);
+
+  // Live documents with the on-screen sheet's edits folded in.
+  const liveDocs = useCallback((): Map<string, Schematic> => {
+    const docs = new Map(project.current.docs);
+    if (doc) docs.set(currentFile, doc);
+    return docs;
+  }, [doc, currentFile]);
+
+  // The stored page number of the sheet instance at `path`
+  // (SCH_SHEET_PATH::GetPageNumber): the root sheet from the document-level
+  // sheet_instances, a sub-sheet from its object's instances in the parent doc.
+  const pageNumberOf = useCallback(
+    (path: string): string => {
+      const docs = liveDocs();
+      const rootDoc = docs.get(project.current.root);
+      if (path === '/') return rootDoc ? getRootPageNumber(rootDoc) : '';
+      const rootUuid = rootDoc?.uuid;
+      if (!rootUuid) return '';
+      const chain = path.split('/').filter(Boolean);
+      const ownUuid = chain[chain.length - 1];
+      const parent = flatSheets.find((s) => s.path === (parentPath(path) ?? '/'));
+      const parentDoc = docs.get(parent?.file ?? project.current.root);
+      const sheet = parentDoc?.sheets.find((s) => s.uuid === ownUuid);
+      return sheet ? getSheetPageNumber(sheet, instanceKey(rootUuid, chain)) : '';
+    },
+    [liveDocs, flatSheets],
+  );
+
+  // Set the current sheet's page number (SCH_ACTIONS::editPageNumber →
+  // SCH_SHEET_PATH::SetPageNumber). The root edits its own document; a sub-sheet
+  // edits its object in the *parent* document (through that doc's own history).
+  const editPageNumber = useCallback(
+    (page: string) => {
+      if (currentPath === '/') {
+        runCommand(setRootPageNumberCommand(page));
+        return;
+      }
+      const docs = liveDocs();
+      const rootUuid = docs.get(project.current.root)?.uuid;
+      if (!rootUuid) return;
+      const chain = currentPath.split('/').filter(Boolean);
+      const ownUuid = chain[chain.length - 1];
+      const parent = flatSheets.find((s) => s.path === (parentPath(currentPath) ?? '/'));
+      const parentFile = parent?.file ?? project.current.root;
+      const parentDoc = parentFile === currentFile ? doc : project.current.docs.get(parentFile);
+      if (!parentDoc) return;
+      const sheetIndex = parentDoc.sheets.findIndex((s) => s.uuid === ownUuid);
+      if (sheetIndex === -1) return;
+      const cmd = setSheetPageNumberCommand(sheetIndex, instanceKey(rootUuid, chain), page);
+      if (parentFile === currentFile) {
+        runCommand(cmd);
+      } else {
+        // Edit the parent document via its own undo history (SCH_COMMIT on it).
+        if (!histories.current.has(parentFile)) histories.current.set(parentFile, new History());
+        project.current.docs.set(
+          parentFile,
+          histories.current.get(parentFile)!.execute(parentDoc, withCleanup(cmd)),
+        );
+        onProjectChange?.([
+          { name: parentFile, text: serializeSchematic(project.current.docs.get(parentFile)!) },
+        ]);
+        forcePageRefresh((n) => n + 1);
+      }
+    },
+    [currentPath, currentFile, doc, flatSheets, liveDocs, runCommand, onProjectChange],
+  );
+
+  // Find / Find and Replace (SCH_FIND_REPLACE_TOOL): modeless dialog state
+  // (false, or which mode it opened in), the search settings, and a cursor
+  // over the matches across sheet instances in hierarchy order.
+  const [findOpen, setFindOpen] = useState<false | 'find' | 'replace'>(false);
+  const [searchData, setSearchData] = useState<SchSearchData>(defaultSearchData);
+  const [findStatus, setFindStatus] = useState('');
+  const findCursor = useRef(-1);
+  const lastMatch = useRef<{ id: string } | null>(null);
+  const openFindDialog = useCallback((mode: 'find' | 'replace') => {
+    setFindOpen(mode);
+    // Replace mode excludes reference designators from matches unless opted in.
+    setSearchData((d) => ({ ...d, searchAndReplace: mode === 'replace' }));
+  }, []);
+
+  // Annotate Schematic (SCH_EDIT_FRAME::AnnotateSymbols) dialog.
+  const [annotateOpen, setAnnotateOpen] = useState(false);
+  const runAnnotate = useCallback(
+    (opts: AnnotateOptions) => {
+      runCommand(annotateCommand(libById, opts, selection));
+      setAnnotateOpen(false);
+    },
+    [runCommand, libById, selection],
+  );
+  const runClearAnnotation = useCallback(
+    (scope: AnnotateOptions['scope']) => {
+      runCommand(clearAnnotationCommand(scope, selection));
+    },
+    [runCommand, selection],
+  );
+  useEffect(() => {
+    // Changed search settings restart the scan (upstream m_foundItemHighlight reset).
+    findCursor.current = -1;
+    lastMatch.current = null;
+    setFindStatus('');
+  }, [searchData]);
+
   // Load a schematic from raw .kicad_sch text: parse (lossless), fresh history,
   // clear transient state, and fit the view. Embedded lib_symbols render as-is.
   const resetTransient = useCallback(() => {
@@ -375,6 +554,7 @@ export function SchematicEditor({
         history.current = histories.current.get(file)!;
         setCurrentFile(file);
         setCurrentPath('/');
+        navTool.current.resetHistory('/');
         setDoc(next);
         resetTransient();
         if (name) setFileName(name);
@@ -432,6 +612,7 @@ export function SchematicEditor({
         setCurrentFile(start);
         // Home-tree opens the root; deeper instances are entered from the canvas.
         setCurrentPath('/');
+        navTool.current.resetHistory('/');
         setDoc(docs.get(start)!);
         resetTransient();
         setFileName(start);
@@ -485,7 +666,10 @@ export function SchematicEditor({
   // the edited current sheet back into the project, swap in the target document
   // and its own undo history.
   const switchSheet = useCallback(
-    (path: string, file: string) => {
+    (path: string, file: string, pushHistory = true) => {
+      // Every sheet change lands in the Back/Forward history (changeSheet →
+      // pushToHistory); Back/Forward themselves move the cursor instead.
+      if (pushHistory) navTool.current.pushToHistory(path);
       // Always record which instance is active (path is unique per instance).
       setCurrentPath(path);
       // Two instances of the same file share one document — nothing to swap, just
@@ -508,6 +692,81 @@ export function SchematicEditor({
     [doc, currentFile, resetTransient],
   );
 
+  // FindNext/FindPrevious (SCH_FIND_REPLACE_TOOL): collect matches over the
+  // sheet instances (hierarchy order, or just the current instance), advance
+  // the cursor with wrap-around, then jump: switch sheet, select, centre.
+  const doFind = useCallback(
+    (dir: 1 | -1) => {
+      const docs = new Map(project.current.docs);
+      if (doc) docs.set(currentFile, doc);
+      const sheets = searchData.searchCurrentSheetOnly
+        ? flatSheets.filter((s) => s.path === currentPath)
+        : flatSheets;
+      const all = sheets.flatMap((s) => {
+        const d = docs.get(s.file);
+        return d ? findMatches(d, libById, searchData).map((m) => ({ ...m, sheet: s })) : [];
+      });
+      if (all.length === 0) {
+        findCursor.current = -1;
+        lastMatch.current = null;
+        setFindStatus(searchData.findString ? 'Not found' : '');
+        return;
+      }
+      findCursor.current =
+        findCursor.current === -1
+          ? dir === 1
+            ? 0
+            : all.length - 1
+          : (findCursor.current + dir + all.length) % all.length;
+      const m = all[findCursor.current]!;
+      lastMatch.current = { id: m.id };
+      if (m.sheet.path !== currentPath) switchSheet(m.sheet.path, m.sheet.file);
+      setSelection(new Set([m.id]));
+      // After a sheet switch the canvas fits first (rAF); centre on the frame after.
+      requestAnimationFrame(() => requestAnimationFrame(() => controller.current?.centerOn(m.pos)));
+      setFindStatus(`${findCursor.current + 1} of ${all.length}`);
+    },
+    [doc, currentFile, currentPath, flatSheets, libById, searchData, switchSheet],
+  );
+
+  // ReplaceAndFindNext: replace inside the current match, then find the next
+  // one against the post-replace document (next frame, after setDoc lands).
+  const doFindRef = useRef(doFind);
+  doFindRef.current = doFind;
+  const doReplaceNext = useCallback(() => {
+    if (!searchData.findString) return;
+    if (findCursor.current === -1 || !lastMatch.current) {
+      doFind(1);
+      return;
+    }
+    runCommand(replaceCommand(searchData, new Set([lastMatch.current.id])));
+    // The replaced item usually drops out of the match list; step the cursor
+    // back so the follow-up FindNext lands on the item after it.
+    findCursor.current = Math.max(-1, findCursor.current - 1);
+    lastMatch.current = null;
+    requestAnimationFrame(() => doFindRef.current(1));
+  }, [searchData, runCommand, doFind]);
+
+  // ReplaceAll: substitute in every matched item — on the current sheet only,
+  // or in every document of the project, each through its own undo history.
+  const doReplaceAll = useCallback(() => {
+    if (!searchData.findString) return;
+    if (!searchData.searchCurrentSheetOnly) {
+      for (const [file, target] of project.current.docs) {
+        if (file === currentFile) continue;
+        if (!histories.current.has(file)) histories.current.set(file, new History());
+        project.current.docs.set(
+          file,
+          histories.current.get(file)!.execute(target, withCleanup(replaceCommand(searchData))),
+        );
+      }
+    }
+    runCommand(replaceCommand(searchData));
+    findCursor.current = -1;
+    lastMatch.current = null;
+    setFindStatus('');
+  }, [searchData, runCommand, currentFile]);
+
   // KiCad's Properties action: symbols have a full properties dialog; a text box
   // reopens its text editor (double-click = edit).
   const onEditItem = useCallback(
@@ -527,6 +786,13 @@ export function SchematicEditor({
         | 'table',
     ) => {
       if (kind === 'symbol') setPropsTarget(id);
+      if (kind === 'label' && doc) {
+        const idx = doc.labels.findIndex((l, i) => refId('label', l.uuid, i) === id);
+        if (idx !== -1) {
+          const l = doc.labels[idx]!;
+          setLabelEdit({ index: idx, kind: l.kind, text: l.text, shape: l.shape });
+        }
+      }
       if (kind === 'textbox' && doc) {
         const idx = doc.textBoxes.findIndex((tb, i) => refId('textbox', tb.uuid, i) === id);
         if (idx !== -1) {
@@ -811,6 +1077,71 @@ export function SchematicEditor({
     });
   }, [doc, runCommand]);
 
+  const commitLabelEdit = useCallback(
+    (text: string, shape: LabelShape) => {
+      setLabelEdit((le) => {
+        if (!le || !doc) return null;
+        const orig = doc.labels[le.index];
+        if (orig && (orig.text !== text || (le.shape !== undefined && orig.shape !== shape))) {
+          const next = le.shape !== undefined ? { ...orig, text, shape } : { ...orig, text };
+          runCommand(replaceLabel(le.index, next));
+        }
+        return null;
+      });
+    },
+    [doc, runCommand],
+  );
+
+  const commitSheetEdit = useCallback(() => {
+    setSheetEdit((se) => {
+      if (!se || !doc) return null;
+      const orig = doc.sheets[se.index];
+      const name = se.name.trim();
+      if (orig && name) {
+        const fields = orig.fields.map((f) =>
+          f.key === 'Sheetname'
+            ? { ...f, value: name }
+            : f.key === 'Sheetfile'
+              ? { ...f, value: se.file.trim() }
+              : f,
+        );
+        runCommand(replaceSheet(se.index, { ...orig, fields }));
+      }
+      return null;
+    });
+  }, [doc, runCommand]);
+
+  const commitLineEdit = useCallback(
+    (widthIU: number, style: string) => {
+      setLineEdit((le) => {
+        if (!le || !doc) return null;
+        const orig = doc.lines[le.index];
+        if (orig) {
+          const stroke = {
+            ...(orig.stroke ?? { width: 0, type: 'default' }),
+            width: widthIU,
+            type: style,
+          };
+          runCommand(replaceLine(le.index, { ...orig, stroke }));
+        }
+        return null;
+      });
+    },
+    [doc, runCommand],
+  );
+
+  const commitJunctionEdit = useCallback(
+    (diameterIU: number) => {
+      setJunctionEdit((je) => {
+        if (!je || !doc) return null;
+        const orig = doc.junctions[je.index];
+        if (orig) runCommand(replaceJunction(je.index, { ...orig, diameter: diameterIU }));
+        return null;
+      });
+    },
+    [doc, runCommand],
+  );
+
   const onImagePlaced = useCallback(
     (at: Vec2) => {
       setPendingImage((img) => {
@@ -846,7 +1177,42 @@ export function SchematicEditor({
       if (id === 'zoomFit' || id === 'zoomFitObjects') controller.current?.zoomToFit();
       else if (id === 'zoomIn') controller.current?.zoomIn();
       else if (id === 'zoomOut') controller.current?.zoomOut();
-      else if (id === 'undo') undo();
+      else if (id === 'zoomRedraw') controller.current?.redraw();
+      else if (id === 'zoomTool') setActiveTool('zoomTool');
+      else if (id === 'zoomFitSelection') {
+        // Zoom to Selected Objects: fit the view to the selection's extent.
+        const box = emptyBBox();
+        doc?.symbols.forEach((s, i) => {
+          if (selection.has(refId('symbol', s.uuid, i))) {
+            const b = symbolBodyBBox(s, libById.get(s.libId));
+            includePoint(box, { x: b.minX, y: b.minY });
+            includePoint(box, { x: b.maxX, y: b.maxY });
+          }
+        });
+        doc?.labels.forEach((l, i) => {
+          if (selection.has(refId('label', l.uuid, i))) {
+            const b = labelBox(l);
+            includePoint(box, { x: b.minX, y: b.minY });
+            includePoint(box, { x: b.maxX, y: b.maxY });
+          }
+        });
+        doc?.lines.forEach((l, i) => {
+          if (selection.has(refId('line', l.uuid, i))) {
+            includePoint(box, l.start);
+            includePoint(box, l.end);
+          }
+        });
+        doc?.junctions.forEach((j, i) => {
+          if (selection.has(refId('junction', j.uuid, i))) includePoint(box, j.at);
+        });
+        doc?.sheets.forEach((sh, i) => {
+          if (selection.has(refId('sheet', sh.uuid, i))) {
+            includePoint(box, sh.at);
+            includePoint(box, { x: sh.at.x + sh.size.w, y: sh.at.y + sh.size.h });
+          }
+        });
+        if (!isEmpty(box)) controller.current?.zoomToBox(box);
+      } else if (id === 'undo') undo();
       else if (id === 'redo') redo();
       else if (id === 'open') promptOpen();
       else if (id === 'save') save();
@@ -854,18 +1220,71 @@ export function SchematicEditor({
       else if (id === 'showPcbNew') onShowPcb?.();
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
       else if (id === 'openPreferences') setPrefsOpen(true);
+      else if (id === 'close') onExitToHome();
+      else if (id === 'find') openFindDialog('find');
+      else if (id === 'findReplace') openFindDialog('replace');
+      else if (id === 'annotate') setAnnotateOpen(true);
+      else if (id === 'editPageNumber') setPageEdit({ page: pageNumberOf(currentPath) });
+      // Hierarchy navigation (SCH_NAVIGATE_TOOL). Back/Forward move the history
+      // cursor without pushing; Up and Previous/Next go through changeSheet.
+      else if (id === 'navBack' || id === 'navFwd') {
+        const p = id === 'navBack' ? navTool.current.back() : navTool.current.forward();
+        const target = p !== null ? flatSheets.find((s) => s.path === p) : undefined;
+        if (target) switchSheet(target.path, target.file, false);
+      } else if (id === 'navUp') {
+        const pp = parentPath(currentPath);
+        const target = pp !== null ? flatSheets.find((s) => s.path === pp) : undefined;
+        if (target) switchSheet(target.path, target.file);
+      } else if (id === 'navPrev' || id === 'navNext') {
+        const idx = flatSheets.findIndex((s) => s.path === currentPath);
+        const target = idx !== -1 ? flatSheets[idx + (id === 'navNext' ? 1 : -1)] : undefined;
+        if (target) switchSheet(target.path, target.file);
+      }
+      // Menu Cut/Copy re-dispatch the native clipboard events our document
+      // handlers already implement; Paste reads the async clipboard API (menu
+      // clicks can't synthesize a trusted paste event).
+      else if (id === 'cut') document.execCommand('cut');
+      else if (id === 'copy') document.execCommand('copy');
+      else if (id === 'paste')
+        void navigator.clipboard?.readText().then((text) => {
+          setDoc((d) => {
+            const payload = d ? parsePastedText(text, d) : null;
+            if (payload) {
+              setActiveTool('select');
+              setPastePending(payload);
+            }
+            return d;
+          });
+        });
+      else if (id === 'delete')
+        setSelection((sel) => {
+          if (sel.size > 0) runCommand(deleteByIds(sel));
+          return new Set();
+        });
       else if (TX[id])
         setSelection((sel) => {
           if (sel.size > 0) runCommand(transformItems(sel, TX[id]!));
           return sel;
         });
     },
-    [undo, redo, save, promptOpen, runCommand, runErcNow, onShowPcb, onShowSymbolEditor],
-  );
-
-  const menus = useMemo(
-    () => buildMenus({ tool: onToolSelect, action: onTopAction }),
-    [onToolSelect, onTopAction],
+    [
+      undo,
+      redo,
+      save,
+      promptOpen,
+      runCommand,
+      runErcNow,
+      onShowPcb,
+      onShowSymbolEditor,
+      onExitToHome,
+      flatSheets,
+      currentPath,
+      switchSheet,
+      doc,
+      selection,
+      libById,
+      pageNumberOf,
+    ],
   );
 
   const onLeftToggle = useCallback((id: string) => {
@@ -898,6 +1317,15 @@ export function SchematicEditor({
     });
   }, []);
 
+  const menus = useMemo(
+    () =>
+      buildMenus(
+        { tool: onToolSelect, action: onTopAction, toggle: onLeftToggle },
+        { toggleHiddenPins: es.appearance.show_hidden_pins },
+      ),
+    [onToolSelect, onTopAction, onLeftToggle, es.appearance.show_hidden_pins],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // While a modal properties dialog is open, only Escape acts on the editor.
@@ -921,6 +1349,85 @@ export function SchematicEditor({
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicateSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        // SCH_ACTIONS::placeGlobalLabel default hotkey (Ctrl+L).
+        e.preventDefault();
+        onToolSelect('placeGlobalLabel');
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'f') {
+        // ACTIONS::findAndReplace (Ctrl+Alt+F).
+        e.preventDefault();
+        openFindDialog('replace');
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f' && !e.altKey) {
+        // ACTIONS::find (Ctrl+F).
+        e.preventDefault();
+        openFindDialog('find');
+      } else if (e.key === 'F3' && (findOpen || searchData.findString)) {
+        // ACTIONS::findNext / findPrevious (F3 / Shift+F3).
+        e.preventDefault();
+        doFind(e.shiftKey ? -1 : 1);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !isTyping()) {
+        // ACTIONS::selectAll / unselectAll (Ctrl+A / Ctrl+Shift+A). Select-all
+        // is a greedy box select over the whole plane.
+        e.preventDefault();
+        if (e.shiftKey) setSelection(new Set());
+        else
+          setDoc((d) => {
+            if (d)
+              setSelection(boxSelect(d, libById, { x: 1e15, y: 1e15 }, { x: -1e15, y: -1e15 }));
+            return d;
+          });
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        // ACTIONS::zoomFitScreen (Ctrl+0).
+        e.preventDefault();
+        controller.current?.zoomToFit();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'Home') {
+        // ACTIONS::zoomFitObjects (Ctrl+Home).
+        e.preventDefault();
+        controller.current?.zoomToFit();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '=')) {
+        // ACTIONS::zoomIn (Ctrl++).
+        e.preventDefault();
+        controller.current?.zoomIn();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === '-') {
+        // ACTIONS::zoomOut (Ctrl+-).
+        e.preventDefault();
+        controller.current?.zoomOut();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'r') {
+        // ACTIONS::zoomRedraw (Ctrl+R): repaint without changing the view.
+        e.preventDefault();
+        controller.current?.redraw();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'F5') {
+        // ACTIONS::zoomTool (Ctrl+F5): drag a rectangle to zoom to it.
+        e.preventDefault();
+        setActiveTool('zoomTool');
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
+        // ACTIONS::toggleGridOverrides (Ctrl+Shift+G).
+        e.preventDefault();
+        onLeftToggle('toggleGridOverrides');
+      } else if (e.altKey && e.key === 'ArrowLeft') {
+        // SCH_ACTIONS::navigateBack (Alt+Left).
+        e.preventDefault();
+        onTopAction('navBack');
+      } else if (e.altKey && e.key === 'ArrowUp') {
+        // SCH_ACTIONS::navigateUp (Alt+Up).
+        e.preventDefault();
+        onTopAction('navUp');
+      } else if (e.altKey && e.key === 'ArrowRight') {
+        // SCH_ACTIONS::navigateForward (Alt+Right).
+        e.preventDefault();
+        onTopAction('navFwd');
+      } else if (e.altKey && e.key === 'Backspace') {
+        // SCH_ACTIONS::leaveSheet (Alt+Backspace) — same as Navigate Up.
+        e.preventDefault();
+        onTopAction('navUp');
+      } else if (e.key === 'PageUp' && !isTyping()) {
+        // SCH_ACTIONS::navigatePrevious (PgUp).
+        e.preventDefault();
+        onTopAction('navPrev');
+      } else if (e.key === 'PageDown' && !isTyping()) {
+        // SCH_ACTIONS::navigateNext (PgDn).
+        e.preventDefault();
+        onTopAction('navNext');
       } else if (e.key === 'Escape') {
         if (propsTarget !== null) setPropsTarget(null);
         else if (pastePending) setPastePending(null);
@@ -951,13 +1458,102 @@ export function SchematicEditor({
             tgt.tagName === 'SELECT' ||
             tgt.isContentEditable);
         if (typing) return;
-        // E = Properties (KiCad SCH_ACTIONS::properties) on a single selected symbol.
+        // R / Shift+R / X / Y — rotate & mirror the selection
+        // (SCH_ACTIONS::rotateCCW/rotateCW/mirrorH/mirrorV default hotkeys).
+        const txKey =
+          e.key.toLowerCase() === 'r'
+            ? e.shiftKey
+              ? 'rotateCW'
+              : 'rotateCCW'
+            : e.key.toLowerCase() === 'x'
+              ? 'mirrorH'
+              : e.key.toLowerCase() === 'y'
+                ? 'mirrorV'
+                : null;
+        if (txKey) {
+          e.preventDefault();
+          onTopAction(txKey);
+          return;
+        }
+        // M = Move (leaves connected wires behind), G = Drag (keeps them
+        // attached) — SCH_ACTIONS::move / drag. Grabs the current selection.
+        if ((e.key.toLowerCase() === 'm' || e.key.toLowerCase() === 'g') && selection.size > 0) {
+          e.preventDefault();
+          const kind = e.key.toLowerCase() === 'm' ? 'move' : 'drag';
+          setGrabRequest((prev) => ({ kind, nonce: (prev?.nonce ?? 0) + 1 }));
+          return;
+        }
+        // ` = Highlight Net tool, ~ = clear highlighting
+        // (SCH_ACTIONS::highlightNet / clearHighlight).
+        if (e.key === '`') {
+          e.preventDefault();
+          setActiveTool('highlightNet');
+          return;
+        }
+        if (e.key === '~') {
+          e.preventDefault();
+          setHighlightItem(null);
+          return;
+        }
+        // N / Shift+N — next/previous grid (ACTIONS::gridNext/gridPrev).
+        if (e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          settings.updateEeschema((s) => {
+            const n = s.window.grid.sizes.length;
+            if (n > 0)
+              s.window.grid.last_size_idx =
+                (s.window.grid.last_size_idx + (e.shiftKey ? n - 1 : 1)) % n;
+          });
+          return;
+        }
+        // E = Properties (KiCad SCH_ACTIONS::properties) on a single selected
+        // item: symbols open the full dialog, labels/text and text boxes/tables
+        // open their editors (onEditItem routes by item kind).
         if (e.key.toLowerCase() === 'e' && selection.size === 1) {
           const id = [...selection][0]!;
           setDoc((d) => {
-            if (d?.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) {
+            if (!d) return d;
+            if (d.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) {
               e.preventDefault();
               setPropsTarget(id);
+            } else if (d.labels.some((l, i) => refId('label', l.uuid, i) === id)) {
+              e.preventDefault();
+              onEditItem(id, 'label');
+            } else if (d.textBoxes.some((tb, i) => refId('textbox', tb.uuid, i) === id)) {
+              e.preventDefault();
+              onEditItem(id, 'textbox');
+            } else if (d.tables.some((t, i) => refId('table', t.uuid, i) === id)) {
+              e.preventDefault();
+              onEditItem(id, 'table');
+            } else if (d.lines.some((l, i) => refId('line', l.uuid, i) === id)) {
+              // Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES).
+              const li = d.lines.findIndex((l, i) => refId('line', l.uuid, i) === id);
+              const l = d.lines[li]!;
+              if (l.kind !== 'polyline') {
+                e.preventDefault();
+                setLineEdit({
+                  index: li,
+                  widthIU: l.stroke?.width ?? 0,
+                  style: l.stroke?.type ?? 'default',
+                });
+              }
+            } else if (d.junctions.some((j, i) => refId('junction', j.uuid, i) === id)) {
+              const ji = d.junctions.findIndex((j, i) => refId('junction', j.uuid, i) === id);
+              e.preventDefault();
+              setJunctionEdit({ index: ji, diameterIU: d.junctions[ji]!.diameter });
+            } else {
+              // E on a sheet opens its properties (double-click enters it).
+              const si = d.sheets.findIndex((s, i) => refId('sheet', s.uuid, i) === id);
+              if (si !== -1) {
+                e.preventDefault();
+                const sh = d.sheets[si]!;
+                setSheetEdit({
+                  index: si,
+                  name: sheetName(sh),
+                  // Raw Sheetfile field value (may carry a sub-path), not the basename.
+                  file: sh.fields.find((f) => f.key === 'Sheetfile')?.value ?? '',
+                });
+              }
             }
             return d;
           });
@@ -981,10 +1577,18 @@ export function SchematicEditor({
     runCommand,
     activeTool,
     onToolSelect,
+    onTopAction,
+    onLeftToggle,
+    libById,
     pendingLabel,
     propsTarget,
     pastePending,
     duplicateSelection,
+    findOpen,
+    searchData,
+    doFind,
+    openFindDialog,
+    onEditItem,
   ]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
@@ -1161,6 +1765,11 @@ export function SchematicEditor({
             onSheetPinClick={onSheetPinClick}
             pendingImage={pendingImage}
             onImagePlaced={onImagePlaced}
+            grabRequest={grabRequest}
+            onZoomArea={(box) => {
+              controller.current?.zoomToBox(box);
+              setActiveTool('select');
+            }}
             onSelect={onSelect}
             onHighlight={onHighlight}
             onRequestTool={onToolSelect}
@@ -1183,6 +1792,27 @@ export function SchematicEditor({
               onRun={runErcNow}
               onLocate={locateViolation}
               onClose={() => setErcResult(null)}
+            />
+          )}
+          {findOpen && (
+            <DialogSchematicFind
+              data={searchData}
+              onChange={setSearchData}
+              onFindNext={() => doFind(1)}
+              onFindPrevious={() => doFind(-1)}
+              onClose={() => setFindOpen(false)}
+              status={findStatus}
+              replace={findOpen === 'replace'}
+              onReplace={doReplaceNext}
+              onReplaceAll={doReplaceAll}
+            />
+          )}
+          {annotateOpen && (
+            <DialogAnnotate
+              hasSelection={selection.size > 0}
+              onAnnotate={runAnnotate}
+              onClear={runClearAnnotation}
+              onClose={() => setAnnotateOpen(false)}
             />
           )}
         </div>
@@ -1250,7 +1880,7 @@ export function SchematicEditor({
       )}
 
       {/* Label tools: a properties dialog names the label, then it follows the cursor. */}
-      {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && (
+      {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && !labelEdit && (
         <LabelDialog
           kind={LABEL_TOOL_KINDS[activeTool]!}
           onOk={(text: string, shape: LabelShape) =>
@@ -1258,6 +1888,141 @@ export function SchematicEditor({
           }
           onCancel={() => setActiveTool('select')}
         />
+      )}
+
+      {/* Editing an existing label/text (Properties): same dialog, pre-filled. */}
+      {labelEdit && (
+        <LabelDialog
+          kind={labelEdit.kind}
+          initialText={labelEdit.text}
+          initialShape={labelEdit.shape}
+          onOk={commitLabelEdit}
+          onCancel={() => setLabelEdit(null)}
+        />
+      )}
+
+      {/* Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES, E on a wire). */}
+      {lineEdit && (
+        <DialogLineProperties
+          kind="wire"
+          widthIU={lineEdit.widthIU}
+          style={lineEdit.style}
+          onOk={commitLineEdit}
+          onCancel={() => setLineEdit(null)}
+        />
+      )}
+
+      {/* Junction diameter (DIALOG_JUNCTION_PROPS, E on a junction). */}
+      {junctionEdit && (
+        <DialogLineProperties
+          kind="junction"
+          diameterIU={junctionEdit.diameterIU}
+          onOk={commitJunctionEdit}
+          onCancel={() => setJunctionEdit(null)}
+        />
+      )}
+
+      {/* Edit Sheet Page Number (SCH_ACTIONS::editPageNumber). */}
+      {pageEdit && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setPageEdit(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              Edit Sheet Page Number
+              <span className="x" title="Cancel" onClick={() => setPageEdit(null)}>
+                ✕
+              </span>
+            </div>
+            <div
+              className="ze-label-dialog-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <label className="row">
+                <span>Page number</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  value={pageEdit.page}
+                  onChange={(e) => setPageEdit({ page: e.target.value })}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') {
+                      editPageNumber(pageEdit.page.trim());
+                      setPageEdit(null);
+                    }
+                  }}
+                />
+              </label>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setPageEdit(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!pageEdit.page.trim()}
+                onClick={() => {
+                  editPageNumber(pageEdit.page.trim());
+                  setPageEdit(null);
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Editing an existing sheet's name/file (DIALOG_SHEET_PROPERTIES, E key). */}
+      {sheetEdit && (
+        <div className="ze-modal-backdrop" onMouseDown={() => setSheetEdit(null)}>
+          <div className="ze-modal ze-label-dialog" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="ze-modal-header">
+              Sheet Properties
+              <span className="x" title="Cancel" onClick={() => setSheetEdit(null)}>
+                ✕
+              </span>
+            </div>
+            <div
+              className="ze-label-dialog-body"
+              style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+            >
+              <label className="row">
+                <span>Sheet name</span>
+                <input
+                  className="ze-search"
+                  autoFocus
+                  value={sheetEdit.name}
+                  onChange={(e) => setSheetEdit({ ...sheetEdit, name: e.target.value })}
+                  onKeyDown={(e) => e.stopPropagation()}
+                />
+              </label>
+              <label className="row">
+                <span>File name</span>
+                <input
+                  className="ze-search"
+                  value={sheetEdit.file}
+                  onChange={(e) => setSheetEdit({ ...sheetEdit, file: e.target.value })}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === 'Enter') commitSheetEdit();
+                  }}
+                />
+              </label>
+            </div>
+            <div className="ze-modal-footer">
+              <button className="ze-btn" onClick={() => setSheetEdit(null)}>
+                Cancel
+              </button>
+              <button
+                className="ze-btn primary"
+                disabled={!sheetEdit.name.trim()}
+                onClick={commitSheetEdit}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Hierarchical sheet: after drawing the rectangle, name it and its file. */}

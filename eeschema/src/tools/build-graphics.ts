@@ -192,6 +192,7 @@ export function makeSheet(
     stroke: { width: mmToIU(0.1524), type: 'solid' },
     fields: [nameField, fileField],
     pins: [],
+    instances: [], // KiCad adds the sheet instance during the next annotate/update pass
     uuid,
     source,
   };

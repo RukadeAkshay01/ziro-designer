@@ -15,7 +15,7 @@
  */
 
 import { head, isList, list, atom, str, type SList, type SNode } from '@ziroeda/sexpr/src/index.js';
-import { childNamed, numArg } from '@ziroeda/sexpr/src/query.js';
+import { arg, childNamed, numArg } from '@ziroeda/sexpr/src/query.js';
 import { iuToMM, mmToIU } from '@ziroeda/common/src/eda_units.js';
 import { readField } from './read-schematic.js';
 import type {
@@ -32,6 +32,8 @@ import type {
   SchTable,
   SchTableCell,
   TextEffects,
+  Stroke,
+  SheetInstance,
   Vec2,
 } from '../../types.js';
 
@@ -361,11 +363,38 @@ function writeSymbol(sym: SchSymbol): SList {
   return { kind: 'list', items };
 }
 
+/** Patch (or append) a `(stroke (width ..) (type ..))` node to match `stroke`,
+ *  changing only width/type and leaving any other tokens (e.g. color) in place. */
+function patchStroke(node: SList, stroke: Stroke | undefined): SList {
+  if (!stroke) return node;
+  if (childNamed(node, 'stroke')) {
+    return mapChild(node, 'stroke', (s) => {
+      let out = s;
+      if (childNamed(out, 'width'))
+        out = mapChild(out, 'width', () => list(atom('width'), atom(mm(stroke.width))));
+      if (childNamed(out, 'type'))
+        out = mapChild(out, 'type', () => list(atom('type'), atom(stroke.type)));
+      return out;
+    });
+  }
+  return {
+    kind: 'list',
+    items: [
+      ...node.items,
+      list(
+        atom('stroke'),
+        list(atom('width'), atom(mm(stroke.width))),
+        list(atom('type'), atom(stroke.type)),
+      ),
+    ],
+  };
+}
+
 function writeLine(l: SchLine): SList {
   // A multi-point polyline patches each vertex from `points`; a wire/bus has just
   // its two endpoints. Extra source xy's beyond what we model are left untouched.
   const verts = l.points ?? [l.start, l.end];
-  return mapChild(l.source, 'pts', (pts) => {
+  const node = mapChild(l.source, 'pts', (pts) => {
     let i = 0;
     const items = pts.items.map((it) => {
       if (isList(it) && head(it) === 'xy') {
@@ -377,17 +406,57 @@ function writeLine(l: SchLine): SList {
     });
     return { kind: 'list', items };
   });
+  return patchStroke(node, l.stroke);
 }
 
-const writeJunction = (j: SchJunction): SList => patchAt(j.source, j.at);
+/** Patch a junction: position and `(diameter ..)`. */
+function writeJunction(j: SchJunction): SList {
+  let node = patchAt(j.source, j.at);
+  if (childNamed(node, 'diameter'))
+    node = mapChild(node, 'diameter', () => list(atom('diameter'), atom(mm(j.diameter))));
+  return node;
+}
 
 const writeNoConnect = (nc: SchNoConnect): SList => patchAt(nc.source, nc.at);
 
 const writeBusEntry = (be: SchBusEntry): SList => patchAt(be.source, be.at);
 
-/** Patch a sheet: its position, each field, and each pin position (all lossless). */
+/** Patch the `(page …)` inside each `(path …)` of an `(instances …)` or
+ *  `(sheet_instances …)` node from the typed instances, keyed by project+path. */
+function patchInstancePages(
+  node: SList,
+  pageByKey: ReadonlyMap<string, string | undefined>,
+  hasProject: boolean,
+): SList {
+  const patchPath = (pathNode: SList, project: string): SList => {
+    const page = pageByKey.get(`${project} ${arg(pathNode, 0) ?? ''}`);
+    if (page === undefined || !childNamed(pathNode, 'page')) return pathNode;
+    return mapChild(pathNode, 'page', () => list(atom('page'), str(page)));
+  };
+  const items = node.items.map((it) => {
+    if (!isList(it)) return it;
+    if (hasProject && head(it) === 'project') {
+      const proj = arg(it, 0) ?? '';
+      return {
+        kind: 'list' as const,
+        items: it.items.map((p) => (isList(p) && head(p) === 'path' ? patchPath(p, proj) : p)),
+      };
+    }
+    if (!hasProject && head(it) === 'path') return patchPath(it, '');
+    return it;
+  });
+  return { kind: 'list', items };
+}
+
+const instanceKey = (i: SheetInstance): string => `${i.project ?? ''} ${i.path}`;
+
+/** Patch a sheet: its position, each field, each pin, and instance page numbers. */
 function writeSheet(sh: SchSheet): SList {
   let node = patchAt(sh.source, sh.at);
+  if (childNamed(node, 'instances') && sh.instances.length) {
+    const pages = new Map(sh.instances.map((i) => [instanceKey(i), i.page]));
+    node = mapChild(node, 'instances', (inst) => patchInstancePages(inst, pages, true));
+  }
   const byKey = new Map(sh.fields.map((f) => [f.key, f]));
   let pinIdx = 0;
   node = {
@@ -409,7 +478,13 @@ function writeSheet(sh: SchSheet): SList {
 }
 
 function writeLabel(l: SchLabel): SList {
-  return patchAt(setItem(l.source, 1, str(l.text)), l.at);
+  let node = patchAt(setItem(l.source, 1, str(l.text)), l.at);
+  // Global/hierarchical labels carry a `(shape …)`; patch it in place when
+  // present so a shape edit round-trips (local labels/text have no shape).
+  if (l.shape !== undefined && childNamed(node, 'shape')) {
+    node = mapChild(node, 'shape', () => list(atom('shape'), atom(l.shape!)));
+  }
+  return node;
 }
 
 /** Patch a text box: content (item 1), position (`at` = start) and `(size ..)`. */
@@ -504,6 +579,13 @@ export function writeSchematic(sch: Schematic): SList {
     if (!isList(it)) continue;
     const h = head(it);
     if (h === undefined || STRUCTURAL.has(h) || ITEM_HEADS.has(h)) continue;
+    // The root sheet's page lives in (sheet_instances (path "/" (page …))); patch
+    // it from the typed model so Edit Sheet Page Number on the root round-trips.
+    if (h === 'sheet_instances' && sch.sheetInstances.length) {
+      const pages = new Map(sch.sheetInstances.map((i) => [instanceKey(i), i.page]));
+      out.push(patchInstancePages(it, pages, false));
+      continue;
+    }
     out.push(it);
   }
 

@@ -339,6 +339,26 @@ export interface SheetPin {
 }
 
 /** A hierarchical sub-sheet. Mirrors KiCad `SCH_SHEET`. */
+/**
+ * A per-instance record of a sheet (KiCad `SCH_SHEET_INSTANCE`): the same sheet
+ * file placed at several points in the hierarchy gets one instance per
+ * sheet-path, each with its own page number. On a `(sheet …)` object these live
+ * under `(instances (project "name" (path "<ancestor-KIID-path>" (page "N"))))`;
+ * the document-level `(sheet_instances (path "/" (page "1")))` records the root
+ * sheet's own page (no project wrapper).
+ */
+export interface SheetInstance {
+  /** `(project "…")` name; undefined for the root document's sheet_instances. */
+  readonly project?: string;
+  /** KIID path of the *containing* sheet-path (excludes this sheet's own uuid),
+   *  e.g. "/" for a sheet directly under the root, or "/<rootUuid>/<ancestor>". */
+  readonly path: string;
+  /** `(page "…")` value; may be absent. */
+  readonly page?: string;
+  /** The `(path …)` node, kept so the page can be patched losslessly. */
+  readonly source: SList;
+}
+
 export interface SchSheet {
   readonly at: Vec2;
   readonly size: { readonly w: number; readonly h: number };
@@ -348,6 +368,8 @@ export interface SchSheet {
   /** Fields: at least "Sheetname" and "Sheetfile" (KiCad mandatory sheet fields). */
   readonly fields: readonly SchField[];
   readonly pins: readonly SheetPin[];
+  /** Per-sheet-path instances (`(instances (project …(path …(page …))))`). */
+  readonly instances: readonly SheetInstance[];
   readonly uuid?: string;
   readonly source: SList;
 }
@@ -385,6 +407,9 @@ export interface Schematic {
   readonly textBoxes: readonly SchTextBox[];
   /** Tables (SCH_TABLE): grids of table cells with borders/separators. */
   readonly tables: readonly SchTable[];
+  /** Document-level `(sheet_instances (path "/" (page "1")))` — the root sheet's
+   *  own page number(s), one per project path (no project wrapper). */
+  readonly sheetInstances: readonly SheetInstance[];
   /** The root AST node, retained as the lossless source of truth. */
   readonly source: SList;
   /** Display filename (app metadata set on load; not part of the file format). */
