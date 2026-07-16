@@ -35,7 +35,10 @@ export interface ManagedLibrary {
   libModified: boolean;
 }
 
-const BASE = import.meta.env.BASE_URL;
+// Deployments point VITE_SYMBOLS_URL at the full hosted library set (Cloudflare
+// R2 — same pattern as demos/3D models); the bundled subset is the fallback.
+const SYMBOLS_BASE =
+  (import.meta.env.VITE_SYMBOLS_URL as string | undefined) || `${import.meta.env.BASE_URL}symbols`;
 
 export class SymbolLibraryManager {
   private libs = new Map<string, ManagedLibrary>();
@@ -117,7 +120,7 @@ export class SymbolLibraryManager {
   async ensureLoaded(name: string): Promise<ManagedLibrary | undefined> {
     const lib = this.libs.get(name);
     if (!lib || lib.loaded) return lib;
-    const text = await fetch(`${BASE}symbols/${name}.kicad_sym`).then((r) => r.text());
+    const text = await fetch(`${SYMBOLS_BASE}/${name}.kicad_sym`).then((r) => r.text());
     for (const sym of readSymbolLib(parse(text))) {
       lib.symbols.set(sym.libId, sym);
       lib.original.set(sym.libId, sym);

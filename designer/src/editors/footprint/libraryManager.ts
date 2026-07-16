@@ -38,7 +38,11 @@ export interface ManagedFpLibrary {
   libModified: boolean;
 }
 
-const BASE = import.meta.env.BASE_URL;
+// Deployments point VITE_FOOTPRINTS_URL at the full hosted library set
+// (Cloudflare R2 — same pattern as demos/3D models); bundled subset fallback.
+export const FOOTPRINTS_BASE =
+  (import.meta.env.VITE_FOOTPRINTS_URL as string | undefined) ||
+  `${import.meta.env.BASE_URL}footprints`;
 
 /** A footprint's name is the `.kicad_mod` basename (its FPID item name). */
 export const fpNameOf = (path: string): string =>
@@ -159,7 +163,7 @@ export class FootprintLibraryManager {
     if (lib.scope === 'global') {
       try {
         const text = await fetch(
-          `${BASE}footprints/${encodeURIComponent(lib.name)}.pretty/${encodeURIComponent(fpName)}.kicad_mod`,
+          `${FOOTPRINTS_BASE}/${encodeURIComponent(lib.name)}.pretty/${encodeURIComponent(fpName)}.kicad_mod`,
         ).then((r) => {
           if (!r.ok) throw new Error(`${r.status}`);
           return r.text();

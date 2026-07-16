@@ -7,7 +7,9 @@
   "build": {
     "env": {
       "VITE_DEMOS_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev/demos",
-      "VITE_MODELS3D_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev"
+      "VITE_MODELS3D_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev",
+      "VITE_SYMBOLS_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev/symbols",
+      "VITE_FOOTPRINTS_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev/footprints"
     }
   }
 }

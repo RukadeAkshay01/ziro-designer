@@ -32,7 +32,7 @@ import { LoadingOverlay } from '../../ui/LoadingOverlay.js';
 import { toolbarIconUrl } from '../../ui/toolbarIcons.js';
 import { FP_TOP_TOOLBAR, FP_LEFT_TOOLBAR, FP_RIGHT_TOOLBAR } from './footprintToolbars.js';
 import { FootprintCanvas, type FootprintCanvasController } from './FootprintCanvas.js';
-import { FootprintLibraryManager, fpNameOf } from './libraryManager.js';
+import { FOOTPRINTS_BASE, FootprintLibraryManager, fpNameOf } from './libraryManager.js';
 import { FOOTPRINT_LAYERS } from './footprintBoard.js';
 import { layerColor, PCB_PAINT_ORDER } from '../pcb/pcbTheme.js';
 import { DEFAULT_DRAW_OPTIONS, type PcbDrawOptions } from '../pcb/renderBoard.js';
@@ -200,7 +200,7 @@ export function FootprintEditor({
       manager.current.addProjectLibrary(name, dir, entries);
     }
     // Bundled global footprint libraries (names up front, files fetched lazily).
-    fetch(`${import.meta.env.BASE_URL}footprints/index.json`)
+    fetch(`${FOOTPRINTS_BASE}/index.json`)
       .then((r) => (r.ok ? r.json() : []))
       .then((idx: { name: string; footprints: string[] }[]) => {
         for (const lib of idx) manager.current.addGlobalLibrary(lib.name, lib.footprints);

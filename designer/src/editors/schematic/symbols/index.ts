@@ -16,12 +16,15 @@ export interface LibIndexEntry {
   symbols: string[];
 }
 
-const BASE = import.meta.env.BASE_URL; // '/' locally, '/pcb/' on GitHub Pages
+// Deployments point VITE_SYMBOLS_URL at the full hosted library set (Cloudflare
+// R2 — same pattern as demos/3D models); the bundled subset is the fallback.
+const SYMBOLS_BASE =
+  (import.meta.env.VITE_SYMBOLS_URL as string | undefined) || `${import.meta.env.BASE_URL}symbols`;
 
 let indexPromise: Promise<LibIndexEntry[]> | null = null;
 /** Load the library index (library names + their symbol names) for search. */
 export function loadIndex(): Promise<LibIndexEntry[]> {
-  if (!indexPromise) indexPromise = fetch(`${BASE}symbols/index.json`).then((r) => r.json());
+  if (!indexPromise) indexPromise = fetch(`${SYMBOLS_BASE}/index.json`).then((r) => r.json());
   return indexPromise;
 }
 
@@ -29,7 +32,7 @@ const libCache = new Map<string, Promise<Map<string, LibSymbol>>>();
 function loadLibrary(name: string): Promise<Map<string, LibSymbol>> {
   let p = libCache.get(name);
   if (!p) {
-    p = fetch(`${BASE}symbols/${name}.kicad_sym`)
+    p = fetch(`${SYMBOLS_BASE}/${name}.kicad_sym`)
       .then((r) => r.text())
       .then((text) => {
         const map = new Map<string, LibSymbol>();

@@ -7,6 +7,10 @@ interface ImportMetaEnv {
   readonly VITE_MODELS3D_URL?: string;
   /** Hosted demo-corpus base URL (R2); falls back to the bundled /demos. */
   readonly VITE_DEMOS_URL?: string;
+  /** Full hosted symbol-library base URL (R2); falls back to bundled /symbols. */
+  readonly VITE_SYMBOLS_URL?: string;
+  /** Full hosted footprint-library base URL (R2); falls back to bundled /footprints. */
+  readonly VITE_FOOTPRINTS_URL?: string;
 }
 
 interface ImportMeta {

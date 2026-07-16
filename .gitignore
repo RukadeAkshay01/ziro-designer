@@ -13,6 +13,8 @@ coverage/
 # Local KiCad source/symbol clones used only as porting references
 kicad-src/
 kicad-symbols-src/
+kicad-footprints-src/
 
 # R2 upload staging built from kicad-src (never committed)
 tools/demos/out/
+tools/libraries/out/
