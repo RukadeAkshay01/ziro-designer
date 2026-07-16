@@ -1402,6 +1402,97 @@ body {
   line-height: 1.5;
 }
 
+/* Sign-in as a modal (guest-first: opened from the header/nudge, never a wall). */
+.ze-auth-modal {
+  position: relative;
+}
+.ze-auth-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  cursor: pointer;
+  color: #b7bcc4;
+  font-size: 13px;
+}
+.ze-auth-close:hover {
+  color: var(--chrome-fg);
+}
+.ze-auth-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 10px 14px;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ze-auth-google:hover {
+  background: #f2f2f2;
+}
+.ze-auth-google:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.ze-auth-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #7d838d;
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.ze-auth-or::before,
+.ze-auth-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--chrome-border);
+}
+.ze-auth-note {
+  margin: 0;
+  font-size: 13px;
+  color: #b7bcc4;
+  line-height: 1.5;
+}
+.ze-auth-modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Guest nudge (bottom-left, dismissible): local-only work, offer cloud backup. */
+.ze-guest-nudge {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+}
+.ze-guest-nudge .x {
+  cursor: pointer;
+  color: #b7bcc4;
+  padding: 0 2px;
+}
+.ze-guest-nudge .x:hover {
+  color: #fff;
+}
+
 /* ---- Account chip in the menu bar ---- */
 .ze-account {
   margin-left: auto;

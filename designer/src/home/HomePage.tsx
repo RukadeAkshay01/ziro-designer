@@ -10,6 +10,8 @@ import {
   type ProjectMeta,
 } from './projectStore.js';
 import { useAuth } from '../auth/AuthProvider.js';
+import { authEnabled } from '../auth/supabaseClient.js';
+import { SignInDialog } from '../auth/SignIn.js';
 import { syncAllProjects, pushProject, deleteCloudProject } from '../cloud/sync.js';
 import { LoadingOverlay, nextPaint } from '../ui/LoadingOverlay.js';
 import type { ProgressSnapshot } from '../ui/progress_reporter.js';
@@ -177,6 +179,25 @@ export function HomePage({
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
   const { session, signOut } = useAuth();
+  // Guest-first: sign-in is offered, never forced. The dialog opens from the
+  // header button or the local-only nudge; the nudge shows once the guest has
+  // real work at stake (a saved project) and stays dismissed once closed.
+  const [signInOpen, setSignInOpen] = useState(false);
+  const [guestNudgeDismissed, setGuestNudgeDismissed] = useState(() => {
+    try {
+      return localStorage.getItem('ziro.guestNudgeDismissed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const dismissGuestNudge = (): void => {
+    setGuestNudgeDismissed(true);
+    try {
+      localStorage.setItem('ziro.guestNudgeDismissed', '1');
+    } catch {
+      /* storage blocked — dismiss for this session only */
+    }
+  };
   const dirInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -735,6 +756,12 @@ export function HomePage({
                 Sign out
               </button>
             </div>
+          ) : authEnabled ? (
+            <div className="ze-account">
+              <button className="ze-account-signout" onClick={() => setSignInOpen(true)}>
+                Sign in
+              </button>
+            </div>
           ) : undefined
         }
       />
@@ -909,6 +936,22 @@ export function HomePage({
         />
       )}
       {prefsOpen && <PreferencesDialog onClose={() => setPrefsOpen(false)} />}
+
+      {/* Guest nudge: once there's real work at stake (a saved project) and no
+          account, offer — never force — signing in so it's backed up. */}
+      {authEnabled && !session && !guestNudgeDismissed && saved.length > 0 && !signInOpen && (
+        <div className="ze-guest-nudge">
+          <span>Your projects are saved on this device only.</span>
+          <button className="ze-btn primary" onClick={() => setSignInOpen(true)}>
+            Sign in to back them up
+          </button>
+          <span className="x" title="Dismiss" onClick={dismissGuestNudge}>
+            ✕
+          </span>
+        </div>
+      )}
+
+      {signInOpen && <SignInDialog onClose={() => setSignInOpen(false)} />}
 
       {/* Cloud-sync status (non-blocking): projects reconciling on sign-in. */}
       {syncState && (

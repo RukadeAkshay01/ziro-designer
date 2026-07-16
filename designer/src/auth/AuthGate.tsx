@@ -1,23 +1,26 @@
 import type { JSX, ReactNode } from 'react';
 import { authEnabled } from './supabaseClient.js';
 import { useAuth } from './AuthProvider.js';
-import { SignIn } from './SignIn.js';
 
 /**
- * Gate the app behind Supabase auth. When auth is not configured (no env vars),
- * the app runs freely offline.
+ * Guest-first entry: the app is never blocked behind sign-in. New users land
+ * directly in the project manager and work saves locally (IndexedDB); signing
+ * in — offered from the home page, not forced here — adds cloud backup and
+ * pushes any guest-made projects up on first sign-in (cloud/sync.ts).
+ *
+ * The only thing this gate still does is hold the first paint for the brief
+ * moment Supabase resolves an *existing* session, so a signed-in user doesn't
+ * flash the signed-out UI on every reload.
  */
 export function AuthGate({ children }: { children: ReactNode }): JSX.Element {
-  const { session, loading } = useAuth();
+  const { loading } = useAuth();
 
-  if (!authEnabled) return <>{children}</>;
-  if (loading) {
+  if (authEnabled && loading) {
     return (
       <div className="ze-auth">
         <div className="ze-auth-splash">Ziro Designer…</div>
       </div>
     );
   }
-  if (!session) return <SignIn />;
   return <>{children}</>;
 }

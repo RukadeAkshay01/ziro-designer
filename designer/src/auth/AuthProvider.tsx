@@ -22,6 +22,12 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
+  /** OAuth sign-in (redirect flow) — e.g. "Continue with Google". */
+  signInWithGoogle: () => Promise<{ error: string | null }>;
+  /** Passwordless: email a 6-digit sign-in code (creates the account if new). */
+  sendOtp: (email: string) => Promise<{ error: string | null }>;
+  /** Verify the emailed code; a session starts on success. */
+  verifyOtp: (email: string, token: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -70,6 +76,29 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       async signOut() {
         if (!supabase) return;
         await supabase.auth.signOut();
+      },
+      async signInWithGoogle() {
+        if (!supabase) return { error: 'Auth is not configured.' };
+        // Redirect flow: local (IndexedDB) work survives the round trip, and
+        // sign-in sync pushes it to the cloud once the session lands.
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: window.location.origin },
+        });
+        return { error: error?.message ?? null };
+      },
+      async sendOtp(email) {
+        if (!supabase) return { error: 'Auth is not configured.' };
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: true },
+        });
+        return { error: error?.message ?? null };
+      },
+      async verifyOtp(email, token) {
+        if (!supabase) return { error: 'Auth is not configured.' };
+        const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+        return { error: error?.message ?? null };
       },
     }),
     [session, loading],
