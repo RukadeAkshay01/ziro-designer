@@ -24,6 +24,9 @@ import {
   getRootPageNumber,
   setSheetPageNumberCommand,
   setRootPageNumberCommand,
+  setPageSettingsCommand,
+  getPageSettings,
+  type PageSettings,
   findMatches,
   replaceCommand,
   defaultSearchData,
@@ -84,6 +87,10 @@ import {
 import { DialogSchematicFind } from './dialogs/dialog_schematic_find.js';
 import { DialogAnnotate } from './dialogs/dialog_annotate.js';
 import { DialogLineProperties } from './dialogs/dialog_line_properties.js';
+import { DialogPageSettings } from './dialogs/dialog_page_settings.js';
+import { DialogPrint } from './dialogs/dialog_print.js';
+import { DialogPlot, type PlotFormat } from './dialogs/dialog_plot.js';
+import { printSheet, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
 import { settings, gridSizeToIU } from '../../prefs/settings.js';
@@ -509,6 +516,11 @@ export function SchematicEditor({
 
   // Annotate Schematic (SCH_EDIT_FRAME::AnnotateSymbols) dialog.
   const [annotateOpen, setAnnotateOpen] = useState(false);
+  // Page Settings (DIALOG_PAGES_SETTINGS), Print (DIALOG_PRINT) and Plot
+  // (DIALOG_PLOT_SCHEMATIC) dialogs — open flags.
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false);
+  const [printOpen, setPrintOpen] = useState(false);
+  const [plotOpen, setPlotOpen] = useState(false);
   const runAnnotate = useCallback(
     (opts: AnnotateOptions) => {
       runCommand(annotateCommand(libById, opts, selection));
@@ -521,6 +533,47 @@ export function SchematicEditor({
       runCommand(clearAnnotationCommand(scope, selection));
     },
     [runCommand, selection],
+  );
+
+  // Page Settings (DIALOG_PAGES_SETTINGS::onOK): write paper + title block back
+  // through an undoable command.
+  const applyPageSettings = useCallback(
+    (next: PageSettings) => {
+      runCommand(setPageSettingsCommand(next));
+      setPageSettingsOpen(false);
+    },
+    [runCommand],
+  );
+
+  // A base file name for a printed/plotted output (KiCad names plots after the
+  // sheet file): the current sheet's name without extension, else the title.
+  const outputBaseName = useCallback((): string => {
+    const base = currentFile !== DEFAULT_FILE ? currentFile : (fileName ?? '');
+    const noExt = base.replace(/\.kicad_sch$/i, '');
+    return noExt || doc?.titleBlock?.title || 'schematic';
+  }, [currentFile, fileName, doc]);
+
+  // Print (DIALOG_PRINT): render the current sheet and open the browser print flow.
+  const doPrint = useCallback(
+    (opts: PlotOpts) => {
+      if (doc) printSheet(doc, theme, opts, outputBaseName());
+      setPrintOpen(false);
+    },
+    [doc, theme, outputBaseName],
+  );
+
+  // Plot (DIALOG_PLOT_SCHEMATIC): write the chosen file format for download.
+  const doPlot = useCallback(
+    (format: PlotFormat, opts: PlotOpts) => {
+      if (doc) {
+        const name = outputBaseName();
+        if (format === 'svg') plotSvg(doc, theme, opts, name);
+        else if (format === 'png') void plotPng(doc, theme, opts, name);
+        else void plotPdf(doc, theme, opts, name);
+      }
+      setPlotOpen(false);
+    },
+    [doc, theme, outputBaseName],
   );
   useEffect(() => {
     // Changed search settings restart the scan (upstream m_foundItemHighlight reset).
@@ -1224,6 +1277,9 @@ export function SchematicEditor({
       else if (id === 'find') openFindDialog('find');
       else if (id === 'findReplace') openFindDialog('replace');
       else if (id === 'annotate') setAnnotateOpen(true);
+      else if (id === 'pageSettings') setPageSettingsOpen(true);
+      else if (id === 'print') setPrintOpen(true);
+      else if (id === 'plot') setPlotOpen(true);
       else if (id === 'editPageNumber') setPageEdit({ page: pageNumberOf(currentPath) });
       // Hierarchy navigation (SCH_NAVIGATE_TOOL). Back/Forward move the history
       // cursor without pushing; Up and Previous/Next go through changeSheet.
@@ -1339,6 +1395,10 @@ export function SchematicEditor({
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         promptOpen();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        // ACTIONS::print (Ctrl+P).
+        e.preventDefault();
+        setPrintOpen(true);
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -1615,6 +1675,14 @@ export function SchematicEditor({
   const _title =
     currentFile !== DEFAULT_FILE ? currentFile : (fileName ?? doc.titleBlock?.title ?? 'Root');
 
+  // Hierarchy-navigation buttons grey out when there's nowhere to go, matching
+  // KiCad's SCH_NAVIGATE_TOOL enable conditions (CanGoBack/Forward, CanGoUp):
+  // on a flat/root schematic Navigate Up has no parent to enter, so it disables.
+  const navDisabled = new Set<string>();
+  if (!navTool.current.canGoBack()) navDisabled.add('navBack');
+  if (!navTool.current.canGoForward()) navDisabled.add('navFwd');
+  if (parentPath(currentPath) === null) navDisabled.add('navUp');
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const files = [...e.dataTransfer.files];
@@ -1671,7 +1739,12 @@ export function SchematicEditor({
         }
       />
 
-      <Toolbar entries={TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
+      <Toolbar
+        entries={TOP_TOOLBAR}
+        orientation="horizontal"
+        disabledIds={navDisabled}
+        onActivate={onTopAction}
+      />
 
       <div className="ze-body">
         {(toggles.has('showProperties') || toggles.has('showHierarchy')) && (
@@ -1815,6 +1888,15 @@ export function SchematicEditor({
               onClose={() => setAnnotateOpen(false)}
             />
           )}
+          {pageSettingsOpen && doc && (
+            <DialogPageSettings
+              value={getPageSettings(doc)}
+              onOk={applyPageSettings}
+              onCancel={() => setPageSettingsOpen(false)}
+            />
+          )}
+          {printOpen && <DialogPrint onPrint={doPrint} onClose={() => setPrintOpen(false)} />}
+          {plotOpen && <DialogPlot onPlot={doPlot} onClose={() => setPlotOpen(false)} />}
         </div>
 
         <Toolbar

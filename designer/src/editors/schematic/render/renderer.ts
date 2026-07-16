@@ -144,6 +144,9 @@ export interface RenderOpts {
   showHiddenPins: boolean;
   showHiddenFields: boolean;
   showPageLimits: boolean;
+  /** Draw the page border + title block (LAYER_DRAWINGSHEET). Defaults to true;
+   *  Print/Plot's "drawing sheet" option turns it off. */
+  showDrawingSheet?: boolean;
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -274,7 +277,7 @@ export function renderSchematic(
       ctx.strokeRect(0, 0, page.w, page.h);
     }
   }
-  drawDrawingSheet(ctx, sch, theme);
+  if (opts.showDrawingSheet !== false) drawDrawingSheet(ctx, sch, theme);
 
   const hl = (id: string): boolean => highlight?.has(id) ?? false;
 
@@ -1643,7 +1646,7 @@ function drawText(
   // once into a Path2D (baseline-left origin, italic shear baked in) and cached
   // by text+size, then placed per call with a canvas transform — retained paths
   // make dense sheets (hundreds of labels/pin names) pan smoothly.
-  const { path, width } = textPath(text, heightIU, italic);
+  const width = glyphRun(text, heightIU, italic).width;
   const offX = right ? -width : left ? 0 : -width / 2; // default: centre
   const offY = top ? cap : bottom ? 0 : cap / 2; // baseline placement; default: middle
 
@@ -1656,40 +1659,88 @@ function drawText(
   ctx.lineWidth = bold ? heightIU / 5 : Math.max(heightIU * 0.11, DEFAULT_LINE_WIDTH * 0.6);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.stroke(path);
+  // Vector-text mode strokes segments directly (capturable by the SVG adapter);
+  // canvas keeps the retained Path2D fast path.
+  if (g_vectorText) strokeGlyphs(ctx, text, heightIU, italic);
+  else ctx.stroke(textPath(text, heightIU, italic).path);
   ctx.restore();
 }
 
-// Retained glyph runs: text+size+italic -> Path2D at a baseline-left origin.
-// (A crude size cap resets the cache; real sheets stay well under it.)
-const g_textPaths = new Map<string, { path: Path2D; width: number }>();
+// Vector-text mode (Plot to SVG): stroke glyph segments directly onto the
+// context instead of a retained Path2D, so a non-canvas 2D context (the SVG
+// adapter) can record them. Canvas rendering keeps the fast cached-path route.
+let g_vectorText = false;
+export function setVectorText(on: boolean): void {
+  g_vectorText = on;
+}
 
-function textPath(text: string, size: number, italic: boolean): { path: Path2D; width: number } {
+// Retained glyph runs: text+size+italic -> sheared polylines (baseline-left
+// origin) + advance width, cached by text+size. (A crude size cap resets the
+// cache; real sheets stay well under it.)
+const g_glyphRuns = new Map<string, { strokes: Vec2[][]; width: number }>();
+
+function glyphRun(
+  text: string,
+  size: number,
+  italic: boolean,
+): { strokes: Vec2[][]; width: number } {
   const key = `${size}|${italic ? 1 : 0}|${text}`;
-  let entry = g_textPaths.get(key);
+  let entry = g_glyphRuns.get(key);
   if (!entry) {
     const { strokes, width } = layoutText(text, size);
     // Italic: STROKE_GLYPH::Transform shears each point right by y·ITALIC_TILT
     // (y is negative above the baseline, so tops lean right) — glyph.cpp.
     const tilt = italic ? ITALIC_TILT : 0;
-    const path = new Path2D();
+    const sheared: Vec2[][] = strokes.map((stroke) =>
+      stroke.map((pt) => ({ x: pt.x - pt.y * tilt, y: pt.y })),
+    );
+    if (g_glyphRuns.size > 6000) g_glyphRuns.clear();
+    entry = { strokes: sheared, width };
+    g_glyphRuns.set(key, entry);
+  }
+  return entry;
+}
+
+// Retained Path2D per glyph run (canvas fast path only).
+const g_textPaths = new Map<string, Path2D>();
+
+function textPath(text: string, size: number, italic: boolean): { path: Path2D; width: number } {
+  const { strokes, width } = glyphRun(text, size, italic);
+  const key = `${size}|${italic ? 1 : 0}|${text}`;
+  let path = g_textPaths.get(key);
+  if (!path) {
+    path = new Path2D();
     for (const stroke of strokes) {
       if (stroke.length === 0) continue;
       const p0 = stroke[0]!;
-      path.moveTo(p0.x - p0.y * tilt, p0.y);
+      path.moveTo(p0.x, p0.y);
       if (stroke.length === 1)
-        path.lineTo(p0.x - p0.y * tilt + 0.01, p0.y); // lone point -> dot
-      else
-        for (let i = 1; i < stroke.length; i++) {
-          const pt = stroke[i]!;
-          path.lineTo(pt.x - pt.y * tilt, pt.y);
-        }
+        path.lineTo(p0.x + 0.01, p0.y); // lone point -> dot
+      else for (let i = 1; i < stroke.length; i++) path.lineTo(stroke[i]!.x, stroke[i]!.y);
     }
     if (g_textPaths.size > 6000) g_textPaths.clear();
-    entry = { path, width };
-    g_textPaths.set(key, entry);
+    g_textPaths.set(key, path);
   }
-  return entry;
+  return { path, width };
+}
+
+/** Stroke a glyph run directly onto the context (vector-text mode). */
+function strokeGlyphs(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  size: number,
+  italic: boolean,
+): void {
+  const { strokes } = glyphRun(text, size, italic);
+  for (const stroke of strokes) {
+    if (stroke.length === 0) continue;
+    ctx.beginPath();
+    const p0 = stroke[0]!;
+    ctx.moveTo(p0.x, p0.y);
+    if (stroke.length === 1) ctx.lineTo(p0.x + 0.01, p0.y);
+    else for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i]!.x, stroke[i]!.y);
+    ctx.stroke();
+  }
 }
 
 // ----- drawing sheet (page frame + title block) ------------------------------
@@ -1718,10 +1769,17 @@ const PAPER_MM: Record<string, [number, number]> = {
   USLedger: [431.8, 279.4],
 };
 
-/** Page size for a `(paper ...)` token in IU, or null when unknown/custom. */
+/** Page size for a `(paper ...)` token in IU, or null when unknown. Handles
+ *  the custom form `User <w> <h>` (millimetres) as well as the named sizes. */
 export function paperSizeIU(paper: string | undefined): { w: number; h: number } | null {
   if (!paper) return null;
   const parts = paper.split(/\s+/);
+  if (parts[0] === 'User') {
+    const w = Number(parts[1]);
+    const h = Number(parts[2]);
+    if (w > 0 && h > 0) return { w: w * MM, h: h * MM };
+    return null;
+  }
   const dims = PAPER_MM[parts[0]!];
   if (!dims) return null;
   const portrait = parts.includes('portrait');

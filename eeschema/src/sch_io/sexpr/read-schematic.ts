@@ -783,7 +783,10 @@ export function readSchematic(root: SList): Schematic {
   const generator = stringField(root, 'generator');
   const generatorVersion = stringField(root, 'generator_version');
   const uuid = stringField(root, 'uuid');
-  const paper = stringField(root, 'paper');
+  // The full paper spec, not just the name: "A4", "A4 portrait" for a rotated
+  // standard size, or "User 431.8 279.4" for a custom size (page_info format).
+  const paperNode = childNamed(root, 'paper');
+  const paper = paperNode ? args(paperNode).join(' ') : undefined;
   const titleBlockNode = childNamed(root, 'title_block');
   if (generator !== undefined) sch.generator = generator;
   if (generatorVersion !== undefined) sch.generatorVersion = generatorVersion;

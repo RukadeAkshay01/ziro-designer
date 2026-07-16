@@ -102,9 +102,9 @@ export function buildMenus(h: MenuHandlers, checks: MenuChecks = {}): Menu[] {
         SEP,
         stub('Schematic Setup...'),
         SEP,
-        stub('Page Settings...'),
-        stub('Print...', 'Ctrl+P'),
-        stub('Plot...'),
+        act('Page Settings...', 'page', 'pageSettings'),
+        act('Print...', 'print', 'print', 'Ctrl+P'),
+        act('Plot...', 'plot', 'plot'),
         SEP,
         // AddQuitOrClose: under the project manager the frame closes back to it.
         act('Close', 'close', 'close', 'Ctrl+W'),

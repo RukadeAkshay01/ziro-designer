@@ -21,6 +21,9 @@ interface Props {
   activeTool?: string;
   /** set of ids that are toggled on, for the left toolbar. */
   toggled?: ReadonlySet<string>;
+  /** ids to grey out dynamically (e.g. hierarchy nav when there's nowhere to go),
+   *  on top of a button's own static `disabled` flag. */
+  disabledIds?: ReadonlySet<string>;
   onActivate?: (id: string) => void;
 }
 
@@ -30,6 +33,7 @@ export function Toolbar({
   side,
   activeTool,
   toggled,
+  disabledIds,
   onActivate,
 }: Props): JSX.Element {
   return (
@@ -37,16 +41,17 @@ export function Toolbar({
       {entries.map((e, i) => {
         if (e === 'sep') return <span key={`s${i}`} className="ze-sep" />;
         const isActive = activeTool === e.id || toggled?.has(e.id);
+        const disabled = e.disabled || disabledIds?.has(e.id);
         const url = toolbarIconUrl(e.id);
         return (
           <button
             key={e.id}
-            className={`ze-tbtn${isActive ? ' active' : ''}${e.disabled ? ' disabled' : ''}`}
+            className={`ze-tbtn${isActive ? ' active' : ''}${disabled ? ' disabled' : ''}`}
             title={e.title}
             aria-label={e.title}
             aria-pressed={isActive}
-            disabled={e.disabled}
-            onClick={() => !e.disabled && onActivate?.(e.id)}
+            disabled={disabled}
+            onClick={() => !disabled && onActivate?.(e.id)}
           >
             {url ? <img src={url} alt="" /> : <Icon name={e.icon} />}
           </button>
