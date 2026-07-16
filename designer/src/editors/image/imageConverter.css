@@ -1,0 +1,348 @@
+/* Image Converter frame — matches the app chrome (shell.css variables) and the
+   Calculator Tools styling, laid out like KiCad's bitmap2cmp panel. */
+
+.imgc-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+  font:
+    13px / 1.45 system-ui,
+    sans-serif;
+}
+
+.imgc-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- left preview notebook --- */
+.imgc-notebook {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--chrome-border);
+}
+
+.imgc-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 10px 0;
+  background: var(--chrome-bg2);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.imgc-tab {
+  padding: 6px 16px;
+  cursor: pointer;
+  background: var(--chrome-bg2);
+  border: 1px solid var(--chrome-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #b8bcc4;
+  font: inherit;
+}
+
+.imgc-tab.active {
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+  font-weight: 600;
+  position: relative;
+  top: 1px;
+}
+
+.imgc-tab:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.imgc-view {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 18px;
+  /* light checkerboard so image transparency reads, like the desktop panel */
+  background-color: #1d1f23;
+  background-image:
+    linear-gradient(45deg, #26282d 25%, transparent 25%),
+    linear-gradient(-45deg, #26282d 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #26282d 75%),
+    linear-gradient(-45deg, transparent 75%, #26282d 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+}
+
+.imgc-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--chrome-border);
+}
+
+.imgc-drop {
+  text-align: center;
+  color: #9096a0;
+  line-height: 1.6;
+}
+
+.imgc-drop-title {
+  font-size: 14px;
+  color: #b8bcc4;
+  margin-bottom: 4px;
+}
+
+/* --- right control column --- */
+.imgc-side {
+  flex: none;
+  width: 316px;
+  overflow-y: auto;
+  padding: 10px 12px 24px;
+  background: var(--chrome-bg2);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.imgc-group {
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 8px 12px 10px;
+  margin: 0;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.imgc-group legend {
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+/* Image Information: 4-column grid (label | X | Y | unit) */
+.imgc-info {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr auto;
+  gap: 4px 10px;
+  align-items: center;
+}
+
+.imgc-info .k {
+  color: #c6cad2;
+}
+
+.imgc-info .v {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.imgc-info .u {
+  color: #9096a0;
+}
+
+/* Output Size row */
+.imgc-sizerow,
+.imgc-layerrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.imgc-sizerow .lbl {
+  min-width: 34px;
+}
+
+.imgc-layerrow {
+  margin: 4px 0 2px 24px;
+}
+
+.imgc-layerrow .lbl {
+  color: #c6cad2;
+}
+
+.imgc-input {
+  flex: 1;
+  min-width: 0;
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 3px 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.imgc-input:focus {
+  outline: 1px solid var(--chrome-active-border);
+}
+
+.imgc-input:disabled {
+  opacity: 0.5;
+}
+
+.imgc-select {
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 3px 6px;
+  font: inherit;
+}
+
+.imgc-select.grow {
+  flex: 1;
+}
+
+.imgc-select:disabled {
+  opacity: 0.5;
+}
+
+/* Options: threshold + negative */
+.imgc-thresh-label {
+  color: #c6cad2;
+}
+
+.imgc-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.imgc-slider input[type="range"] {
+  flex: 1;
+  accent-color: var(--chrome-active-border);
+}
+
+.imgc-slider-val {
+  min-width: 28px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--chrome-fg);
+}
+
+.imgc-check,
+.imgc-radio {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.imgc-check input,
+.imgc-radio input {
+  accent-color: var(--chrome-active-border);
+}
+
+/* Buttons */
+.imgc-btn {
+  background: #3a3d43;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.imgc-btn:hover:not(:disabled) {
+  background: var(--chrome-hover);
+}
+
+.imgc-btn.block {
+  width: 100%;
+}
+
+.imgc-btn.primary {
+  background: var(--chrome-active);
+  border-color: var(--chrome-active-border);
+}
+
+.imgc-btn.primary:hover:not(:disabled) {
+  background: #2069ad;
+}
+
+.imgc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- status bar (matches the other editors) --- */
+.imgc-statusbar {
+  flex: none;
+  display: flex;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  font-size: 12px;
+}
+
+.imgc-statusbar .cell {
+  padding: 4px 10px;
+  border-right: 1px solid var(--chrome-border);
+  color: #c6cad2;
+  font-variant-numeric: tabular-nums;
+}
+
+.imgc-statusbar .cell.grow {
+  flex: 1;
+}
+
+/* --- about modal (same pattern as the calculator's Modal) --- */
+.imgc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.imgc-modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-active-border);
+  border-radius: 5px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  width: 460px;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+}
+
+.imgc-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  font-weight: 600;
+}
+
+.imgc-modal-x {
+  background: none;
+  border: none;
+  color: var(--chrome-fg);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.imgc-modal-body {
+  padding: 12px;
+  overflow: auto;
+}
+
+.imgc-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--chrome-border);
+}

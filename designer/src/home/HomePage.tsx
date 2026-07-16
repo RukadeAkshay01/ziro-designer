@@ -92,6 +92,7 @@ const TILES: Tile[] = [
     id: 'image',
     name: 'Image Converter',
     desc: 'Convert bitmap images to schematic symbols or PCB footprints',
+    enabled: true,
   },
   {
     id: 'calculator',
@@ -153,6 +154,7 @@ export function HomePage({
   onOpenFootprintEditor,
   onOpenCalculator,
   onOpenDrawingSheetEditor,
+  onOpenImageConverter,
   initialFiles,
 }: {
   onOpenSchematic: () => void;
@@ -168,6 +170,8 @@ export function HomePage({
   onOpenCalculator?: () => void;
   /** Launch the Drawing Sheet Editor (pl_editor); a standalone tool. */
   onOpenDrawingSheetEditor?: () => void;
+  /** Launch the Image Converter (bitmap2cmp); a standalone tool. */
+  onOpenImageConverter?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
@@ -775,7 +779,9 @@ export function HomePage({
                         ? (): void => onOpenCalculator?.()
                         : t.id === 'drawingsheet'
                           ? (): void => onOpenDrawingSheetEditor?.()
-                          : (): void => launchSchematic();
+                          : t.id === 'image'
+                            ? (): void => onOpenImageConverter?.()
+                            : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}
