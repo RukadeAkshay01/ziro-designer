@@ -1,0 +1,290 @@
+/* Image Converter frame styling — matches the app chrome (KiCad dark theme). */
+
+.imgc-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+}
+
+.imgc-body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+/* ----- preview notebook ----- */
+.imgc-preview {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--chrome-border);
+}
+
+.imgc-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 8px 0;
+  background: var(--chrome-bg2);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.imgc-tab {
+  background: var(--chrome-bg2);
+  border: 1px solid var(--chrome-border);
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #b8bcc4;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.imgc-tab.active {
+  background: var(--panel-bg);
+  color: var(--chrome-fg);
+  position: relative;
+  top: 1px;
+}
+
+.imgc-tab:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.imgc-canvas-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 16px;
+  /* checkerboard so transparency is visible */
+  background-color: #1d1f23;
+  background-image:
+    linear-gradient(45deg, #26282d 25%, transparent 25%),
+    linear-gradient(-45deg, #26282d 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #26282d 75%),
+    linear-gradient(-45deg, transparent 75%, #26282d 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+}
+
+.imgc-canvas {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+  box-shadow: 0 0 0 1px var(--chrome-border);
+  background: #fff;
+}
+
+.imgc-empty {
+  text-align: center;
+  color: #8b8f97;
+}
+
+.imgc-empty .hint {
+  font-size: 12px;
+  color: #6b6f77;
+}
+
+/* ----- controls ----- */
+.imgc-controls {
+  flex: 0 0 300px;
+  width: 300px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--chrome-bg2);
+}
+
+.imgc-group {
+  border: 1px solid #55585e;
+  border-radius: 4px;
+  padding: 8px 10px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.imgc-group > legend {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9aa0aa;
+  padding: 0 4px;
+}
+
+.imgc-grid {
+  display: grid;
+  grid-template-columns: 1fr 70px 70px;
+  gap: 4px 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.imgc-grid .col-h {
+  text-align: center;
+  color: #9aa0aa;
+  font-weight: 600;
+}
+
+.imgc-grid .lbl {
+  color: #c6cad2;
+}
+
+.imgc-grid .val {
+  text-align: center;
+  color: var(--chrome-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.imgc-grid .dpi {
+  width: 100%;
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.imgc-grid .dpi:disabled {
+  opacity: 0.5;
+}
+
+.imgc-check,
+.imgc-radio,
+.imgc-slabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #c6cad2;
+  cursor: pointer;
+}
+
+.imgc-slabel {
+  cursor: default;
+  justify-content: space-between;
+}
+
+.imgc-slabel b {
+  color: var(--chrome-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.imgc-slider {
+  width: 100%;
+  accent-color: var(--chrome-active-border);
+}
+
+.imgc-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.imgc-btn {
+  background: #33363c;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 3px;
+  padding: 7px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.imgc-btn:hover:not(:disabled) {
+  background: var(--chrome-hover);
+}
+
+.imgc-btn.primary {
+  background: var(--chrome-active);
+  border-color: var(--chrome-active-border);
+}
+
+.imgc-btn.primary:hover:not(:disabled) {
+  background: #2069ad;
+}
+
+.imgc-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.imgc-select {
+  background: #1d1f23;
+  color: var(--chrome-fg);
+  border: 1px solid #55585e;
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.imgc-select:disabled {
+  opacity: 0.5;
+}
+
+/* ----- status bar ----- */
+.imgc-statusbar {
+  flex: 0 0 auto;
+  display: flex;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  font-size: 12px;
+}
+
+.imgc-statusbar .cell {
+  padding: 4px 10px;
+  border-right: 1px solid var(--chrome-border);
+  color: #c6cad2;
+}
+
+.imgc-statusbar .cell.grow {
+  flex: 1 1 auto;
+}
+
+/* ----- about modal ----- */
+.imgc-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.imgc-modal {
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-active-border);
+  border-radius: 5px;
+  padding: 18px 20px;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.imgc-modal h3 {
+  margin: 0 0 10px;
+}
+
+.imgc-modal ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.imgc-modal-foot {
+  margin-top: 14px;
+  text-align: right;
+}

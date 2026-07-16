@@ -9,7 +9,15 @@
  * reopens the last saved project.
  */
 export interface Session {
-  view: 'home' | 'schematic' | 'pcb' | 'symbols' | 'footprints' | 'calculator' | 'drawingsheet';
+  view:
+    | 'home'
+    | 'schematic'
+    | 'pcb'
+    | 'symbols'
+    | 'footprints'
+    | 'calculator'
+    | 'drawingsheet'
+    | 'image';
   startFile?: string | null;
 }
 
