@@ -906,7 +906,10 @@ export function DrawingSheetEditor({
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
       const tgt = e.target as HTMLElement | null;
-      if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT'))
+      if (
+        tgt &&
+        (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.tagName === 'SELECT')
+      )
         return;
       const dt = e.clipboardData;
       if (!dt) return;
@@ -1000,7 +1003,12 @@ export function DrawingSheetEditor({
             shortcut: 'Ctrl+C',
             disabled: selection.size === 0,
           },
-          { label: 'Paste', icon: 'paste', action: () => void pasteFromSystem(), shortcut: 'Ctrl+V' },
+          {
+            label: 'Paste',
+            icon: 'paste',
+            action: () => void pasteFromSystem(),
+            shortcut: 'Ctrl+V',
+          },
           {
             label: 'Delete',
             icon: 'dsDelete',
