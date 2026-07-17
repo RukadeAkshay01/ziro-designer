@@ -169,6 +169,10 @@ export function App(): JSX.Element {
     setSymMounted(true);
     setView('symbols');
   }, []);
+  const showFootprintEditor = useCallback(() => {
+    setFpMounted(true);
+    setView('footprints');
+  }, []);
 
   // The symbol editor's SCH_ACTIONS::addSymbolToSchematic: switch to eeschema
   // with the symbol attached to the cursor for placement.
@@ -265,6 +269,7 @@ export function App(): JSX.Element {
             onExitToHome={goHome}
             onShowPcb={pcbFile ? showPcb : undefined}
             onShowSymbolEditor={showSymbolEditor}
+            onShowFootprintEditor={showFootprintEditor}
             initialProject={projectFiles}
             initialFile={startFile}
             placeRequest={placeRequest}

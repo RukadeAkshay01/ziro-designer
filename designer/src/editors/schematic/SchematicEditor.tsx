@@ -93,6 +93,7 @@ import {
   defaultSchematicSetup,
   type SchematicSetup,
 } from './dialogs/dialog_schematic_setup.js';
+import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogPrint } from './dialogs/dialog_print.js';
 import { DialogPlot, type PlotFormat } from './dialogs/dialog_plot.js';
 import { printSheet, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
@@ -168,6 +169,7 @@ export function SchematicEditor({
   onExitToHome,
   onShowPcb,
   onShowSymbolEditor,
+  onShowFootprintEditor,
   initialProject,
   initialFile,
   placeRequest,
@@ -178,6 +180,8 @@ export function SchematicEditor({
   onShowPcb?: () => void;
   /** Open the Symbol Editor (the top toolbar's `symbolEditor` button). */
   onShowSymbolEditor?: () => void;
+  /** Open the Footprint Editor (the top toolbar's `footprintEditor` button). */
+  onShowFootprintEditor?: () => void;
   initialProject?: PickedFile[] | null;
   initialFile?: string | null;
   /** A symbol handed over by the Symbol Editor's "Add symbol to schematic": attach it to the cursor. */
@@ -532,6 +536,8 @@ export function SchematicEditor({
   // ERC severities + pin-conflict map that the ERC checker reads.
   const [setupOpen, setSetupOpen] = useState(false);
   const [setup, setSetup] = useState<SchematicSetup>(defaultSchematicSetup);
+  // Generate Bill of Materials (Symbol Fields Table export) dialog.
+  const [bomOpen, setBomOpen] = useState(false);
   const runAnnotate = useCallback(
     (opts: AnnotateOptions) => {
       runCommand(annotateCommand(libById, opts, selection));
@@ -1298,6 +1304,8 @@ export function SchematicEditor({
       else if (id === 'erc') runErcNow();
       else if (id === 'showPcbNew') onShowPcb?.();
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
+      else if (id === 'footprintEditor') onShowFootprintEditor?.();
+      else if (id === 'bom') setBomOpen(true);
       else if (id === 'openPreferences') setPrefsOpen(true);
       else if (id === 'close') onExitToHome();
       else if (id === 'find') openFindDialog('find');
@@ -1359,6 +1367,7 @@ export function SchematicEditor({
       runErcNow,
       onShowPcb,
       onShowSymbolEditor,
+      onShowFootprintEditor,
       onExitToHome,
       flatSheets,
       currentPath,
@@ -1932,6 +1941,13 @@ export function SchematicEditor({
                 setSetupOpen(false);
               }}
               onCancel={() => setSetupOpen(false)}
+            />
+          )}
+          {bomOpen && (
+            <DialogExportBom
+              docs={[...liveDocs().values()]}
+              baseName={outputBaseName()}
+              onClose={() => setBomOpen(false)}
             />
           )}
         </div>
