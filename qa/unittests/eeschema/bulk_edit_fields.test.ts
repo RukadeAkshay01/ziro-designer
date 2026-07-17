@@ -26,7 +26,7 @@ const idOf = (doc: ReturnType<typeof load>, uuid: string) =>
     uuid,
     doc.symbols.findIndex((s) => s.uuid === uuid),
   );
-const valueOf = (doc: ReturnType<typeof load>, uuid: string, key: string) =>
+const fieldValue = (doc: ReturnType<typeof load>, uuid: string, key: string) =>
   doc.symbols.find((s) => s.uuid === uuid)?.fields.find((f) => f.key === key)?.value;
 
 describe('bulkEditFieldsCommand', () => {
@@ -39,9 +39,9 @@ describe('bulkEditFieldsCommand', () => {
       ]),
     ).apply(doc);
 
-    expect(valueOf(after, 'r1', 'Value')).toBe('10k');
-    expect(valueOf(after, 'r1', 'MPN')).toBeUndefined();
-    expect(valueOf(after, 'r2', 'MPN')).toBe('RC0603FR-072KL');
+    expect(fieldValue(after, 'r1', 'Value')).toBe('10k');
+    expect(fieldValue(after, 'r1', 'MPN')).toBeUndefined();
+    expect(fieldValue(after, 'r2', 'MPN')).toBe('RC0603FR-072KL');
 
     const text = serializeSchematic(after);
     expect(text).toContain('(property "Value" "10k"');
@@ -52,7 +52,7 @@ describe('bulkEditFieldsCommand', () => {
   it('never removes a mandatory field, even when emptied', () => {
     const doc = load();
     const after = bulkEditFieldsCommand(new Map([[idOf(doc, 'r1'), { Value: '' }]])).apply(doc);
-    expect(valueOf(after, 'r1', 'Value')).toBe('');
+    expect(fieldValue(after, 'r1', 'Value')).toBe('');
   });
 
   it('is undoable in one step', () => {
@@ -67,9 +67,9 @@ describe('bulkEditFieldsCommand', () => {
         ]),
       ),
     );
-    expect(valueOf(after, 'r1', 'Value')).toBe('10k');
+    expect(fieldValue(after, 'r1', 'Value')).toBe('10k');
     const back = h.undo(after)!;
-    expect(valueOf(back, 'r1', 'Value')).toBe('1k');
-    expect(valueOf(back, 'r2', 'Value')).toBe('2k');
+    expect(fieldValue(back, 'r1', 'Value')).toBe('1k');
+    expect(fieldValue(back, 'r2', 'Value')).toBe('2k');
   });
 });
