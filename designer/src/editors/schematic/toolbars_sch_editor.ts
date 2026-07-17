@@ -59,7 +59,7 @@ export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'erc', icon: 'erc', title: 'Electrical Rules Checker' },
   { id: 'simulator', icon: 'simulator', title: 'Simulator', disabled: true },
   { id: 'assignFootprints', icon: 'assignFp', title: 'Assign Footprints...', disabled: true },
-  { id: 'editSymbolFields', icon: 'fields', title: 'Bulk Edit Symbol Fields...', disabled: true },
+  { id: 'editSymbolFields', icon: 'fields', title: 'Bulk Edit Symbol Fields...' },
   { id: 'bom', icon: 'bom', title: 'Generate Bill of Materials...' },
   sep,
   { id: 'showPcbNew', icon: 'showPcbNew', title: 'Switch to PCB Editor' },

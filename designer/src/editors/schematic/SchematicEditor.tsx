@@ -26,6 +26,7 @@ import {
   setRootPageNumberCommand,
   setPageSettingsCommand,
   getPageSettings,
+  bulkEditFieldsCommand,
   type PageSettings,
   findMatches,
   replaceCommand,
@@ -94,6 +95,7 @@ import {
   type SchematicSetup,
 } from './dialogs/dialog_schematic_setup.js';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
+import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
 import { DialogPrint } from './dialogs/dialog_print.js';
 import { DialogPlot, type PlotFormat } from './dialogs/dialog_plot.js';
 import { printSheet, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
@@ -538,6 +540,8 @@ export function SchematicEditor({
   const [setup, setSetup] = useState<SchematicSetup>(defaultSchematicSetup);
   // Generate Bill of Materials (Symbol Fields Table export) dialog.
   const [bomOpen, setBomOpen] = useState(false);
+  // Bulk Edit Symbol Fields (Symbol Fields Table edit view) dialog.
+  const [fieldsTableOpen, setFieldsTableOpen] = useState(false);
   const runAnnotate = useCallback(
     (opts: AnnotateOptions) => {
       runCommand(annotateCommand(libById, opts, selection));
@@ -577,6 +581,35 @@ export function SchematicEditor({
       setPrintOpen(false);
     },
     [doc, theme, outputBaseName],
+  );
+
+  // Bulk Edit Symbol Fields: apply the changed cells per sheet — the current
+  // sheet through the live undo history, other sheets through their own
+  // histories (the same cross-document pattern as editPageNumber/ReplaceAll).
+  const applyFieldsEdits = useCallback(
+    (edits: FieldsEdits) => {
+      const changedFiles: PickedFile[] = [];
+      for (const [file, perSymbol] of edits) {
+        const cmd = bulkEditFieldsCommand(perSymbol);
+        if (file === currentFile) {
+          runCommand(cmd);
+          continue;
+        }
+        const target = project.current.docs.get(file);
+        if (!target) continue;
+        if (!histories.current.has(file)) histories.current.set(file, new History());
+        const next = histories.current.get(file)!.execute(target, withCleanup(cmd));
+        project.current.docs.set(file, next);
+        try {
+          changedFiles.push({ name: file, text: serializeSchematic(next) });
+        } catch {
+          /* skip a bad sheet */
+        }
+      }
+      if (changedFiles.length) onProjectChange?.(changedFiles);
+      setFieldsTableOpen(false);
+    },
+    [currentFile, runCommand, onProjectChange],
   );
 
   // Plot (DIALOG_PLOT_SCHEMATIC): write the chosen file format for download.
@@ -1306,6 +1339,7 @@ export function SchematicEditor({
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
       else if (id === 'footprintEditor') onShowFootprintEditor?.();
       else if (id === 'bom') setBomOpen(true);
+      else if (id === 'editSymbolFields') setFieldsTableOpen(true);
       else if (id === 'openPreferences') setPrefsOpen(true);
       else if (id === 'close') onExitToHome();
       else if (id === 'find') openFindDialog('find');
@@ -1948,6 +1982,13 @@ export function SchematicEditor({
               docs={[...liveDocs().values()]}
               baseName={outputBaseName()}
               onClose={() => setBomOpen(false)}
+            />
+          )}
+          {fieldsTableOpen && (
+            <DialogSymbolFieldsTable
+              docs={liveDocs()}
+              onApply={applyFieldsEdits}
+              onClose={() => setFieldsTableOpen(false)}
             />
           )}
         </div>
