@@ -66,6 +66,67 @@ function MenuEntry({ item, close }: { item: MenuItem; close: () => void }): JSX.
   );
 }
 
+/** A cursor-positioned popup (KiCad's TOOL_MENU shown on right-click): the
+ *  same rows and styling as the menu-bar dropdowns, kept on-screen near the
+ *  viewport edges, closed by an outside click or Escape. */
+export function ContextMenu({
+  items,
+  x,
+  y,
+  onClose,
+}: {
+  items: MenuItem[];
+  x: number;
+  y: number;
+  onClose: () => void;
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: x, top: y });
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    // Capture phase so Escape closes the menu without also reaching the
+    // editor's hotkey handler (which would clear the selection).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPos({
+      left: Math.min(x, Math.max(4, window.innerWidth - r.width - 4)),
+      top: Math.min(y, Math.max(4, window.innerHeight - r.height - 4)),
+    });
+  }, [x, y]);
+
+  return (
+    <div
+      ref={ref}
+      className="ze-dropdown ze-context"
+      style={{ position: 'fixed', left: pos.left, top: pos.top, zIndex: 1000 }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {items.map((it, i) => (
+        <MenuEntry key={it.label ?? `s${i}`} item={it} close={onClose} />
+      ))}
+    </div>
+  );
+}
+
 /** A KiCad-style menu bar with click-to-open dropdowns and hover-to-switch. */
 export function MenuBar({
   menus,

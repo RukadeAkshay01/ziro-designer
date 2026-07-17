@@ -67,6 +67,7 @@ import {
   type PastePayload,
   type ErcViolation,
   type SheetTreeNode,
+  type ItemRef,
 } from '@ziroeda/eeschema';
 import {
   SchematicCanvas,
@@ -81,7 +82,7 @@ import { SymbolChooser } from './components/SymbolChooser.js';
 import { SymbolLibraryBrowser } from './components/SymbolLibraryBrowser.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { TOP_TOOLBAR, LEFT_TOOLBAR, RIGHT_TOOLBAR } from './toolbars_sch_editor.js';
-import { MenuBar } from '../../ui/MenuBar.js';
+import { MenuBar, ContextMenu, type MenuItem } from '../../ui/MenuBar.js';
 import { buildMenus, TOOL_HOTKEYS } from './menubar.js';
 import {
   SchNavigateTool,
@@ -134,6 +135,7 @@ const SETTINGS_TOGGLES = new Set([
   'toggleGrid',
   'toggleGridOverrides',
   'toggleHiddenPins',
+  'toggleHiddenFields',
   'crosshairSmall',
   'crosshairFull',
   'crosshair45',
@@ -177,6 +179,7 @@ export function SchematicEditor({
   onShowPcb,
   onShowSymbolEditor,
   onShowFootprintEditor,
+  onShowCalculator,
   initialProject,
   initialFile,
   placeRequest,
@@ -189,6 +192,8 @@ export function SchematicEditor({
   onShowSymbolEditor?: () => void;
   /** Open the Footprint Editor (the top toolbar's `footprintEditor` button). */
   onShowFootprintEditor?: () => void;
+  /** Open the Calculator Tools (Tools menu). */
+  onShowCalculator?: () => void;
   initialProject?: PickedFile[] | null;
   initialFile?: string | null;
   /** A symbol handed over by the Symbol Editor's "Add symbol to schematic": attach it to the cursor. */
@@ -272,6 +277,11 @@ export function SchematicEditor({
     kind: 'move' | 'drag';
     nonce: number;
   } | null>(null);
+  // Right-click selection context menu (SCH_SELECTION_TOOL's TOOL_MENU):
+  // client-space position plus the hit-tested item, or null when closed.
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hit: ItemRef | null } | null>(
+    null,
+  );
   // Editing an existing label's text/shape (DIALOG_LABEL_PROPERTIES).
   const [labelEdit, setLabelEdit] = useState<{
     index: number;
@@ -311,6 +321,7 @@ export function SchematicEditor({
     if (es.window.grid.show) t.add('toggleGrid');
     if (es.window.grid.overrides_enabled) t.add('toggleGridOverrides');
     if (es.appearance.show_hidden_pins) t.add('toggleHiddenPins');
+    if (es.appearance.show_hidden_fields) t.add('toggleHiddenFields');
     t.add(
       es.window.cursor.crosshair === '45'
         ? 'crosshair45'
@@ -417,6 +428,20 @@ export function SchematicEditor({
         }
         return new Set(hit);
       });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // Right-click with the select tool (SCH_SELECTION_TOOL): an unselected item
+  // under the cursor becomes the selection before the menu opens; over a
+  // selected item or empty canvas the selection is kept and the menu applies
+  // to it (KiCad selects the item, then pops the TOOL_MENU).
+  const onContextMenuRequest = useCallback(
+    (x: number, y: number, hit: ItemRef | null) => {
+      if (hit)
+        setSelection((prev) => (prev.has(hit.id) ? prev : new Set(promote(new Set([hit.id])))));
+      setCtxMenu({ x, y, hit });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -965,6 +990,51 @@ export function SchematicEditor({
     [doc, currentPath, switchSheet],
   );
 
+  // SCH_EDIT_TOOL::Properties — route a single item to its properties dialog:
+  // symbols open the full symbol dialog, labels/text boxes/tables their
+  // editors, wires/junctions/sheets their small dialogs. Shared by the E
+  // hotkey and the selection context menu, like the upstream action.
+  const openProperties = useCallback(
+    (id: string) => {
+      setDoc((d) => {
+        if (!d) return d;
+        if (d.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) setPropsTarget(id);
+        else if (d.labels.some((l, i) => refId('label', l.uuid, i) === id)) onEditItem(id, 'label');
+        else if (d.textBoxes.some((tb, i) => refId('textbox', tb.uuid, i) === id))
+          onEditItem(id, 'textbox');
+        else if (d.tables.some((t, i) => refId('table', t.uuid, i) === id)) onEditItem(id, 'table');
+        else if (d.lines.some((l, i) => refId('line', l.uuid, i) === id)) {
+          // Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES).
+          const li = d.lines.findIndex((l, i) => refId('line', l.uuid, i) === id);
+          const l = d.lines[li]!;
+          if (l.kind !== 'polyline')
+            setLineEdit({
+              index: li,
+              widthIU: l.stroke?.width ?? 0,
+              style: l.stroke?.type ?? 'default',
+            });
+        } else if (d.junctions.some((j, i) => refId('junction', j.uuid, i) === id)) {
+          const ji = d.junctions.findIndex((j, i) => refId('junction', j.uuid, i) === id);
+          setJunctionEdit({ index: ji, diameterIU: d.junctions[ji]!.diameter });
+        } else {
+          // Properties on a sheet opens its dialog (double-click enters it).
+          const si = d.sheets.findIndex((s, i) => refId('sheet', s.uuid, i) === id);
+          if (si !== -1) {
+            const sh = d.sheets[si]!;
+            setSheetEdit({
+              index: si,
+              name: sheetName(sh),
+              // Raw Sheetfile field value (may carry a sub-path), not the basename.
+              file: sh.fields.find((f) => f.key === 'Sheetfile')?.value ?? '',
+            });
+          }
+        }
+        return d;
+      });
+    },
+    [onEditItem],
+  );
+
   const openFile = useCallback(
     (file: File) => {
       if (!/\.kicad_sch$/i.test(file.name)) {
@@ -1364,6 +1434,14 @@ export function SchematicEditor({
       else if (id === 'editSymbolFields') setFieldsTableOpen(true);
       else if (id === 'symbolBrowser') setBrowserOpen(true);
       else if (id === 'assignFootprints') setAssignFpOpen(true);
+      else if (id === 'showCalculator') onShowCalculator?.();
+      // ACTIONS::selectAll / unselectAll (also on Ctrl+A / Ctrl+Shift+A).
+      else if (id === 'selectAll')
+        setDoc((d) => {
+          if (d) setSelection(boxSelect(d, libById, { x: 1e15, y: 1e15 }, { x: -1e15, y: -1e15 }));
+          return d;
+        });
+      else if (id === 'unselectAll') setSelection(new Set());
       // Group / Ungroup (SCH_GROUP_TOOL): members stay selected afterwards —
       // upstream selects the new group (= its members) / the freed members.
       else if (id === 'group')
@@ -1438,6 +1516,7 @@ export function SchematicEditor({
       onShowPcb,
       onShowSymbolEditor,
       onShowFootprintEditor,
+      onShowCalculator,
       onExitToHome,
       flatSheets,
       currentPath,
@@ -1449,6 +1528,105 @@ export function SchematicEditor({
     ],
   );
 
+  // The selection context menu, assembled the way the upstream TOOL_MENU is:
+  // each tool's Init() contributions in priority order — GROUP_TOOL's Grouping
+  // submenu (100), SCH_MOVE_TOOL move/drag and enterSheet/leaveSheet (150),
+  // SCH_EDIT_TOOL transforms + properties (200), wire placements (250), the
+  // clipboard block (300), then selectAll/unselectAll (400).
+  const buildContextMenu = (): MenuItem[] => {
+    const hit = ctxMenu?.hit ?? null;
+    const act = (label: string, id: string, shortcut?: string): MenuItem => ({
+      label,
+      icon: id,
+      shortcut,
+      action: () => onTopAction(id),
+    });
+    const tool = (label: string, id: string, shortcut?: string): MenuItem => ({
+      label,
+      icon: id,
+      shortcut,
+      action: () => onToolSelect(id),
+    });
+    const items: MenuItem[] = [];
+    if (selection.size > 0) {
+      items.push({
+        label: 'Grouping',
+        items: [act('Group Items', 'group'), act('Ungroup Items', 'ungroup')],
+      });
+      items.push(
+        {
+          label: 'Move',
+          icon: 'move',
+          shortcut: 'M',
+          action: () => setGrabRequest((p) => ({ kind: 'move', nonce: (p?.nonce ?? 0) + 1 })),
+        },
+        {
+          label: 'Drag',
+          icon: 'drag',
+          shortcut: 'G',
+          action: () => setGrabRequest((p) => ({ kind: 'drag', nonce: (p?.nonce ?? 0) + 1 })),
+        },
+      );
+      if (hit?.kind === 'sheet')
+        items.push({
+          label: 'Enter Sheet',
+          icon: 'enterSheet',
+          action: () => onEditItem(hit.id, 'sheet'),
+        });
+      items.push(
+        { sep: true },
+        act('Rotate Counterclockwise', 'rotateCCW', 'R'),
+        act('Rotate Clockwise', 'rotateCW', 'Shift+R'),
+        act('Mirror Vertically', 'mirrorV', 'Y'),
+        act('Mirror Horizontally', 'mirrorH', 'X'),
+      );
+      if (selection.size === 1)
+        items.push({
+          label: 'Properties...',
+          icon: 'properties',
+          shortcut: 'E',
+          action: () => openProperties([...selection][0]!),
+        });
+      if (hit?.kind === 'line')
+        items.push(
+          { sep: true },
+          tool('Place Junction', 'junction', 'J'),
+          tool('Place Net Label', 'placeLabel', 'L'),
+          tool('Place Global Label', 'placeGlobalLabel', 'Ctrl+L'),
+          tool('Place Hierarchical Label', 'placeHierLabel', 'H'),
+        );
+      items.push(
+        { sep: true },
+        act('Cut', 'cut', 'Ctrl+X'),
+        act('Copy', 'copy', 'Ctrl+C'),
+        act('Paste', 'paste', 'Ctrl+V'),
+        act('Delete', 'delete', 'Delete'),
+        {
+          label: 'Duplicate',
+          icon: 'duplicate',
+          shortcut: 'Ctrl+D',
+          action: duplicateSelection,
+        },
+      );
+    } else {
+      items.push(tool('Draw Wires', 'drawWire', 'W'), tool('Draw Buses', 'drawBus', 'B'));
+      if (parentPath(currentPath) !== null)
+        items.push({
+          label: 'Leave Sheet',
+          icon: 'navUp',
+          shortcut: 'Alt+Bksp',
+          action: () => onTopAction('navUp'),
+        });
+      items.push({ sep: true }, act('Paste', 'paste', 'Ctrl+V'));
+    }
+    items.push(
+      { sep: true },
+      act('Select All', 'selectAll', 'Ctrl+A'),
+      act('Unselect All', 'unselectAll', 'Ctrl+Shift+A'),
+    );
+    return items;
+  };
+
   const onLeftToggle = useCallback((id: string) => {
     if (SETTINGS_TOGGLES.has(id)) {
       settings.updateEeschema((s) => {
@@ -1457,6 +1635,8 @@ export function SchematicEditor({
           s.window.grid.overrides_enabled = !s.window.grid.overrides_enabled;
         else if (id === 'toggleHiddenPins')
           s.appearance.show_hidden_pins = !s.appearance.show_hidden_pins;
+        else if (id === 'toggleHiddenFields')
+          s.appearance.show_hidden_fields = !s.appearance.show_hidden_fields;
         else if (id === 'crosshairSmall') s.window.cursor.crosshair = 'small';
         else if (id === 'crosshairFull') s.window.cursor.crosshair = 'full';
         else if (id === 'crosshair45') s.window.cursor.crosshair = '45';
@@ -1483,9 +1663,21 @@ export function SchematicEditor({
     () =>
       buildMenus(
         { tool: onToolSelect, action: onTopAction, toggle: onLeftToggle },
-        { toggleHiddenPins: es.appearance.show_hidden_pins },
+        {
+          toggleHiddenPins: es.appearance.show_hidden_pins,
+          toggleHiddenFields: es.appearance.show_hidden_fields,
+          showProperties: toggles.has('showProperties'),
+          showHierarchy: toggles.has('showHierarchy'),
+        },
       ),
-    [onToolSelect, onTopAction, onLeftToggle, es.appearance.show_hidden_pins],
+    [
+      onToolSelect,
+      onTopAction,
+      onLeftToggle,
+      es.appearance.show_hidden_pins,
+      es.appearance.show_hidden_fields,
+      toggles,
+    ],
   );
 
   useEffect(() => {
@@ -1566,6 +1758,10 @@ export function SchematicEditor({
         // ACTIONS::zoomTool (Ctrl+F5): drag a rectangle to zoom to it.
         e.preventDefault();
         setActiveTool('zoomTool');
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h' && !e.shiftKey) {
+        // SCH_ACTIONS::showHierarchy (Ctrl+H): toggle the navigator panel.
+        e.preventDefault();
+        onLeftToggle('showHierarchy');
       } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
         // ACTIONS::toggleGridOverrides (Ctrl+Shift+G).
         e.preventDefault();
@@ -1673,56 +1869,10 @@ export function SchematicEditor({
           return;
         }
         // E = Properties (KiCad SCH_ACTIONS::properties) on a single selected
-        // item: symbols open the full dialog, labels/text and text boxes/tables
-        // open their editors (onEditItem routes by item kind).
+        // item (openProperties routes by item kind).
         if (e.key.toLowerCase() === 'e' && selection.size === 1) {
-          const id = [...selection][0]!;
-          setDoc((d) => {
-            if (!d) return d;
-            if (d.symbols.some((s, i) => refId('symbol', s.uuid, i) === id)) {
-              e.preventDefault();
-              setPropsTarget(id);
-            } else if (d.labels.some((l, i) => refId('label', l.uuid, i) === id)) {
-              e.preventDefault();
-              onEditItem(id, 'label');
-            } else if (d.textBoxes.some((tb, i) => refId('textbox', tb.uuid, i) === id)) {
-              e.preventDefault();
-              onEditItem(id, 'textbox');
-            } else if (d.tables.some((t, i) => refId('table', t.uuid, i) === id)) {
-              e.preventDefault();
-              onEditItem(id, 'table');
-            } else if (d.lines.some((l, i) => refId('line', l.uuid, i) === id)) {
-              // Wire/bus stroke (DIALOG_WIRE_BUS_PROPERTIES).
-              const li = d.lines.findIndex((l, i) => refId('line', l.uuid, i) === id);
-              const l = d.lines[li]!;
-              if (l.kind !== 'polyline') {
-                e.preventDefault();
-                setLineEdit({
-                  index: li,
-                  widthIU: l.stroke?.width ?? 0,
-                  style: l.stroke?.type ?? 'default',
-                });
-              }
-            } else if (d.junctions.some((j, i) => refId('junction', j.uuid, i) === id)) {
-              const ji = d.junctions.findIndex((j, i) => refId('junction', j.uuid, i) === id);
-              e.preventDefault();
-              setJunctionEdit({ index: ji, diameterIU: d.junctions[ji]!.diameter });
-            } else {
-              // E on a sheet opens its properties (double-click enters it).
-              const si = d.sheets.findIndex((s, i) => refId('sheet', s.uuid, i) === id);
-              if (si !== -1) {
-                e.preventDefault();
-                const sh = d.sheets[si]!;
-                setSheetEdit({
-                  index: si,
-                  name: sheetName(sh),
-                  // Raw Sheetfile field value (may carry a sub-path), not the basename.
-                  file: sh.fields.find((f) => f.key === 'Sheetfile')?.value ?? '',
-                });
-              }
-            }
-            return d;
-          });
+          e.preventDefault();
+          openProperties([...selection][0]!);
           return;
         }
         const toolId = TOOL_HOTKEYS[e.key.toLowerCase()];
@@ -1754,7 +1904,7 @@ export function SchematicEditor({
     searchData,
     doFind,
     openFindDialog,
-    onEditItem,
+    openProperties,
   ]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
@@ -1945,6 +2095,7 @@ export function SchematicEditor({
             pendingImage={pendingImage}
             onImagePlaced={onImagePlaced}
             grabRequest={grabRequest}
+            onContextMenuRequest={onContextMenuRequest}
             onZoomArea={(box) => {
               controller.current?.zoomToBox(box);
               setActiveTool('select');
@@ -1965,6 +2116,14 @@ export function SchematicEditor({
             onCursorMove={setCursor}
             onScaleChange={setScale}
           />
+          {ctxMenu && (
+            <ContextMenu
+              x={ctxMenu.x}
+              y={ctxMenu.y}
+              items={buildContextMenu()}
+              onClose={() => setCtxMenu(null)}
+            />
+          )}
           {ercResult !== null && (
             <ErcDialog
               violations={ercResult}

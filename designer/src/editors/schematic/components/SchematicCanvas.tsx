@@ -50,6 +50,7 @@ import {
   type LabelShape,
   type PastePayload,
   type ErcViolation,
+  type ItemRef,
 } from '@ziroeda/eeschema';
 import {
   renderSchematic,
@@ -331,6 +332,10 @@ interface Props {
   /** Zoom to Selection Area (ACTIONS::zoomTool): the user dragged a rectangle;
    *  fit the view to it (and the parent returns the tool to select). */
   onZoomArea?: (box: { minX: number; minY: number; maxX: number; maxY: number }) => void;
+  /** Plain right-click with the select tool idle (KiCad's selection-tool
+   *  context menu): `hit` is the already-hit-tested item under the cursor.
+   *  The editor updates the selection and pops the menu at the client point. */
+  onContextMenuRequest?: (clientX: number, clientY: number, hit: ItemRef | null) => void;
 }
 
 type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box' | 'lasso';
@@ -374,6 +379,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     onImagePlaced,
     grabRequest,
     onZoomArea,
+    onContextMenuRequest,
   },
   ref,
 ): JSX.Element {
@@ -1559,6 +1565,22 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
           else if (drawStateRef.current) {
             drawStateRef.current = null;
             draw();
+          } else if (
+            (activeTool === 'select' || activeTool === 'selectLasso') &&
+            !panMovedRef.current
+          ) {
+            // KiCad's selection-tool context menu: a plain right-click (not the
+            // end of a right-drag pan) hit-tests the point and asks the editor
+            // to select the item and pop the menu.
+            const vp = viewportRef.current;
+            if (!vp) return;
+            const hit = hitTest(
+              schematic,
+              libById,
+              toWorld(e.clientX, e.clientY),
+              (6 * dpr()) / vp.scale,
+            );
+            onContextMenuRequest?.(e.clientX, e.clientY, hit);
           }
         }}
         onPointerLeave={() => {
