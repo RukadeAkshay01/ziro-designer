@@ -83,6 +83,49 @@ export function editSymbolProperties(id: string, edit: SymbolEdit): EditCommand 
   };
 }
 
+/**
+ * Bulk field edit (the Symbol Fields Table's edit view,
+ * dialog_symbol_fields_table.cpp): set field *values* on many symbols in one
+ * undoable commit. `edits` maps a symbol's refId to `{ fieldName: newValue }`;
+ * an existing field updates in place, a missing one is appended (KiCad adds it
+ * at the symbol origin). An empty value on a non-mandatory field removes it.
+ */
+export function bulkEditFieldsCommand(
+  edits: ReadonlyMap<string, Readonly<Record<string, string>>>,
+): EditCommand {
+  return {
+    label: 'Edit Symbol Fields',
+    apply(doc: Schematic): Schematic {
+      return {
+        ...doc,
+        symbols: doc.symbols.map((s, i) => {
+          const edit = edits.get(refId('symbol', s.uuid, i));
+          if (!edit) return s;
+          let fields: SchField[] = [...s.fields];
+          for (const [key, value] of Object.entries(edit)) {
+            const idx = fields.findIndex((f) => f.key === key);
+            if (idx !== -1) {
+              if (value === '' && !isMandatoryField(key)) fields.splice(idx, 1);
+              else {
+                const f = fields[idx]!;
+                fields[idx] = { ...f, value, source: buildPropertyNode({ ...f, value }) };
+              }
+            } else if (value !== '') {
+              const nf = { key, value, at: s.at, angle: 0 };
+              fields = [...fields, { ...nf, source: buildPropertyNode(nf) }];
+            }
+          }
+          return { ...s, fields };
+        }),
+      };
+    },
+    invert(before: Schematic): EditCommand {
+      const prev = before.symbols.map((s, i) => [refId('symbol', s.uuid, i), s] as const);
+      return restoreSymbols(new Map(prev.filter(([rid]) => edits.has(rid))));
+    },
+  };
+}
+
 /** Restore captured symbols verbatim (the inverse of a properties edit). */
 function restoreSymbols(saved: ReadonlyMap<string, SchSymbol>): EditCommand {
   return {
