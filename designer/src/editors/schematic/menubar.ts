@@ -97,7 +97,11 @@ export function buildMenus(h: MenuHandlers, checks: MenuChecks = {}): Menu[] {
         },
         {
           label: 'Export',
-          items: [stub('Drawing to Clipboard'), stub('Netlist...'), stub('Symbols...')],
+          items: [
+            stub('Drawing to Clipboard'),
+            act('Netlist...', 'netlist', 'exportNetlist'),
+            stub('Symbols...'),
+          ],
         },
         SEP,
         act('Schematic Setup...', 'setup', 'schematicSetup'),

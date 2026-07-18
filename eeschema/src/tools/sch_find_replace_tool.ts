@@ -29,6 +29,10 @@ export interface SchSearchData {
   /** Search pin names and numbers (searchAllPins). */
   searchAllPins: boolean;
   searchCurrentSheetOnly: boolean;
+  /** Restrict matches to the current selection (searchSelectedOnly). */
+  searchSelectedOnly: boolean;
+  /** Search connected-net names too (searchNetNames). */
+  searchNetNames: boolean;
   /** Replace may touch reference designators (replaceReferences). */
   replaceReferences: boolean;
   /** The dialog is in replace mode (searchAndReplace): reference fields are
@@ -44,6 +48,8 @@ export const defaultSearchData = (): SchSearchData => ({
   searchAllFields: false,
   searchAllPins: false,
   searchCurrentSheetOnly: false,
+  searchSelectedOnly: false,
+  searchNetNames: false,
   replaceReferences: false,
   searchAndReplace: false,
 });
@@ -88,13 +94,47 @@ export interface FindMatch {
  * All matches in one document, in reading order (top-to-bottom then
  * left-to-right) so repeated Find Next progresses predictably.
  */
+export interface FindContext {
+  /** Current selection ids — required to honour "search the current selection only". */
+  selection?: ReadonlySet<string>;
+  /** Net name -> a locatable item id + position, for "search net names". Pass
+   *  the computeNetlist result; each net is located at one of its wire/label
+   *  items so Find Next can centre the view on it. */
+  nets?: readonly { name: string; items: readonly string[] }[];
+}
+
 export function findMatches(
   doc: Schematic,
   libById: ReadonlyMap<string, LibSymbol>,
   d: SchSearchData,
+  ctx: FindContext = {},
 ): FindMatch[] {
   const out: FindMatch[] = [];
   if (!d.findString) return out;
+
+  // Search connected-net names (SCH_FIND_REPLACE_TOOL search-net-names): a
+  // matching net is located at its first wire/label item.
+  if (d.searchNetNames && ctx.nets) {
+    const posById = new Map<string, { pos: Vec2; kind: 'label' | 'line' }>();
+    doc.labels.forEach((l, i) =>
+      posById.set(refId('label', l.uuid, i), { pos: l.at, kind: 'label' }),
+    );
+    doc.lines.forEach((l, i) => {
+      if (l.kind === 'wire') posById.set(refId('line', l.uuid, i), { pos: l.start, kind: 'line' });
+    });
+    for (const net of ctx.nets) {
+      if (!matchesText(net.name, d)) continue;
+      for (const itemId of net.items) {
+        const at = posById.get(itemId);
+        if (at) {
+          // The item id selects the right wire/label; kind only drives view
+          // centring, so 'label' (a point-located kind) is fine for both.
+          out.push({ id: itemId, kind: 'label', pos: at.pos, text: net.name });
+          break;
+        }
+      }
+    }
+  }
 
   // Labels cover every SCH_LABEL_BASE plus plain text (kind 'text').
   doc.labels.forEach((l, i) => {
@@ -153,8 +193,12 @@ export function findMatches(
       });
   });
 
-  out.sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x);
-  return out;
+  // "Search the current selection only": drop matches outside the selection.
+  const scoped =
+    d.searchSelectedOnly && ctx.selection ? out.filter((m) => ctx.selection!.has(m.id)) : out;
+
+  scoped.sort((a, b) => a.pos.y - b.pos.y || a.pos.x - b.pos.x);
+  return scoped;
 }
 
 const isWordChar = (c: string): boolean => /\w/.test(c);

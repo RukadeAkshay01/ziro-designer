@@ -197,6 +197,22 @@ function cssColor(c: readonly [number, number, number, number]): string {
   return `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${c[3]})`;
 }
 
+/** A small padlock glyph at (x, y) marking a locked item (IU coordinates). */
+function drawLockBadge(ctx: CanvasRenderingContext2D, x: number, y: number, theme: Theme): void {
+  const s = 0.9 * MM; // ~0.9 mm badge
+  ctx.save();
+  ctx.fillStyle = theme.hidden;
+  ctx.strokeStyle = theme.hidden;
+  ctx.lineWidth = 0.12 * MM;
+  // Shackle (arc) above the body.
+  ctx.beginPath();
+  ctx.arc(x + s / 2, y + s * 0.42, s * 0.28, Math.PI, 2 * Math.PI);
+  ctx.stroke();
+  // Body (rounded rect) of the lock.
+  ctx.fillRect(x + s * 0.14, y + s * 0.42, s * 0.72, s * 0.55);
+  ctx.restore();
+}
+
 /**
  * Apply a KiCad line style to the context (STROKE_PARAMS::Stroke): dash = 12×width,
  * gap = 3×width, dot ≈ 1×width (ISO 128-2 ratios). Resets to solid otherwise.
@@ -508,6 +524,9 @@ export function renderSchematic(
               : theme.fields));
       drawText(ctx, fd.shown, fd.centre, fd.h, color, undefined, fd.rot, fd.bold, fd.italic);
     }
+    // Locked symbols show a small padlock at the body's top-left corner
+    // (SCH_PAINTER draws a lock overlay for SCH_ITEM::IsLocked items).
+    if (sym.locked && bodyVisible) drawLockBadge(ctx, bb.minX, bb.minY, theme);
   });
 
   // Labels and free text (culled).

@@ -29,6 +29,7 @@ import {
   bulkEditFieldsCommand,
   groupItemsCommand,
   ungroupItemsCommand,
+  setSymbolsLockedCommand,
   expandSelectionToGroups,
   getSelectedItemsAsText,
   type PasteMode,
@@ -105,6 +106,7 @@ import {
   type SchematicSetup,
 } from './dialogs/dialog_schematic_setup.js';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
+import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
 import { DialogAssignFootprints } from './dialogs/dialog_assign_footprints.js';
 import { DialogPrint } from './dialogs/dialog_print.js';
@@ -594,6 +596,8 @@ export function SchematicEditor({
   const [setup, setSetup] = useState<SchematicSetup>(defaultSchematicSetup);
   // Generate Bill of Materials (Symbol Fields Table export) dialog.
   const [bomOpen, setBomOpen] = useState(false);
+  // Export Netlist (DIALOG_EXPORT_NETLIST) dialog.
+  const [netlistOpen, setNetlistOpen] = useState(false);
   // Bulk Edit Symbol Fields (Symbol Fields Table edit view) dialog.
   const [fieldsTableOpen, setFieldsTableOpen] = useState(false);
   // Symbol Library Browser (SYMBOL_VIEWER_FRAME).
@@ -926,7 +930,11 @@ export function SchematicEditor({
         : flatSheets;
       const all = sheets.flatMap((s) => {
         const d = docs.get(s.file);
-        return d ? findMatches(d, libById, searchData).map((m) => ({ ...m, sheet: s })) : [];
+        if (!d) return [];
+        // Selection scoping and net-name search only make sense on the sheet
+        // that owns the selection/netlist we have live (the current sheet).
+        const ctx = s.path === currentPath ? { selection, nets: netlist?.nets } : {};
+        return findMatches(d, libById, searchData, ctx).map((m) => ({ ...m, sheet: s }));
       });
       if (all.length === 0) {
         findCursor.current = -1;
@@ -948,7 +956,17 @@ export function SchematicEditor({
       requestAnimationFrame(() => requestAnimationFrame(() => controller.current?.centerOn(m.pos)));
       setFindStatus(`${findCursor.current + 1} of ${all.length}`);
     },
-    [doc, currentFile, currentPath, flatSheets, libById, searchData, switchSheet],
+    [
+      doc,
+      currentFile,
+      currentPath,
+      flatSheets,
+      libById,
+      searchData,
+      selection,
+      netlist,
+      switchSheet,
+    ],
   );
 
   // ReplaceAndFindNext: replace inside the current match, then find the next
@@ -1503,6 +1521,7 @@ export function SchematicEditor({
       else if (id === 'symbolEditor') onShowSymbolEditor?.();
       else if (id === 'footprintEditor') onShowFootprintEditor?.();
       else if (id === 'bom') setBomOpen(true);
+      else if (id === 'exportNetlist') setNetlistOpen(true);
       else if (id === 'editSymbolFields') setFieldsTableOpen(true);
       else if (id === 'symbolBrowser') setBrowserOpen(true);
       else if (id === 'assignFootprints') setAssignFpOpen(true);
@@ -1524,6 +1543,18 @@ export function SchematicEditor({
       else if (id === 'ungroup')
         setSelection((sel) => {
           if (sel.size > 0) runCommand(ungroupItemsCommand(sel));
+          return sel;
+        });
+      // Lock / Unlock / Toggle Lock (SCH_EDIT_TOOL): protect symbols from edits.
+      else if (id === 'lock' || id === 'unlock' || id === 'toggleLock')
+        setSelection((sel) => {
+          if (sel.size > 0)
+            runCommand(
+              setSymbolsLockedCommand(
+                sel,
+                id === 'lock' ? 'lock' : id === 'unlock' ? 'unlock' : 'toggle',
+              ),
+            );
           return sel;
         });
       else if (id === 'openPreferences') setPrefsOpen(true);
@@ -1633,6 +1664,18 @@ export function SchematicEditor({
         label: 'Grouping',
         items: [act('Group Items', 'group'), act('Ungroup Items', 'ungroup')],
       });
+      // Locking (SCH_SELECTION_TOOL makeLockMenu) — only symbols lock.
+      const selSymbols =
+        doc?.symbols.filter((s, i) => selection.has(refId('symbol', s.uuid, i))) ?? [];
+      if (selSymbols.length > 0) {
+        const anyUnlocked = selSymbols.some((s) => !s.locked);
+        const anyLocked = selSymbols.some((s) => s.locked);
+        const lockItems: MenuItem[] = [];
+        if (anyUnlocked) lockItems.push(act('Lock', 'lock'));
+        if (anyLocked) lockItems.push(act('Unlock', 'unlock'));
+        lockItems.push(act('Toggle Lock', 'toggleLock'));
+        items.push({ label: 'Locking', items: lockItems });
+      }
       items.push(
         {
           label: 'Move',
@@ -2340,6 +2383,14 @@ export function SchematicEditor({
               docs={[...liveDocs().values()]}
               baseName={outputBaseName()}
               onClose={() => setBomOpen(false)}
+            />
+          )}
+          {netlistOpen && doc && (
+            <DialogExportNetlist
+              doc={doc}
+              libById={libById}
+              baseName={outputBaseName()}
+              onClose={() => setNetlistOpen(false)}
             />
           )}
           {fieldsTableOpen && (

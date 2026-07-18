@@ -280,6 +280,7 @@ const SYMBOL_CHILD_ORDER = [
   'in_bom',
   'on_board',
   'dnp',
+  'locked',
   'fields_autoplaced',
   'uuid',
   'property',
@@ -338,6 +339,7 @@ function writeSymbol(sym: SchSymbol): SList {
   node = patchSymbolBool(node, 'in_bom', sym.inBom, true);
   node = patchSymbolBool(node, 'on_board', sym.onBoard, true);
   node = patchSymbolBool(node, 'dnp', sym.dnp, false);
+  node = patchSymbolBool(node, 'locked', sym.locked ?? false, false);
 
   // Rewrite the property block from the model's field list (order preserved), so
   // renamed/added/removed fields land exactly where KiCad writes them.

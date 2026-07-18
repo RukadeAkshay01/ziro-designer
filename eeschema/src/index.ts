@@ -23,6 +23,7 @@ export * from './fieldbox.js';
 export * from './tools/index.js';
 export * from './connectivity/index.js';
 export * from './exporters/bom.js';
+export * from './exporters/netlist.js';
 
 import { writeSchematic as _writeSchematic } from './sch_io/sexpr/write-schematic.js';
 import { serialize as _serialize } from '@ziroeda/sexpr/src/serializer.js';
