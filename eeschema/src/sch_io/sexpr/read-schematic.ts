@@ -380,6 +380,7 @@ function readSymbol(node: SList): SchSymbol {
     source: node,
   };
   if (mirror === 'x' || mirror === 'y') sym.mirror = mirror;
+  if (boolField(node, 'locked', false)) sym.locked = true;
   // Keep "token absent" distinct from "no": older files have no exclude_from_sim.
   if (childNamed(node, 'exclude_from_sim'))
     sym.excludedFromSim = boolField(node, 'exclude_from_sim', false);

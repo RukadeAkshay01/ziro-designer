@@ -216,6 +216,53 @@ export function replaceLabel(index: number, next: SchLabel): EditCommand {
   };
 }
 
+/**
+ * Lock / unlock the selected symbols (SCH_EDIT_TOOL::Lock / Unlock / ToggleLock).
+ * `mode` 'lock' sets, 'unlock' clears, 'toggle' flips each symbol individually.
+ * Only symbols carry a lock state in the schematic grammar.
+ */
+export function setSymbolsLockedCommand(
+  ids: ReadonlySet<string>,
+  mode: 'lock' | 'unlock' | 'toggle',
+): EditCommand {
+  return {
+    label: mode === 'unlock' ? 'Unlock' : 'Lock',
+    apply(doc: Schematic): Schematic {
+      return {
+        ...doc,
+        symbols: doc.symbols.map((s, i) => {
+          if (!ids.has(refId('symbol', s.uuid, i))) return s;
+          const locked = mode === 'toggle' ? !s.locked : mode === 'lock';
+          return locked ? { ...s, locked: true } : { ...s, locked: false };
+        }),
+      };
+    },
+    invert(before: Schematic): EditCommand {
+      // Restore each touched symbol's prior lock state exactly.
+      const prior = new Map<string, boolean>();
+      before.symbols.forEach((s, i) => {
+        const id = refId('symbol', s.uuid, i);
+        if (ids.has(id)) prior.set(id, s.locked ?? false);
+      });
+      return {
+        label: mode === 'unlock' ? 'Unlock' : 'Lock',
+        apply(doc: Schematic): Schematic {
+          return {
+            ...doc,
+            symbols: doc.symbols.map((s, i) => {
+              const id = refId('symbol', s.uuid, i);
+              return prior.has(id) ? { ...s, locked: prior.get(id)! } : s;
+            }),
+          };
+        },
+        invert(): EditCommand {
+          return setSymbolsLockedCommand(ids, mode);
+        },
+      };
+    },
+  };
+}
+
 /** Replace the sheet at `index` with `next` (e.g. after adding a sheet pin). */
 export function replaceSheet(index: number, next: SchSheet): EditCommand {
   return {

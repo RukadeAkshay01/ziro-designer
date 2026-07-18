@@ -180,8 +180,12 @@ export function DialogSchematicFind({
             />
             Search the current sheet only
           </label>
-          <label className="disabled" title="Not supported yet" style={{ opacity: 0.45 }}>
-            <input type="checkbox" disabled />
+          <label>
+            <input
+              type="checkbox"
+              checked={data.searchSelectedOnly}
+              onChange={(e) => onChange({ ...data, searchSelectedOnly: e.target.checked })}
+            />
             Search the current selection only
           </label>
           {replace && (
@@ -194,8 +198,12 @@ export function DialogSchematicFind({
               Replace matches in reference designators
             </label>
           )}
-          <label className="disabled" title="Not supported yet" style={{ opacity: 0.45 }}>
-            <input type="checkbox" disabled />
+          <label>
+            <input
+              type="checkbox"
+              checked={data.searchNetNames}
+              onChange={(e) => onChange({ ...data, searchNetNames: e.target.checked })}
+            />
             Search net names
           </label>
         </div>
