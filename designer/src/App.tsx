@@ -32,6 +32,18 @@ const projectNameOf = (files: PickedFile[]): string => {
 
 const pcbBasename = (p: string): string => p.split('/').pop()!.split('\\').pop()!;
 
+// The project's shared folder prefix (e.g. "proj/"), matching the home tree's
+// stripPrefix, or '' when the files sit at the root. New files added to the
+// project must carry this prefix so the tree keeps a single project folder.
+const projectDirPrefix = (files: PickedFile[]): string => {
+  const pro = files.find((f) => /\.kicad_pro$/i.test(f.name));
+  const anyPath = (pro?.name ?? files[0]?.name ?? '').replace(/\\/g, '/');
+  const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
+  return firstSeg && files.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
+    ? firstSeg
+    : '';
+};
+
 /**
  * Top-level app: KiCad's project manager, then the schematic, symbol and PCB
  * editors. Like KiCad, the editors share one open project and stay resident —
@@ -163,14 +175,15 @@ export function App(): JSX.Element {
 
   // Drawing Sheet Editor → Save (Save As): write the .kicad_wks into the open
   // project and offer it as a schematic drawing-sheet choice + in the file tree.
+  // Place it under the project's folder (the shared path prefix) so it sits
+  // alongside the .kicad_sch/.kicad_pcb rather than spawning a stray root entry.
   const onSaveToProject = useCallback(
     (fileName: string, text: string) => {
-      if (!projectFilesRef.current) return;
-      setSessionSheets((prev) => [
-        ...prev.filter((f) => f.name !== fileName),
-        { name: fileName, text },
-      ]);
-      persistFilesNow([{ name: fileName, text }]);
+      const cur = projectFilesRef.current;
+      if (!cur) return;
+      const name = fileName.includes('/') ? fileName : projectDirPrefix(cur) + fileName;
+      setSessionSheets((prev) => [...prev.filter((f) => f.name !== name), { name, text }]);
+      persistFilesNow([{ name, text }]);
     },
     [persistFilesNow],
   );
