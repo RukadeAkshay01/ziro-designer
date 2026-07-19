@@ -136,26 +136,52 @@ export function App(): JSX.Element {
   const projectFilesRef = useRef(projectFiles);
   projectFilesRef.current = projectFiles;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onProjectChange = useCallback((changed: PickedFile[]) => {
+  // Pending autosave (file name → bytes), coalesced until the timer fires or a
+  // flush forces it out.
+  const pendingWrite = useRef<Map<string, Uint8Array>>(new Map());
+  const writePending = useCallback(() => {
     const cur = projectFilesRef.current;
-    if (!cur || !storageAvailable()) return;
-    const fullByBase = new Map(cur.map((f) => [pcbBasename(f.name), f.name]));
-    const fullChanged = changed
-      .filter((f) => fullByBase.has(pcbBasename(f.name)))
-      .map((f) => ({ name: fullByBase.get(pcbBasename(f.name))!, bytes: enc.encode(f.text) }));
-    if (fullChanged.length === 0) return;
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
-          if (rec) await updateProjectFiles(rec.id, fullChanged);
-        } catch {
-          /* storage disabled */
-        }
-      })();
-    }, 1200);
+    if (!cur || pendingWrite.current.size === 0 || !storageAvailable()) return;
+    const files = [...pendingWrite.current].map(([name, bytes]) => ({ name, bytes }));
+    pendingWrite.current = new Map();
+    void (async () => {
+      try {
+        const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
+        if (rec) await updateProjectFiles(rec.id, files);
+      } catch {
+        /* storage disabled */
+      }
+    })();
   }, []);
+  const onProjectChange = useCallback(
+    (changed: PickedFile[]) => {
+      const cur = projectFilesRef.current;
+      if (!cur || !storageAvailable()) return;
+      const fullByBase = new Map(cur.map((f) => [pcbBasename(f.name), f.name]));
+      let queued = false;
+      for (const f of changed) {
+        const full = fullByBase.get(pcbBasename(f.name));
+        if (!full) continue;
+        pendingWrite.current.set(full, enc.encode(f.text));
+        queued = true;
+      }
+      if (!queued) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(writePending, 1200);
+    },
+    [writePending],
+  );
+  // Flush any pending autosave now — on leaving an editor and before reopening,
+  // so a quick "edit → home → reopen" never reads a stale project.
+  const schFlush = useRef<(() => void) | null>(null);
+  const registerSchFlush = useCallback((fn: (() => void) | null) => {
+    schFlush.current = fn;
+  }, []);
+  const flushSaves = useCallback(() => {
+    schFlush.current?.(); // push the editor's latest serialized sheets into the queue
+    clearTimeout(saveTimer.current);
+    writePending();
+  }, [writePending]);
 
   // Persist project files to IndexedDB/cloud immediately (no autosave debounce),
   // used for discrete actions — drawing-sheet reference changes and Save to
@@ -216,7 +242,10 @@ export function App(): JSX.Element {
     setSessionSheets([]);
   }, [projectName]);
 
-  const goHome = useCallback(() => setView('home'), []);
+  const goHome = useCallback(() => {
+    flushSaves(); // persist pending edits before the tree/reopen can read them
+    setView('home');
+  }, [flushSaves]);
   const showPcb = useCallback(() => {
     setPcbMounted(true);
     setView('pcb');
@@ -351,6 +380,7 @@ export function App(): JSX.Element {
             placeRequest={placeRequest}
             onProjectChange={onProjectChange}
             onPersistFiles={persistFilesNow}
+            registerAutosaveFlush={registerSchFlush}
             extraSheetFiles={sessionSheets}
             projectName={projectName}
           />

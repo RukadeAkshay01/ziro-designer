@@ -200,6 +200,7 @@ export function SchematicEditor({
   placeRequest,
   onProjectChange,
   onPersistFiles,
+  registerAutosaveFlush,
   extraSheetFiles,
   projectName,
 }: {
@@ -220,6 +221,9 @@ export function SchematicEditor({
   /** Persist project files immediately (no debounce) — used for the drawing-sheet
    *  reference in .kicad_pro so it survives a "go back and reopen". */
   onPersistFiles?: (files: PickedFile[]) => void;
+  /** Register a flush the host calls before leaving/reopening, so a pending
+   *  autosave is written out first (the "edit → home → reopen" case). */
+  registerAutosaveFlush?: (fn: (() => void) | null) => void;
   /** `.kicad_wks` saved into the project this session (Drawing Sheet Editor →
    *  Save to Project), offered as extra Page Settings drawing-sheet choices. */
   extraSheetFiles?: PickedFile[];
@@ -924,26 +928,43 @@ export function SchematicEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialProject]);
 
-  // Autosave: once edits settle, serialize the project's sheets and hand them
-  // up (App debounces the write to IndexedDB). Fires on sheet switch/load too,
-  // which just re-saves identical content — harmless.
+  // Serialize the project's sheets (current sheet + resident others) for autosave.
+  const serializeSheets = useCallback((): PickedFile[] => {
+    if (!doc) return [];
+    const docs = new Map(project.current.docs);
+    docs.set(currentFile, doc);
+    const files: PickedFile[] = [];
+    for (const [file, d] of docs) {
+      try {
+        files.push({ name: file, text: serializeSchematic(d) });
+      } catch {
+        /* skip a bad sheet */
+      }
+    }
+    return files;
+  }, [doc, currentFile]);
+
+  // Autosave: once edits settle, hand the sheets up (App debounces the write to
+  // IndexedDB). Fires on sheet switch/load too, re-saving identical content.
   useEffect(() => {
     if (!doc || !onProjectChange) return;
     const t = setTimeout(() => {
-      const docs = new Map(project.current.docs);
-      docs.set(currentFile, doc);
-      const files: PickedFile[] = [];
-      for (const [file, d] of docs) {
-        try {
-          files.push({ name: file, text: serializeSchematic(d) });
-        } catch {
-          /* skip a bad sheet */
-        }
-      }
+      const files = serializeSheets();
       if (files.length) onProjectChange(files);
     }, 900);
     return () => clearTimeout(t);
-  }, [doc, currentFile, onProjectChange]);
+  }, [doc, onProjectChange, serializeSheets]);
+
+  // Register a flush so the host can force the pending autosave out before the
+  // project is reopened (the "edit → home → reopen" case).
+  useEffect(() => {
+    if (!registerAutosaveFlush) return;
+    registerAutosaveFlush(() => {
+      const files = serializeSheets();
+      if (files.length) onProjectChange?.(files);
+    });
+    return () => registerAutosaveFlush(null);
+  }, [registerAutosaveFlush, onProjectChange, serializeSheets]);
 
   // "Add symbol to schematic" from the Symbol Editor: attach the symbol to the
   // cursor exactly as the Place Symbol tool does after its chooser.
