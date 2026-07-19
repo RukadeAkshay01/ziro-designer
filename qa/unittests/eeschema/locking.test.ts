@@ -35,10 +35,18 @@ describe('symbol locking', () => {
     const undone = h.undo(locked)!;
     expect(undone.symbols[0]!.locked ?? false).toBe(false);
 
-    // Toggle flips each symbol independently: R1 (off)->on, R2 (on)->off.
+    // Toggle over a mixed selection: because R2 is locked, upstream unlocks
+    // ALL (modifyLockSelected: any locked -> OFF), not a per-item flip.
     const toggled = setSymbolsLockedCommand(new Set(['u-1', 'u-2']), 'toggle').apply(doc);
-    expect(toggled.symbols[0]!.locked).toBe(true);
+    expect(toggled.symbols[0]!.locked).toBe(false);
     expect(toggled.symbols[1]!.locked).toBe(false);
+
+    // Toggle when none are locked locks all.
+    const bothUnlocked = load(`${sym('R1', 'u-1')} ${sym('R2', 'u-2')}`);
+    const lockedAll = setSymbolsLockedCommand(new Set(['u-1', 'u-2']), 'toggle').apply(
+      bothUnlocked,
+    );
+    expect(lockedAll.symbols.every((s) => s.locked)).toBe(true);
 
     // Unlock clears it.
     const unlocked = setSymbolsLockedCommand(new Set(['u-2']), 'unlock').apply(doc);

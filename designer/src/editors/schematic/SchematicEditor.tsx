@@ -31,6 +31,10 @@ import {
   ungroupItemsCommand,
   setSymbolsLockedCommand,
   expandSelectionToGroups,
+  applySelectionFilter,
+  defaultSelectionFilter,
+  selectionFilterAll,
+  type SelectionFilterOptions,
   getSelectedItemsAsText,
   type PasteMode,
   type PageSettings,
@@ -163,7 +167,10 @@ const LABEL_TOOL_KINDS: Record<string, LabelKind> = {
 };
 
 // KiCad's Selection Filter categories, laid out in two columns (row-major).
-const FILTER_CATS: [string, string][] = [
+// Selection Filter categories, in PANEL_SCH_SELECTION_FILTER order (the
+// "All items" master and "Locked items" special are handled separately).
+const FILTER_CATS: [keyof SelectionFilterOptions, string][] = [
+  ['ruleAreas', 'Rule Areas'],
   ['symbols', 'Symbols'],
   ['pins', 'Pins'],
   ['wires', 'Wires'],
@@ -171,7 +178,7 @@ const FILTER_CATS: [string, string][] = [
   ['graphics', 'Graphics'],
   ['images', 'Images'],
   ['text', 'Text'],
-  ['other', 'Other items'],
+  ['otherItems', 'Other items'],
 ];
 
 /** A file picked from disk for a project open. */
@@ -350,7 +357,9 @@ export function SchematicEditor({
     if (es.annotation.automatic) t.add('annotateAuto');
     return t;
   }, [localToggles, es]);
-  const [selFilter, setSelFilter] = useState<Set<string>>(new Set(FILTER_CATS.map((c) => c[0])));
+  // Selection Filter (SCH_SELECTION_FILTER_OPTIONS): gates which item types —
+  // and locked items — the selection accepts.
+  const [selFilter, setSelFilter] = useState<SelectionFilterOptions>(defaultSelectionFilter);
   const [cursor, setCursor] = useState<Vec2 | null>(null);
   const [scale, setScale] = useState(1);
   // The symbol whose properties dialog is open (its refId), or null.
@@ -396,10 +405,20 @@ export function SchematicEditor({
   const promote = (ids: ReadonlySet<string>): ReadonlySet<string> =>
     docRef.current ? expandSelectionToGroups(docRef.current, ids) : ids;
 
+  // The Selection Filter narrows a raw hit before it can enter the selection
+  // (SCH_SELECTION_TOOL::itemPassesFilter): locked items and disabled item
+  // types are dropped, so they can't be selected/moved/deleted.
+  const selFilterRef = useRef(selFilter);
+  selFilterRef.current = selFilter;
+  const filterIds = (ids: ReadonlySet<string>): ReadonlySet<string> =>
+    docRef.current ? applySelectionFilter(docRef.current, ids, selFilterRef.current) : ids;
+
   const onSelect = useCallback((id: string | null, additive: boolean) => {
     setHighlightItem(null); // a selection clears any net highlight (KiCad keeps the two exclusive)
     setSelection((prev) => {
       if (id === null) return additive ? prev : new Set();
+      // A filtered-out hit (locked / disabled type) behaves like empty space.
+      if (filterIds(new Set([id])).size === 0) return additive ? prev : new Set();
       if (additive) {
         const next = new Set(prev);
         if (next.has(id)) {
@@ -426,7 +445,9 @@ export function SchematicEditor({
     (ids: ReadonlySet<string>, additive: boolean, subtractive: boolean) => {
       setHighlightItem(null);
       setSelection((prev) => {
-        const hit = promote(ids);
+        // Box/lasso results pass through the Selection Filter before promotion
+        // (KiCad narrows the collector), so locked/disabled items never enter.
+        const hit = promote(filterIds(ids));
         if (subtractive) {
           const next = new Set(prev);
           for (const id of hit) next.delete(id);
@@ -2162,33 +2183,48 @@ export function SchematicEditor({
               <div className="ze-panel">
                 <div className="ze-panel-header">Selection Filter</div>
                 <div className="ze-panel-body">
+                  {/* "All items" toggles every category (not Locked items),
+                      exactly like PANEL_SCH_SELECTION_FILTER::OnFilterChanged. */}
                   <label>
                     <input
                       type="checkbox"
-                      checked={selFilter.size === FILTER_CATS.length}
-                      onChange={() =>
-                        setSelFilter((p) =>
-                          p.size === FILTER_CATS.length
-                            ? new Set()
-                            : new Set(FILTER_CATS.map((c) => c[0])),
-                        )
-                      }
+                      checked={selectionFilterAll(selFilter)}
+                      onChange={() => {
+                        const next = !selectionFilterAll(selFilter);
+                        setSelFilter((p) => ({
+                          ...p,
+                          symbols: next,
+                          text: next,
+                          wires: next,
+                          labels: next,
+                          pins: next,
+                          graphics: next,
+                          images: next,
+                          ruleAreas: next,
+                          otherItems: next,
+                        }));
+                      }}
                     />
                     All items
+                  </label>
+                  {/* Locked items is special (allows selecting locked items). */}
+                  <label title="Allow selection of locked items">
+                    <input
+                      type="checkbox"
+                      checked={selFilter.lockedItems}
+                      onChange={(e) =>
+                        setSelFilter((p) => ({ ...p, lockedItems: e.target.checked }))
+                      }
+                    />
+                    Locked items
                   </label>
                   <div className="ze-selfilter">
                     {FILTER_CATS.map(([key, label]) => (
                       <label key={key}>
                         <input
                           type="checkbox"
-                          checked={selFilter.has(key)}
-                          onChange={() =>
-                            setSelFilter((p) => {
-                              const n = new Set(p);
-                              n.has(key) ? n.delete(key) : n.add(key);
-                              return n;
-                            })
-                          }
+                          checked={selFilter[key]}
+                          onChange={(e) => setSelFilter((p) => ({ ...p, [key]: e.target.checked }))}
                         />
                         {label}
                       </label>
