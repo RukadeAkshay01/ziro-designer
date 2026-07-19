@@ -32,6 +32,22 @@ import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js
 
 const MM = 10000; // IU per mm, matches core units
 
+/**
+ * COLOR4D::Brightened(f): push each channel toward white by factor f
+ * (c·(1−f)+f). KiCad brightens selected items by 0.8 (pcb_painter.cpp getColor).
+ * Parses the `rgb()/rgba()` strings the theme emits and re-emits the same form.
+ */
+export function brightenColor(color: string, f: number): string {
+  if (f <= 0) return color;
+  const m = /rgba?\(([^)]+)\)/.exec(color);
+  if (!m) return color;
+  const parts = m[1]!.split(',').map((s) => s.trim());
+  const r = Math.round(Number(parts[0]) * (1 - f) + 255 * f);
+  const g = Math.round(Number(parts[1]) * (1 - f) + 255 * f);
+  const b = Math.round(Number(parts[2]) * (1 - f) + 255 * f);
+  return parts.length > 3 ? `rgba(${r},${g},${b},${parts[3]})` : `rgb(${r},${g},${b})`;
+}
+
 /** Object visibility + opacity, mirroring pcbnew's Appearance>Objects tab. */
 export interface PcbDrawOptions {
   tracks: boolean;
@@ -801,8 +817,14 @@ export function buildDrawSteps(
   // Overlay pass (live move preview): paint the items on top of an existing
   // frame, so skip the background clear and the drawing sheet.
   overlay = false,
+  // Selection brightening (pcb_painter.cpp: selected items are Brightened(0.8)).
+  // 0 = paint the layer colors as-is.
+  brighten = 0,
 ): (() => void)[] {
   const steps: (() => void)[] = [];
+  // Per-layer color, brightened toward white for a selection overlay.
+  const col = (layer: string): string => brightenColor(layerColor(layer), brighten);
+  const sp = (c: string): string => brightenColor(c, brighten);
   steps.push(() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     // The raster is kept transparent so the grid (painted on the live canvas
@@ -820,7 +842,7 @@ export function buildDrawSteps(
   const paintZones = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b?.hasZones || !opts.zones) return;
-    const color = layerColor(layer);
+    const color = col(layer);
     ctx.globalAlpha = opts.zoneOpacity;
     if (opts.zoneOutline) {
       // PCB_ACTIONS::zoneDisplayOutline — sketch the fill outlines.
@@ -836,7 +858,7 @@ export function buildDrawSteps(
   const paintCopper = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
-    const color = layerColor(layer);
+    const color = col(layer);
     if (b.hasGfxFill) {
       ctx.fillStyle = color;
       ctx.fill(b.gfxFill, 'nonzero');
@@ -864,7 +886,7 @@ export function buildDrawSteps(
   const paintText = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
-    ctx.strokeStyle = layerColor(layer);
+    ctx.strokeStyle = col(layer);
     if (opts.fpReferences) strokeAll(ctx, b.textRef);
     if (opts.fpValues) strokeAll(ctx, b.textVal);
     if (opts.fpText) strokeAll(ctx, b.textFp);
@@ -880,19 +902,19 @@ export function buildDrawSteps(
 
   steps.push(() => {
     if (opts.pads) {
-      ctx.fillStyle = PCB_SPECIAL.padHoleWall;
+      ctx.fillStyle = sp(PCB_SPECIAL.padHoleWall);
       ctx.fill(scene.padHoleWalls);
-      ctx.fillStyle = PCB_SPECIAL.padPlatedHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.padPlatedHole);
       ctx.fill(scene.padHolesPlated);
     }
     if (opts.vias) {
-      ctx.fillStyle = PCB_SPECIAL.viaHoleWall;
+      ctx.fillStyle = sp(PCB_SPECIAL.viaHoleWall);
       ctx.fill(scene.viaHoleWalls);
-      ctx.fillStyle = PCB_SPECIAL.viaHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.viaHole);
       ctx.fill(scene.viaHoles);
     }
     if (opts.pads) {
-      ctx.fillStyle = PCB_SPECIAL.nonPlatedHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.nonPlatedHole);
       ctx.fill(scene.padHolesNP);
     }
   });
@@ -912,6 +934,7 @@ export function drawBoard(
   opts: PcbDrawOptions = DEFAULT_DRAW_OPTIONS,
   sheet?: SheetInfo,
   overlay = false,
+  brighten = 0,
 ): void {
   for (const step of buildDrawSteps(
     ctx,
@@ -923,6 +946,7 @@ export function drawBoard(
     opts,
     sheet,
     overlay,
+    brighten,
   ))
     step();
 }
