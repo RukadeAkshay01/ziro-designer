@@ -29,6 +29,7 @@ export interface ManagerMenuHandlers {
   editPcb: () => void;
   editFootprints: () => void;
   openPreferences: () => void;
+  openPluginManager: () => void;
   showAbout: () => void;
   openDemo: (id: string) => void;
   hasProject: boolean;
@@ -148,7 +149,7 @@ export function buildManagerMenus(h: ManagerMenuHandlers): Menu[] {
         { label: 'Image Converter', shortcut: 'Ctrl+B', disabled: true },
         { label: 'Calculator Tools', disabled: true },
         { label: 'Drawing Sheet Editor', shortcut: 'Ctrl+Y', disabled: true },
-        { label: 'Plugin and Content Manager', shortcut: 'Ctrl+M', disabled: true },
+        { label: 'Plugin and Content Manager', shortcut: 'Ctrl+M', action: h.openPluginManager },
         SEP,
         { label: 'Edit Local File…', disabled: true }, // becomes the text viewer picker
       ],

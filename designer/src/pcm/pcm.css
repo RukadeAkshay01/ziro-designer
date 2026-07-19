@@ -1,0 +1,266 @@
+/* Plugin and Content Manager dialog (DIALOG_PCM). Reuses the shell modal chrome
+   (.ze-modal / .ze-btn) and adds the repository bar, tabs and package cards. */
+
+.ze-modal.ze-pcm-dialog {
+  width: 820px;
+  height: 640px;
+}
+
+.ze-pcm-repobar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  flex-wrap: wrap;
+}
+.ze-pcm-repobar select,
+.ze-pcm-addrepo input {
+  background: var(--chrome-bg2);
+  color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  padding: 3px 6px;
+  font: inherit;
+}
+.ze-pcm-addrepo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.ze-pcm-addrepo input {
+  width: 200px;
+}
+.ze-pcm-error {
+  padding: 6px 12px;
+  color: #ff9a9a;
+  background: rgba(180, 40, 40, 0.15);
+  font-size: 12px;
+}
+
+.ze-pcm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--chrome-border);
+}
+.ze-pcm-tab {
+  padding: 6px 14px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  color: #9a9ca0;
+  cursor: pointer;
+  font: inherit;
+}
+.ze-pcm-tab:hover {
+  color: var(--chrome-fg);
+}
+.ze-pcm-tab.active {
+  color: var(--chrome-fg);
+  background: var(--chrome-bg2);
+  border-color: var(--chrome-border);
+}
+
+.ze-pcm-body {
+  display: block;
+  overflow: auto;
+  padding: 10px 12px;
+}
+.ze-pcm-empty {
+  padding: 24px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+.ze-pcm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ze-pcm-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--chrome-bg2);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+}
+.ze-pcm-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.ze-pcm-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.ze-pcm-card-title .name {
+  font-weight: 600;
+}
+.ze-pcm-card-title .ver {
+  font-size: 11px;
+  color: #9a9ca0;
+}
+.ze-pcm-card-desc {
+  margin-top: 3px;
+  font-size: 13px;
+  color: #d7d8da;
+}
+.ze-pcm-card-meta {
+  margin-top: 3px;
+  font-size: 11px;
+  color: #9a9ca0;
+}
+.ze-pcm-card-actions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(120, 180, 120, 0.2);
+  color: #a9e0a9;
+  border: 1px solid rgba(120, 180, 120, 0.4);
+}
+.badge.active {
+  background: rgba(120, 160, 220, 0.22);
+  color: #a9c8ec;
+  border-color: rgba(120, 160, 220, 0.45);
+}
+
+.ze-pcm-swatches {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+}
+.ze-pcm-swatches .sw {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.ze-pcm-footer {
+  justify-content: flex-start;
+  align-items: center;
+}
+.ze-pcm-status {
+  font-size: 12px;
+  color: #a9e0a9;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ze-pcm-hint {
+  font-size: 11px;
+}
+
+/* search box in the repository bar */
+.ze-pcm-search {
+  background: var(--chrome-bg2);
+  color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: inherit;
+  width: 180px;
+}
+
+/* runtime-kind explanatory banner (plugins / fab / data sources) */
+.ze-pcm-note {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #d7d8da;
+  background: rgba(120, 160, 220, 0.12);
+  border: 1px solid rgba(120, 160, 220, 0.3);
+  border-radius: 6px;
+}
+
+/* category / tag chips */
+.chip {
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  color: #b9bbbf;
+}
+
+/* version-status, update, pin and pending-action badges */
+.badge.status {
+  background: rgba(210, 170, 90, 0.2);
+  color: #e6c07b;
+  border-color: rgba(210, 170, 90, 0.4);
+}
+.badge.update,
+.badge.install {
+  background: rgba(120, 160, 220, 0.22);
+  color: #a9c8ec;
+  border-color: rgba(120, 160, 220, 0.45);
+}
+.badge.pin {
+  background: rgba(200, 160, 90, 0.18);
+  color: #e0b46a;
+  border-color: rgba(200, 160, 90, 0.4);
+}
+.badge.uninstall {
+  background: rgba(200, 90, 90, 0.18);
+  color: #e69a9a;
+  border-color: rgba(200, 90, 90, 0.4);
+}
+
+.ze-btn.pinned {
+  border-color: rgba(200, 160, 90, 0.5);
+  color: #e0b46a;
+}
+
+/* details pane (expanded card) */
+.ze-linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #7aa2f7;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+.ze-pcm-details {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--chrome-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ze-pcm-details p {
+  margin: 0 0 6px;
+}
+.ze-pcm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+.ze-pcm-reslink {
+  display: inline-block;
+  margin-right: 12px;
+  color: #7aa2f7;
+  text-transform: capitalize;
+}

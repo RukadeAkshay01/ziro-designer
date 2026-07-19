@@ -44,6 +44,7 @@ export type { PickedHomeFile } from './files.js';
 import { archiveEntries, zipArchive, expandArchive } from './project_archiver.js';
 import { AboutDialog } from './dialogs/dialog_about.js';
 import { TextViewerDialog } from './dialogs/dialog_text_viewer.js';
+import { PluginManagerDialog } from '../pcm/PluginManagerDialog.js';
 import { buildManagerMenus } from './menubar.js';
 import { PreferencesDialog } from '../prefs/PreferencesDialog.js';
 import { TemplateDialog } from './dialogs/dialog_template_selector.js';
@@ -113,6 +114,7 @@ const TILES: Tile[] = [
     id: 'pcm',
     name: 'Plugin and Content Manager',
     desc: 'Manage downloadable packages from KiCad and 3rd party repositories',
+    enabled: true,
   },
 ];
 
@@ -223,6 +225,7 @@ export function HomePage({
   const [aboutOpen, setAboutOpen] = useState(false);
   const [textView, setTextView] = useState<PickedHomeFile | null>(null);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [pcmOpen, setPcmOpen] = useState(false);
   // New Project / New from Template (upstream v10: one template selector).
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
   const [tplOpen, setTplOpen] = useState(false);
@@ -675,6 +678,7 @@ export function HomePage({
     editPcb: launchPcb,
     editFootprints: () => onOpenFootprintEditor?.(picked ?? undefined),
     openPreferences: () => setPrefsOpen(true),
+    openPluginManager: () => setPcmOpen(true),
     showAbout: () => setAboutOpen(true),
     openDemo: (id) => void openDemoProject(id),
     hasProject: !!picked,
@@ -699,6 +703,7 @@ export function HomePage({
       else if (k === 'l') run(() => onOpenSymbolEditor?.(picked ?? undefined));
       else if (k === 'p' && picked) run(launchPcb);
       else if (k === 'f') run(() => onOpenFootprintEditor?.(picked ?? undefined));
+      else if (k === 'm') run(() => setPcmOpen(true));
       else if (k === ',') run(() => setPrefsOpen(true));
     };
     window.addEventListener('keydown', onKey);
@@ -847,7 +852,9 @@ export function HomePage({
                           ? (): void => onOpenDrawingSheetEditor?.()
                           : t.id === 'image'
                             ? (): void => onOpenImageConverter?.()
-                            : (): void => launchSchematic();
+                            : t.id === 'pcm'
+                              ? (): void => setPcmOpen(true)
+                              : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}
@@ -936,6 +943,7 @@ export function HomePage({
         />
       )}
       {prefsOpen && <PreferencesDialog onClose={() => setPrefsOpen(false)} />}
+      {pcmOpen && <PluginManagerDialog onClose={() => setPcmOpen(false)} />}
 
       {/* Guest nudge: once there's real work at stake (a saved project) and no
           account, offer — never force — signing in so it's backed up. */}

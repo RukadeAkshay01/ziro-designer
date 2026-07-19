@@ -10,6 +10,7 @@ import {
 } from './settings.js';
 import { BUILTIN_THEMES, KICAD_DEFAULT, type Theme } from '../editors/schematic/theme.js';
 import { TOOL_HOTKEYS } from '../editors/schematic/menubar.js';
+import { pcm, usePcmVersion } from '../pcm/pcmStore.js';
 
 /**
  * The Preferences dialog — the web mirror of KiCad's PAGED_DIALOG preferences
@@ -346,10 +347,16 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }): JSX.Ele
     ['alt', 'Alt'],
   ];
 
+  usePcmVersion();
+  // Colour themes installed via the Plugin and Content Manager, offered here
+  // alongside the built-in themes.
+  const installedThemes = pcm.installedThemes();
   const themeId = eeschema.appearance.color_theme;
   const activeColors: Theme = useMemo(() => {
     const builtin = BUILTIN_THEMES[themeId];
     if (builtin) return builtin.theme;
+    const installed = pcm.themeById(themeId);
+    if (installed) return installed;
     return { ...KICAD_DEFAULT, ...userColors } as Theme;
   }, [themeId, userColors]);
 
@@ -1596,6 +1603,7 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }): JSX.Ele
                 options={[
                   ['_builtin_default', 'KiCad Default'],
                   ['_builtin_classic', 'KiCad Classic'],
+                  ...installedThemes.map((t): [string, string] => [t.id, t.name]),
                   ['user', 'User'],
                 ]}
                 onChange={(v) =>
