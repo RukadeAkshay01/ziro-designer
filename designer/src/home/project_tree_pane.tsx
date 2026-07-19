@@ -56,6 +56,7 @@ export function ProjectTreePane({
   onOpenSchematic,
   onOpenSymbolFile,
   onOpenFootprintFile,
+  onOpenDrawingSheetFile,
   onOpenProjectPicker,
   onSelectFiles,
 }: {
@@ -79,6 +80,7 @@ export function ProjectTreePane({
   onOpenSchematic: (startFile?: string) => void;
   onOpenSymbolFile?: (file: PickedHomeFile) => void;
   onOpenFootprintFile?: (file: PickedHomeFile) => void;
+  onOpenDrawingSheetFile?: (file: PickedHomeFile) => void;
   onOpenProjectPicker: () => void;
   onSelectFiles: () => void;
 }): JSX.Element {
@@ -136,9 +138,11 @@ export function ProjectTreePane({
     const isSch = /\.kicad_sch$/i.test(node.name);
     const isSym = /\.kicad_sym$/i.test(node.name);
     const isMod = /\.kicad_mod$/i.test(node.name);
+    const isWks = /\.kicad_wks$/i.test(node.name);
     // PROJECT_TREE_ITEM::Activate: each document type routes to the editor it
     // belongs to (a .kicad_mod to the Footprint Editor, a .kicad_sym to the
-    // Symbol Editor, a board to the PCB Editor, a sheet to the Schematic Editor).
+    // Symbol Editor, a board to the PCB Editor, a sheet to the Schematic Editor,
+    // a drawing sheet to the Drawing Sheet Editor).
     const openFn =
       isPcb && onOpenPcbFile && node.file
         ? () => onOpenPcbFile(node.file!)
@@ -148,7 +152,9 @@ export function ProjectTreePane({
             ? () => onOpenSymbolFile(node.file!)
             : isMod && onOpenFootprintFile && node.file
               ? () => onOpenFootprintFile(node.file!)
-              : undefined;
+              : isWks && onOpenDrawingSheetFile && node.file
+                ? () => onOpenDrawingSheetFile(node.file!)
+                : undefined;
     const openTitle = isPcb
       ? 'Double-click to open in the PCB Editor'
       : isSch
@@ -157,7 +163,9 @@ export function ProjectTreePane({
           ? 'Double-click to open in the Symbol Editor'
           : isMod
             ? 'Double-click to open in the Footprint Editor'
-            : node.path;
+            : isWks
+              ? 'Double-click to open in the Drawing Sheet Editor'
+              : node.path;
     // KiCad's project tree: single click selects, double click opens the file.
     return (
       <div

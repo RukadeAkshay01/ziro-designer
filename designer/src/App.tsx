@@ -81,6 +81,14 @@ export function App(): JSX.Element {
   // each activation so a resident editor re-opens on the newly-picked file.
   const [fpRequest, setFpRequest] = useState<{ file: string | null; nonce: number } | null>(null);
   const [symRequest, setSymRequest] = useState<{ file: string | null; nonce: number } | null>(null);
+  // A .kicad_wks the project manager double-clicked into the Drawing Sheet
+  // Editor: its name + content, re-sent with a fresh nonce so a resident editor
+  // re-opens on the newly-picked file.
+  const [dsRequest, setDsRequest] = useState<{
+    name: string;
+    text: string;
+    nonce: number;
+  } | null>(null);
   // Restore the last view on reload: reopen the most-recently-opened project
   // (top of Recent) into the saved view, so a refresh doesn't lose your work.
   // On reload, reopen the most-recently-opened project (top of Recent) — into
@@ -310,9 +318,15 @@ export function App(): JSX.Element {
           setCalcMounted(true);
           setView('calculator');
         }}
-        onOpenDrawingSheetEditor={() => {
+        onOpenDrawingSheetEditor={(file) => {
           setDsMounted(true);
           setView('drawingsheet');
+          if (file)
+            setDsRequest((prev) => ({
+              name: file.name,
+              text: file.text,
+              nonce: (prev?.nonce ?? 0) + 1,
+            }));
         }}
         onOpenImageConverter={() => {
           setImgMounted(true);
@@ -385,6 +399,7 @@ export function App(): JSX.Element {
             onExitToHome={goHome}
             projectName={projectName}
             onSaveToProject={projectFiles ? onSaveToProject : undefined}
+            openRequest={dsRequest}
           />
         </div>
       )}

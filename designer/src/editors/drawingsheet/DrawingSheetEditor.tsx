@@ -130,12 +130,16 @@ export function DrawingSheetEditor({
   onExitToHome,
   projectName,
   onSaveToProject,
+  openRequest,
 }: {
   onExitToHome: () => void;
   projectName?: string;
   /** Save the current sheet into the open project as a `.kicad_wks`. Absent
    *  when no project is open (the menu item is then hidden). */
   onSaveToProject?: (fileName: string, text: string) => void;
+  /** A `.kicad_wks` the project manager double-clicked to open here; re-sent with
+   *  a fresh nonce so the resident editor re-opens on the newly-picked file. */
+  openRequest?: { name: string; text: string; nonce: number } | null;
 }): JSX.Element {
   const [sheet, setSheet] = useState<WksSheet>(() => defaultDrawingSheet());
   const [fileName, setFileName] = useState('drawing_sheet.kicad_wks');
@@ -298,6 +302,16 @@ export function DrawingSheetEditor({
     async (file: File) => openText(file.name, await file.text()),
     [openText],
   );
+
+  // Open the .kicad_wks the project manager double-clicked (a fresh nonce each
+  // activation re-opens even while the editor stays resident).
+  const openReqNonce = openRequest?.nonce;
+  useEffect(() => {
+    if (!openRequest) return;
+    const base = openRequest.name.split(/[\\/]/).pop() ?? openRequest.name;
+    void openText(base, openRequest.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openReqNonce]);
 
   const appendFile = useCallback(
     async (file: File) => {

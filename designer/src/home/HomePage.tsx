@@ -172,7 +172,7 @@ export function HomePage({
   /** Launch the Calculator Tools (standalone, no project needed). */
   onOpenCalculator?: () => void;
   /** Launch the Drawing Sheet Editor (pl_editor); a standalone tool. */
-  onOpenDrawingSheetEditor?: () => void;
+  onOpenDrawingSheetEditor?: (file?: PickedHomeFile) => void;
   /** Launch the Image Converter (bitmap2cmp); a standalone tool. */
   onOpenImageConverter?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
@@ -814,6 +814,9 @@ export function HomePage({
           onOpenSchematic={launchSchematic}
           onOpenSymbolFile={
             onOpenSymbolEditor ? (f) => onOpenSymbolEditor(picked ?? undefined, f.name) : undefined
+          }
+          onOpenDrawingSheetFile={
+            onOpenDrawingSheetEditor ? (f) => onOpenDrawingSheetEditor(f) : undefined
           }
           onOpenFootprintFile={
             onOpenFootprintEditor
