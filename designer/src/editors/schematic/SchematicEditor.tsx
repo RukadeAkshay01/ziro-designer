@@ -868,7 +868,11 @@ export function SchematicEditor({
         for (const f of files) {
           const base = f.name.split('/').pop()!.split('\\').pop()!;
           if (/\.kicad_pro$/i.test(base)) {
-            proName = base;
+            // The FIRST .kicad_pro is the project's (matching projectNameOf and
+            // the tree's root); a folder may bundle more than one project, and
+            // picking a later one would open a different root than the tree
+            // shows — the two would then edit different sheets and diverge.
+            proName ??= base;
             continue;
           }
           if (!/\.kicad_sch$/i.test(base)) continue;
