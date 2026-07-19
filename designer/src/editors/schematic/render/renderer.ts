@@ -9,7 +9,15 @@
  */
 
 import type { Vec2 } from '@ziroeda/kimath';
-import { symbolTransform, localToWorld, iuToMM, type Transform } from '@ziroeda/common';
+import {
+  symbolTransform,
+  localToWorld,
+  iuToMM,
+  layoutDrawingSheet,
+  defaultDrawingSheet,
+  type WksResolveContext,
+  type Transform,
+} from '@ziroeda/common';
 import {
   refId,
   symbolBodyBBox,
@@ -17,6 +25,7 @@ import {
   fieldShownText,
   fieldBoundingBox,
   fieldDrawRotation,
+  getPageSettings,
   ITALIC_TILT,
   type BBox,
   type Schematic,
@@ -26,6 +35,7 @@ import {
   type LibSymbolUnit,
 } from '@ziroeda/eeschema';
 import type { Theme } from '../theme.js';
+import { drawDrawingSheetItems } from '../../drawingsheet/wksRender.js';
 import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
 // Per-render state (single-threaded): the visible world rect for culling and the
@@ -1817,99 +1827,41 @@ export function paperSizeIU(paper: string | undefined): { w: number; h: number }
   return { w: w! * MM, h: h! * MM };
 }
 
+/** No drawing-sheet item is ever "selected" on the schematic canvas. */
+const NO_DS_SELECTION: ReadonlySet<number> = new Set();
+
 function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: Theme): void {
   const page = paperSizeIU(sch.paper);
   if (!page) return;
-  const M = 10 * MM; // left/right/top/bottom margins
-  const L = M,
-    T = M,
-    R = page.w - M,
-    B = page.h - M;
-  const lw = 0.15 * MM; // default linewidth
-  const color = theme.pageFrame;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = lw;
-  ctx.setLineDash([]);
-
-  // Double border: the margin rect and a second one 2 mm inside.
-  ctx.strokeRect(L, T, R - L, B - T);
-  const i2 = 2 * MM;
-  ctx.strokeRect(L + i2, T + i2, R - L - 2 * i2, B - T - 2 * i2);
-
-  // Coordinate band: ticks every 50 mm with centred numbers (top/bottom) and
-  // letters (left/right) in 1.3 mm text.
-  const refH = 1.3 * MM;
-  const step = 50 * MM;
-  ctx.beginPath();
-  for (let x = L + step; x < R - i2; x += step) {
-    ctx.moveTo(x, T);
-    ctx.lineTo(x, T + i2);
-    ctx.moveTo(x, B);
-    ctx.lineTo(x, B - i2);
-  }
-  for (let y = T + step; y < B - i2; y += step) {
-    ctx.moveTo(L, y);
-    ctx.lineTo(L + i2, y);
-    ctx.moveTo(R, y);
-    ctx.lineTo(R - i2, y);
-  }
-  ctx.stroke();
-  let n = 1;
-  for (let x = L; x < R - i2; x += step, n++) {
-    const cx = Math.min(x + step / 2, (x + R) / 2);
-    drawText(ctx, String(n), { x: cx, y: T + i2 / 2 }, refH, color);
-    drawText(ctx, String(n), { x: cx, y: B - i2 / 2 }, refH, color);
-  }
-  let li = 0;
-  for (let y = T; y < B - i2; y += step, li++) {
-    const cy = Math.min(y + step / 2, (y + B) / 2);
-    const ch = String.fromCharCode(65 + (li % 26));
-    drawText(ctx, ch, { x: L + i2 / 2, y: cy }, refH, color);
-    drawText(ctx, ch, { x: R - i2 / 2, y: cy }, refH, color);
-  }
-
-  // Title block: rect from (110,34) to (2,2) off the bottom-right margin corner,
-  // with the default description's separator lines and variable texts.
-  const rx = (d: number): number => R - d * MM;
-  const ry = (d: number): number => B - d * MM;
-  ctx.strokeRect(rx(110), ry(34), 108 * MM, 32 * MM);
-  ctx.beginPath();
-  for (const yy of [5.5, 8.5, 12.5, 18.5]) {
-    ctx.moveTo(rx(110), ry(yy));
-    ctx.lineTo(rx(2), ry(yy));
-  }
-  ctx.moveTo(rx(90), ry(8.5));
-  ctx.lineTo(rx(90), ry(5.5));
-  ctx.moveTo(rx(26), ry(8.5));
-  ctx.lineTo(rx(26), ry(2));
-  ctx.stroke();
-
-  const tb = sch.titleBlock;
-  const t15 = 1.5 * MM;
-  const right = ['right'];
-  // (tbtext ... (pos X Y)) positions are right-justified at (R-X, B-Y) by default
-  // description convention (text grows toward the corner origin's opposite side).
-  drawText(ctx, `Date: ${tb?.date ?? ''}`, { x: rx(87), y: ry(6.9) }, t15, color, ['left']);
-  drawText(ctx, 'ZiroEDA', { x: rx(109), y: ry(4.1) }, t15, color, ['left']);
-  drawText(ctx, `Rev: ${tb?.rev ?? ''}`, { x: rx(24), y: ry(6.9) }, t15, color, ['left'], 0, true);
-  drawText(ctx, `Size: ${sch.paper ?? ''}`, { x: rx(109), y: ry(6.9) }, t15, color, ['left']);
-  drawText(ctx, 'Id: 1/1', { x: rx(24), y: ry(4.1) }, t15, color, ['left']);
-  drawText(
-    ctx,
-    `Title: ${tb?.title ?? ''}`,
-    { x: rx(109), y: ry(10.7) },
-    2 * MM,
-    color,
-    ['left'],
-    0,
-    true,
-    true,
+  // Render the real default drawing sheet through the same resolver + painter
+  // pl_editor uses (layoutDrawingSheet → drawDrawingSheetItems), so every
+  // title-block variable is substituted from the document — including the
+  // company line and Comment 1-4, which the previous hand-rolled block dropped
+  // (it also hardcoded the version, sheet id and path).
+  const ps = getPageSettings(sch);
+  const resolveCtx: WksResolveContext = {
+    pageNumber: 1,
+    sheetCount: 1,
+    title: ps.title,
+    rev: ps.rev,
+    date: ps.date,
+    company: ps.company,
+    comments: [...ps.comments],
+    paper: ps.paper,
+    fileName: sch.fileName ?? '',
+    sheetPath: '/',
+    appVersion: 'ZiroEDA',
+  };
+  const draws = layoutDrawingSheet(
+    defaultDrawingSheet(),
+    { widthMM: iuToMM(page.w), heightMM: iuToMM(page.h) },
+    resolveCtx,
   );
-  drawText(ctx, `File: ${sch.fileName ?? ''}`, { x: rx(109), y: ry(14.3) }, t15, color, ['left']);
-  drawText(ctx, 'Sheet: /', { x: rx(109), y: ry(17) }, t15, color, ['left']);
-  drawText(ctx, tb?.company ?? '', { x: rx(109), y: ry(20) }, t15, color, ['left'], 0, true);
-  void right;
+  drawDrawingSheetItems(ctx, draws, NO_DS_SELECTION, {
+    color: theme.pageFrame,
+    // 1-device-pixel pen floor keeps hairlines visible when zoomed out.
+    minWidth: g_scale > 0 ? 1 / g_scale : 1,
+  });
 }
 
 function drawGrid(
