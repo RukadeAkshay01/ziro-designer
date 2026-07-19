@@ -1,0 +1,180 @@
+/* Gerber Viewer specific chrome: the layer manager dock, the top-toolbar
+   selectors, the message panel and DCode table. Uses the shared shell theme
+   variables so it matches the other editors' dark chrome. */
+
+.ze-gbr-dock {
+  width: 240px;
+  min-width: 240px;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--chrome-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ze-gbr-layers {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ze-gbr-layers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--panel-header);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b8c0cc;
+  border-bottom: 1px solid var(--chrome-border);
+}
+.ze-gbr-layers-actions button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 3px;
+}
+
+.ze-gbr-layer-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 60px;
+}
+.ze-gbr-empty {
+  padding: 12px 8px;
+  color: #808894;
+  font-size: 12px;
+}
+
+.ze-gbr-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  cursor: pointer;
+  font-size: 12px;
+  border-bottom: 1px solid #232529;
+}
+.ze-gbr-layer-row:hover {
+  background: var(--chrome-hover);
+}
+.ze-gbr-layer-row.active {
+  background: var(--chrome-active);
+}
+.ze-gbr-active {
+  accent-color: #4a86c5;
+  margin: 0;
+}
+.ze-gbr-vis {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  width: 18px;
+  font-size: 12px;
+  padding: 0;
+}
+.ze-gbr-swatch {
+  position: relative;
+  width: 20px;
+  height: 14px;
+  border: 1px solid #0007;
+  border-radius: 2px;
+  cursor: pointer;
+  padding: 0;
+  flex: 0 0 auto;
+}
+.ze-gbr-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ze-gbr-row-tools {
+  display: flex;
+  gap: 1px;
+  opacity: 0;
+}
+.ze-gbr-layer-row:hover .ze-gbr-row-tools {
+  opacity: 1;
+}
+.ze-gbr-row-tools button {
+  background: none;
+  border: none;
+  color: #c8d0dc;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.ze-gbr-row-tools button:hover {
+  color: #fff;
+}
+
+.ze-gbr-render-list {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--chrome-border);
+}
+.ze-gbr-render-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ze-gbr-combo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #b8c0cc;
+  margin: 0 4px;
+}
+.ze-gbr-combo select {
+  max-width: 160px;
+}
+
+.ze-gbr-msgpanel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 3px 10px;
+  background: var(--panel-header);
+  border-top: 1px solid var(--chrome-border);
+  font-size: 11px;
+}
+.ze-gbr-iteminfo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.ze-gbr-info-cell b {
+  color: #9fb4cc;
+  font-weight: 600;
+}
+
+.ze-gbr-dcode-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.ze-gbr-dcode-table th,
+.ze-gbr-dcode-table td {
+  text-align: left;
+  padding: 3px 8px;
+  border-bottom: 1px solid #33363c;
+}
+.ze-gbr-dcode-table th {
+  color: #9fb4cc;
+  font-weight: 600;
+}

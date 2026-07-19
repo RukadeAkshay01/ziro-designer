@@ -41,6 +41,9 @@ importers:
       '@ziroeda/eeschema':
         specifier: workspace:*
         version: link:../eeschema
+      '@ziroeda/gerbview':
+        specifier: workspace:*
+        version: link:../gerbview
       '@ziroeda/kimath':
         specifier: workspace:*
         version: link:../libs/kimath
@@ -106,6 +109,12 @@ importers:
         specifier: workspace:*
         version: link:../libs/sexpr
 
+  gerbview:
+    dependencies:
+      '@ziroeda/kimath':
+        specifier: workspace:*
+        version: link:../libs/kimath
+
   libs/core:
     dependencies:
       '@ziroeda/kimath':
@@ -147,6 +156,9 @@ importers:
       '@ziroeda/eeschema':
         specifier: workspace:*
         version: link:../eeschema
+      '@ziroeda/gerbview':
+        specifier: workspace:*
+        version: link:../gerbview
       '@ziroeda/kimath':
         specifier: workspace:*
         version: link:../libs/kimath

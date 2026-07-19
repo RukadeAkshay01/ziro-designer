@@ -1,6 +1,7 @@
 packages:
   - "common"
   - "eeschema"
+  - "gerbview"
   - "pcbnew"
   - "pcb_calculator"
   - "designer"
