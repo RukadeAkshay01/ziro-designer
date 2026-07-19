@@ -282,13 +282,12 @@ export function App(): JSX.Element {
     setActivePro(null);
   }, [folderName]);
 
-  // Switch the active project (double-clicking another .kicad_pro in the tree):
-  // re-scope every editor to that project's root and open its schematic.
+  // Switch the active project (double-clicking another .kicad_pro in the tree).
+  // Like KiCad's PROJECT_TREE_ITEM::Activate → LoadProject: it only makes that
+  // project active and re-roots the manager tree; it does NOT launch an editor.
+  // Setting activePro re-scopes every editor's root for the next time one opens.
   const switchProject = useCallback((proFullName: string) => {
     setActivePro(proFullName);
-    setStartFile(projBaseOf(proFullName) + '.kicad_sch');
-    setSchMounted(true);
-    setView('schematic');
   }, []);
 
   const goHome = useCallback(() => {
