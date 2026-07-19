@@ -8,9 +8,18 @@
  * that copies the field to every other sheet on OK, like upstream.
  */
 
-import { useState, type JSX } from 'react';
+import { useState, useRef, useEffect, type JSX } from 'react';
 import type { PageSettings } from '@ziroeda/eeschema';
+import { defaultDrawingSheet, layoutDrawingSheet } from '@ziroeda/common';
 import { PAPER_CHOICES, PAPER_MM } from '../../drawingsheet/PageSettingsDialog.js';
+import { drawDrawingSheetItems, DS_ITEM_COLOR } from '../../drawingsheet/wksRender.js';
+
+/** No preview item is ever selected. */
+const NO_PREVIEW_SELECTION: ReadonlySet<number> = new Set();
+/** IU per millimetre (schematic internal units). */
+const IU_PER_MM = 10000;
+/** Largest side of the preview canvas, in CSS px (KiCad's MAX_PAGE_EXAMPLE_SIZE). */
+const PREVIEW_MAX_PX = 200;
 
 /** Which fields the "Export to other sheets" checkboxes propagate on OK. */
 export interface PageExportFlags {
@@ -107,6 +116,70 @@ export function DialogPageSettings({
     const dims = PAPER_MM[size] ?? [297, 210];
     return portrait ? [dims[1], dims[0]] : [dims[0], dims[1]];
   })();
+  const [wMM, hMM] = pageMM;
+
+  // Live preview: render the real drawing sheet with the current title-block
+  // fields, the way KiCad's DIALOG_PAGES_SETTINGS::UpdateDrawingSheetExample
+  // paints m_PageLayoutExampleBitmap with PrintDrawingSheet — so every field,
+  // comments included, is shown in the actual stroke font instead of a static
+  // outline that dropped them.
+  const previewRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = previewRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const wIU = wMM * IU_PER_MM;
+    const hIU = hMM * IU_PER_MM;
+    const scale = PREVIEW_MAX_PX / Math.max(wIU, hIU); // CSS px per IU
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.max(1, Math.round(wIU * scale));
+    const ch = Math.max(1, Math.round(hIU * scale));
+    canvas.width = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+    canvas.style.width = `${cw}px`;
+    canvas.style.height = `${ch}px`;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.save();
+    ctx.transform(scale, 0, 0, scale, 0, 0); // IU → CSS px
+    const draws = layoutDrawingSheet(
+      defaultDrawingSheet(),
+      { widthMM: wMM, heightMM: hMM },
+      {
+        pageNumber: sheetNumber,
+        sheetCount,
+        title,
+        rev,
+        date,
+        company,
+        comments: [...comments],
+        paper: toToken(size, portrait, customW, customH),
+        fileName: '',
+        sheetPath: '/',
+        appVersion: 'ZiroEDA',
+      },
+    );
+    drawDrawingSheetItems(ctx, draws, NO_PREVIEW_SELECTION, {
+      color: DS_ITEM_COLOR,
+      minWidth: 1 / scale,
+    });
+    ctx.restore();
+  }, [
+    wMM,
+    hMM,
+    title,
+    rev,
+    date,
+    company,
+    comments,
+    size,
+    portrait,
+    customW,
+    customH,
+    sheetNumber,
+    sheetCount,
+  ]);
 
   const row: React.CSSProperties = {
     display: 'flex',
@@ -115,6 +188,8 @@ export function DialogPageSettings({
     margin: '4px 0',
   };
   const lab: React.CSSProperties = { width: 78, fontSize: 12, flex: '0 0 auto' };
+  const customEnabled = size === 'User';
+  const disabledStyle: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed' };
   const heading: React.CSSProperties = {
     fontWeight: 600,
     fontSize: 12,
@@ -185,34 +260,44 @@ export function DialogPageSettings({
                 <option value="portrait">Portrait</option>
               </select>
             </div>
-            <div style={{ fontSize: 12, marginTop: 6 }}>Custom paper size:</div>
+            {/* Custom size is editable only for "User"; greyed otherwise, exactly
+                like DIALOG_PAGES_SETTINGS::OnPaperSizeChoice enabling the controls. */}
+            <div style={{ fontSize: 12, marginTop: 6, opacity: customEnabled ? 1 : 0.45 }}>
+              Custom paper size:
+            </div>
             <div style={row}>
-              <span style={lab}>Height:</span>
+              <span style={{ ...lab, opacity: customEnabled ? 1 : 0.45 }}>Height:</span>
               <input
                 className="ze-search"
                 type="number"
-                style={{ width: 90 }}
+                style={{ width: 90, ...(customEnabled ? {} : disabledStyle) }}
                 value={customH}
-                disabled={size !== 'User'}
+                disabled={!customEnabled}
                 title="Custom paper height."
                 onChange={(e) => setCustomH(Number(e.target.value) || 0)}
               />
-              <span className="ze-muted" style={{ fontSize: 11 }}>
+              <span
+                className="ze-muted"
+                style={{ fontSize: 11, opacity: customEnabled ? 1 : 0.45 }}
+              >
                 mm
               </span>
             </div>
             <div style={row}>
-              <span style={lab}>Width:</span>
+              <span style={{ ...lab, opacity: customEnabled ? 1 : 0.45 }}>Width:</span>
               <input
                 className="ze-search"
                 type="number"
-                style={{ width: 90 }}
+                style={{ width: 90, ...(customEnabled ? {} : disabledStyle) }}
                 value={customW}
-                disabled={size !== 'User'}
+                disabled={!customEnabled}
                 title="Custom paper width."
                 onChange={(e) => setCustomW(Number(e.target.value) || 0)}
               />
-              <span className="ze-muted" style={{ fontSize: 11 }}>
+              <span
+                className="ze-muted"
+                style={{ fontSize: 11, opacity: customEnabled ? 1 : 0.45 }}
+              >
                 mm
               </span>
             </div>
@@ -224,40 +309,14 @@ export function DialogPageSettings({
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: 8,
+                minHeight: PREVIEW_MAX_PX + 16,
               }}
             >
-              {/* m_PageLayoutExampleBitmap: page outline + title-block corner. */}
-              <div
-                style={{
-                  width: pageMM[0] >= pageMM[1] ? 180 : (180 * pageMM[0]) / pageMM[1],
-                  height: pageMM[0] >= pageMM[1] ? (180 * pageMM[1]) / pageMM[0] : 180,
-                  background: '#fff',
-                  border: '1px solid #888',
-                  position: 'relative',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 6,
-                    border: '1px solid #b33',
-                  }}
-                />
-                <div
-                  style={{
-                    position: 'absolute',
-                    right: 6,
-                    bottom: 6,
-                    width: '42%',
-                    height: '18%',
-                    borderLeft: '1px solid #b33',
-                    borderTop: '1px solid #b33',
-                  }}
-                />
-              </div>
+              {/* m_PageLayoutExampleBitmap: a live render of the drawing sheet. */}
+              <canvas ref={previewRef} style={{ border: '1px solid #888' }} />
             </div>
             <div className="ze-muted" style={{ fontSize: 11, textAlign: 'center' }}>
-              {pageMM[0]} × {pageMM[1]} mm
+              {wMM} × {hMM} mm
             </div>
           </div>
           <div style={{ flex: 1 }}>
@@ -277,28 +336,33 @@ export function DialogPageSettings({
               <span style={{ flex: 1 }} />
               <span>Sheet number: {sheetNumber}</span>
             </div>
-            <div style={row}>
+            <div style={{ ...row, flexWrap: 'wrap' }}>
               <span style={lab}>Issue Date:</span>
-              <input
-                className="ze-search"
-                style={{ flex: 1 }}
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-              <button
-                className="ze-btn"
-                title="Apply the picked date"
-                onClick={() => setDate(pickDate)}
-              >
-                &lt;&lt;&lt;
-              </button>
-              <input
-                className="ze-search"
-                type="date"
-                style={{ width: 130 }}
-                value={pickDate}
-                onChange={(e) => setPickDate(e.target.value)}
-              />
+              {/* Date text + "<<<" apply + native picker kept together so the
+                  free-form date stays fully visible; the export checkbox wraps
+                  below when the row is tight. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 240px' }}>
+                <input
+                  className="ze-search"
+                  style={{ flex: 1, minWidth: 90 }}
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+                <button
+                  className="ze-btn"
+                  title="Apply the picked date"
+                  onClick={() => setDate(pickDate)}
+                >
+                  &lt;&lt;&lt;
+                </button>
+                <input
+                  className="ze-search"
+                  type="date"
+                  style={{ width: 128, flex: '0 0 auto' }}
+                  value={pickDate}
+                  onChange={(e) => setPickDate(e.target.value)}
+                />
+              </div>
               {exportChk(exports.date, (v) => setExports({ ...exports, date: v }))}
             </div>
             <div style={row}>
@@ -332,6 +396,7 @@ export function DialogPageSettings({
               {exportChk(exports.company, (v) => setExports({ ...exports, company: v }))}
             </div>
             {comments.map((c, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed 9 rows, never reordered
               <div style={row} key={i}>
                 <span style={lab}>Comment{i + 1}:</span>
                 <input
