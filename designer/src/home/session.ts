@@ -17,7 +17,8 @@ export interface Session {
     | 'footprints'
     | 'calculator'
     | 'drawingsheet'
-    | 'image';
+    | 'image'
+    | 'gerber';
   startFile?: string | null;
 }
 
@@ -36,9 +37,17 @@ export function loadSession(): Session | null {
     const v = localStorage.getItem(KEY);
     const s = v ? (JSON.parse(v) as Session) : null;
     return s &&
-      ['home', 'schematic', 'pcb', 'symbols', 'footprints', 'calculator', 'drawingsheet'].includes(
-        s.view,
-      )
+      [
+        'home',
+        'schematic',
+        'pcb',
+        'symbols',
+        'footprints',
+        'calculator',
+        'drawingsheet',
+        'image',
+        'gerber',
+      ].includes(s.view)
       ? s
       : null;
   } catch {

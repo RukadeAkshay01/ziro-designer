@@ -91,7 +91,7 @@ const TILES: Tile[] = [
     desc: 'Edit global and/or project PCB footprint libraries',
     enabled: true,
   },
-  { id: 'gerber', name: 'Gerber Viewer', desc: 'Preview Gerber files' },
+  { id: 'gerber', name: 'Gerber Viewer', desc: 'Preview Gerber files', enabled: true },
   {
     id: 'image',
     name: 'Image Converter',
@@ -160,6 +160,7 @@ export function HomePage({
   onOpenCalculator,
   onOpenDrawingSheetEditor,
   onOpenImageConverter,
+  onOpenGerberViewer,
   initialFiles,
 }: {
   onOpenSchematic: () => void;
@@ -177,6 +178,8 @@ export function HomePage({
   onOpenDrawingSheetEditor?: () => void;
   /** Launch the Image Converter (bitmap2cmp); a standalone tool. */
   onOpenImageConverter?: () => void;
+  /** Launch the Gerber Viewer (gerbview); a standalone tool. */
+  onOpenGerberViewer?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
 }): JSX.Element {
@@ -852,9 +855,11 @@ export function HomePage({
                           ? (): void => onOpenDrawingSheetEditor?.()
                           : t.id === 'image'
                             ? (): void => onOpenImageConverter?.()
-                            : t.id === 'pcm'
-                              ? (): void => setPcmOpen(true)
-                              : (): void => launchSchematic();
+                            : t.id === 'gerber'
+                              ? (): void => onOpenGerberViewer?.()
+                              : t.id === 'pcm'
+                                ? (): void => setPcmOpen(true)
+                                : (): void => launchSchematic();
               return (
                 <button
                   key={t.id}
