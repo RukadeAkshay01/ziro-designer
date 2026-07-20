@@ -221,6 +221,18 @@ const BITMAP: Record<string, string> = {
   gerbClearHighlight: 'net_highlight',
   gerbNextLayer: 'right',
   gerbPrevLayer: 'left',
+  // The toolbar resolves icons by the tool *id*, so the left/right Gerber
+  // toggles (whose ids differ from their `icon` field) need id-keyed entries
+  // too — otherwise they render as empty placeholder squares.
+  togglePolar: 'polar_coord',
+  flashedSketch: 'pad_sketch',
+  linesSketch: 'showtrack',
+  polygonsSketch: 'show_zone',
+  showNegativeObjects: 'via_sketch',
+  showDcodes: 'text_sketch',
+  diffMode: 'contrast_mode',
+  flipView: 'mirror_h',
+  showLayerManager: 'layers_manager',
 };
 
 /** KiCad icon URL for a toolbar tool id, or undefined if none is mapped. */

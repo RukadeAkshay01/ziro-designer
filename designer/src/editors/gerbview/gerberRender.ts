@@ -15,7 +15,12 @@ import {
   type GERBER_DRAW_ITEM,
   type AmResolvedShape,
 } from '@ziroeda/gerbview';
-import { GERBER_BG_COLOR, GERBER_DCODE_COLOR, GERBER_NEGATIVE_COLOR } from './gerberColors.js';
+import {
+  GERBER_BG_COLOR,
+  GERBER_DCODE_COLOR,
+  GERBER_NEGATIVE_COLOR,
+  GERBER_LAYER_ALPHA,
+} from './gerberColors.js';
 
 export interface ViewTransform {
   scale: number;
@@ -340,8 +345,9 @@ export function renderGerberLayers(
       ctx.globalAlpha = 1;
     } else {
       ctx.globalCompositeOperation = 'source-over';
-      // High-contrast: dim layers other than the active one.
-      ctx.globalAlpha = opts.highContrast && i !== layers.length - 1 ? 0.35 : 1;
+      // Translucent layers (GerbView look) so overlaps blend; high-contrast
+      // dims layers other than the active one (drawn last).
+      ctx.globalAlpha = opts.highContrast && i !== layers.length - 1 ? 0.3 : GERBER_LAYER_ALPHA;
     }
     ctx.drawImage(buf, 0, 0);
   }

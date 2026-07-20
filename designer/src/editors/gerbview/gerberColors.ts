@@ -25,13 +25,18 @@ export const GERBER_LAYER_COLORS: string[] = [
   '#8080E0', // periwinkle
 ];
 
-/** Background and grid colours (GerbView dark default). */
-export const GERBER_BG_COLOR = '#000010';
-export const GERBER_GRID_COLOR = '#414160';
+/** Background and grid colours — GerbView's default theme uses a pure-black
+ *  background with a mid-grey grid. */
+export const GERBER_BG_COLOR = '#000000';
+export const GERBER_GRID_COLOR = '#5A5A5A';
 /** DCode-number annotation colour (GerbView draws them in white). */
 export const GERBER_DCODE_COLOR = '#DDDDDD';
 /** Negative-object placeholder colour when "show negative objects" is on. */
 export const GERBER_NEGATIVE_COLOR = '#0F0F1A';
+
+/** Per-layer opacity used when compositing, matching GerbView's translucent
+ *  layers (default colour alpha ≈ 0.8) so overlapping layers visibly blend. */
+export const GERBER_LAYER_ALPHA = 0.8;
 
 /** Colour for the layer at index `i` (cycles the palette). */
 export function defaultLayerColor(i: number): string {
