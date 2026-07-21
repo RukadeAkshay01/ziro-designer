@@ -26,6 +26,7 @@
 import { atom, str, isList, head, type SList, type SNode } from '@ziroeda/sexpr/src/index.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { arcCenter, rotatePcb } from './read-board.js';
+import { connectedTrackEnds } from './connectivity.js';
 import { footprintBBox } from './edit-footprint.js';
 import type {
   Board,
@@ -623,6 +624,67 @@ export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Ve
     footprints: board.footprints.map((f, i) =>
       idx.footprint.has(i) ? moveFootprint(f, delta) : f,
     ),
+  };
+}
+
+/** Move one or both ends of a track by `d`, patching only the moved ends. */
+const moveTrackEnds = (t: PcbTrack, ends: ReadonlySet<'start' | 'end'>, d: Vec2): PcbTrack => {
+  let src = t.source;
+  const start = ends.has('start') ? add(t.start, d) : t.start;
+  const end = ends.has('end') ? add(t.end, d) : t.end;
+  if (ends.has('start')) src = patchChild(src, 'start', xyNode('start', start));
+  if (ends.has('end')) src = patchChild(src, 'end', xyNode('end', end));
+  return { ...t, start, end, source: src };
+};
+
+/** Move one or both ends of an arc by `d` (mid stays; drag arc reshaping is later). */
+const moveArcEnds = (a: PcbArcTrack, ends: ReadonlySet<'start' | 'end'>, d: Vec2): PcbArcTrack => {
+  let src = a.source;
+  const start = ends.has('start') ? add(a.start, d) : a.start;
+  const end = ends.has('end') ? add(a.end, d) : a.end;
+  if (ends.has('start')) src = patchChild(src, 'start', xyNode('start', start));
+  if (ends.has('end')) src = patchChild(src, 'end', xyNode('end', end));
+  return { ...a, start, end, source: src };
+};
+
+/**
+ * Drag the selection like {@link moveBoardItems}, but additionally stretch the
+ * track/arc ends attached to any moving footprint so the routing follows the
+ * part (EDIT_TOOL's Drag, as opposed to Move which leaves the tracks behind).
+ * Ends whose track is itself selected are skipped — the whole track already
+ * moved with the selection.
+ */
+export function dragBoardItems(board: Board, ids: ReadonlySet<string>, delta: Vec2): Board {
+  if ((delta.x === 0 && delta.y === 0) || ids.size === 0) return board;
+  const idx = indicesByKind(ids);
+  const moved = moveBoardItems(board, ids, delta);
+  if (idx.footprint.size === 0) return moved;
+
+  const trackEnds = new Map<number, Set<'start' | 'end'>>();
+  const arcEnds = new Map<number, Set<'start' | 'end'>>();
+  for (const e of connectedTrackEnds(board, idx.footprint)) {
+    const target = e.kind === 'track' ? trackEnds : arcEnds;
+    const selected = e.kind === 'track' ? idx.track : idx.arc;
+    if (selected.has(e.index)) continue; // whole track already moved
+    let set = target.get(e.index);
+    if (!set) {
+      set = new Set();
+      target.set(e.index, set);
+    }
+    set.add(e.end);
+  }
+  if (trackEnds.size === 0 && arcEnds.size === 0) return moved;
+
+  return {
+    ...moved,
+    tracks: moved.tracks.map((t, i) => {
+      const es = trackEnds.get(i);
+      return es ? moveTrackEnds(t, es, delta) : t;
+    }),
+    arcs: moved.arcs.map((a, i) => {
+      const es = arcEnds.get(i);
+      return es ? moveArcEnds(a, es, delta) : a;
+    }),
   };
 }
 

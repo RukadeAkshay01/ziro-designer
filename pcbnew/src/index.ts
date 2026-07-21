@@ -1,5 +1,6 @@
 /** @ziroeda/pcbnew — board engine mirroring KiCad's pcbnew/. */
 export * from './types.js';
+export { connectedTrackEnds, type TrackEndRef } from './connectivity.js';
 export { readBoard, readFootprintFile, rotatePcb, tessellateArc, arcCenter } from './read-board.js';
 export {
   serializeFootprint,
@@ -43,6 +44,7 @@ export {
   boardHitCandidates,
   boardItemsInBox,
   moveBoardItems,
+  dragBoardItems,
   subsetBoardItems,
   deleteBoardItems,
   rotateBoardItems,
