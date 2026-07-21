@@ -56,7 +56,9 @@ function hitGraphic(g: LibGraphic, p: Vec2, tol: number): boolean {
     case 'arc':
       // Approximate the arc by its start–mid–end chords (fine within tolerance).
       return distToSegment(p, g.start, g.mid) <= tol || distToSegment(p, g.mid, g.end) <= tol;
-    case 'polyline': {
+    case 'polyline':
+    case 'bezier': {
+      // Béziers hit-test against their control polygon (fine within tolerance).
       for (let i = 1; i < g.points.length; i++)
         if (distToSegment(p, g.points[i - 1]!, g.points[i]!) <= tol) return true;
       return false;

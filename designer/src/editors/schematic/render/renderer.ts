@@ -500,6 +500,25 @@ export function renderSchematic(
       };
       const symId = refId('symbol', sym.uuid, si);
       let pinIndex = 0;
+      // Background fills of every unit first, then the foreground pass, so
+      // the common unit's body fill never covers pin names (painter layers).
+      for (const unit of lib.units) {
+        if (libUnitMatches(unit, sym.unit, sym.bodyStyle))
+          drawLibUnit(
+            ctx,
+            unit,
+            sym.at,
+            t,
+            theme,
+            pins,
+            symId,
+            0,
+            highlight,
+            shadowWidth,
+            opts.showHiddenPins,
+            'bg',
+          );
+      }
       for (const unit of lib.units) {
         if (libUnitMatches(unit, sym.unit, sym.bodyStyle))
           pinIndex = drawLibUnit(
@@ -514,6 +533,7 @@ export function renderSchematic(
             highlight,
             shadowWidth,
             opts.showHiddenPins,
+            'fg',
           );
       }
     }
@@ -1376,6 +1396,7 @@ function drawLibUnitShadow(
         break;
       }
       case 'polyline':
+      case 'bezier':
         polygon(
           ctx,
           g.points.map((p) => localToWorld(origin, t, p)),
@@ -1424,15 +1445,16 @@ function drawLibUnit(
   highlight?: ReadonlySet<string>,
   shadowWidth = 0,
   showHiddenPins = false,
+  // SCH_PAINTER paints LAYER_DEVICE_BACKGROUND for *every* unit before any
+  // LAYER_DEVICE content, so a later unit's body fill (the common _0_x unit)
+  // can never cover another unit's outlines or pin text. Callers run the
+  // 'bg' phase across all units first, then the 'fg' phase.
+  phase: 'bg' | 'fg' | 'all' = 'all',
 ): number {
-  for (const g of unit.graphics) {
-    const lw = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : g_defaultPen;
-    const filled = g.kind !== 'text' && g.fill && g.fill.type !== 'none';
-    ctx.lineWidth = lw;
-    ctx.strokeStyle = theme.symbolOutline;
-    ctx.fillStyle =
-      g.kind !== 'text' && g.fill?.type === 'background' ? theme.symbolFill : theme.symbolOutline;
-
+  // Two passes matching SCH_PAINTER's layer order: background/custom fills
+  // first (LAYER_DEVICE_BACKGROUND), then outlines and outline-colour fills
+  // (LAYER_DEVICE) — so a filled body never covers a neighbour's outline.
+  const tracePath = (g: (typeof unit.graphics)[number]): boolean => {
     switch (g.kind) {
       case 'rectangle': {
         const corners = [
@@ -1441,50 +1463,103 @@ function drawLibUnit(
           { x: g.end.x, y: g.end.y },
           { x: g.start.x, y: g.end.y },
         ].map((c) => localToWorld(origin, t, c));
-        polygon(ctx, corners, !!filled, true);
-        break;
+        ctx.beginPath();
+        ctx.moveTo(corners[0]!.x, corners[0]!.y);
+        for (let i = 1; i < 4; i++) ctx.lineTo(corners[i]!.x, corners[i]!.y);
+        ctx.closePath();
+        return true;
       }
       case 'polyline': {
         const pts = g.points.map((p) => localToWorld(origin, t, p));
-        polygon(ctx, pts, !!filled, false);
-        break;
+        if (pts.length === 0) return false;
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]!.x, pts[i]!.y);
+        return true;
+      }
+      case 'bezier': {
+        const pts = g.points.map((p) => localToWorld(origin, t, p));
+        if (pts.length < 4) return false;
+        ctx.beginPath();
+        ctx.moveTo(pts[0]!.x, pts[0]!.y);
+        ctx.bezierCurveTo(pts[1]!.x, pts[1]!.y, pts[2]!.x, pts[2]!.y, pts[3]!.x, pts[3]!.y);
+        return true;
       }
       case 'circle': {
         const c = localToWorld(origin, t, g.center);
         ctx.beginPath();
         ctx.arc(c.x, c.y, g.radius, 0, Math.PI * 2);
-        if (filled) ctx.fill();
-        ctx.stroke();
-        break;
+        return true;
       }
-      case 'arc': {
+      default:
+        return false;
+    }
+  };
+
+  // Pass 1: LAYER_DEVICE_BACKGROUND — body-background and custom-colour fills.
+  if (phase !== 'fg') {
+    for (const g of unit.graphics) {
+      if (g.kind === 'text') continue;
+      const fillType = g.fill?.type;
+      if (fillType !== 'background' && fillType !== 'color') continue;
+      ctx.fillStyle =
+        fillType === 'color' && g.fill?.color ? cssColor(g.fill.color) : theme.symbolFill;
+      if (g.kind === 'arc') {
         drawArc(
           ctx,
           localToWorld(origin, t, g.start),
           localToWorld(origin, t, g.mid),
           localToWorld(origin, t, g.end),
-          !!filled,
+          true,
+          false,
         );
-        break;
+      } else if (tracePath(g)) {
+        ctx.fill();
       }
-      case 'text': {
-        const p = localToWorld(origin, t, g.at);
-        drawText(
-          ctx,
-          g.text,
-          p,
-          g.effects?.fontSize?.[0] ?? 1.27 * MM,
-          theme.symbolOutline,
-          g.effects?.justify,
-        );
-        break;
-      }
+    }
+    if (phase === 'bg') return pinIndexStart;
+  }
+
+  // Pass 2: LAYER_DEVICE — outlines, outline-colour (FILLED_SHAPE) fills, text.
+  for (const g of unit.graphics) {
+    const lw = g.kind !== 'text' && g.stroke && g.stroke.width > 0 ? g.stroke.width : g_defaultPen;
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = theme.symbolOutline;
+    ctx.fillStyle = theme.symbolOutline;
+
+    if (g.kind === 'text') {
+      const p = localToWorld(origin, t, g.at);
+      drawText(
+        ctx,
+        g.text,
+        p,
+        g.effects?.fontSize?.[0] ?? 1.27 * MM,
+        theme.symbolOutline,
+        g.effects?.justify,
+        g.angle,
+      );
+      continue;
+    }
+
+    const outlineFilled = g.fill?.type === 'outline';
+    if (g.kind === 'arc') {
+      drawArc(
+        ctx,
+        localToWorld(origin, t, g.start),
+        localToWorld(origin, t, g.mid),
+        localToWorld(origin, t, g.end),
+        outlineFilled,
+      );
+    } else if (tracePath(g)) {
+      if (outlineFilled) ctx.fill();
+      ctx.stroke();
     }
   }
 
-  // Pins.
-  const DEFAULT_TEXT = 1.27 * MM,
-    MARGIN = 0.25 * MM;
+  // Pins (SCH_PAINTER::draw(SCH_PIN) + PIN_LAYOUT_CACHE placement).
+  const DEFAULT_TEXT = 1.27 * MM;
+  // getPinTextOffset: MilsToIU(round(24 * m_TextOffsetRatio)), default ratio 0.15.
+  const TEXT_OFFSET = Math.round(24 * 0.15) * 254;
   let pinIndex = pinIndexStart;
   for (const pin of unit.pins) {
     const idx = pinIndex++;
@@ -1497,25 +1572,120 @@ function drawLibUnit(
     // text in the body instead).
     const NUM = pin.numberSize ?? DEFAULT_TEXT;
     const NAME = pin.nameSize ?? DEFAULT_TEXT;
-    // External pin decoration radius = number text size / 2 (KiCad externalPinDecoSize).
-    const DECO_R = (NUM > 0 ? NUM : DEFAULT_TEXT) / 2;
-    const endLocal = pinBodyEnd(pin.at, pin.angle, pin.length);
-    const a = localToWorld(origin, t, pin.at); // connection point (tip)
-    const b = localToWorld(origin, t, endLocal); // body end (root)
+    // externalPinDecoSize (negation circle / slopes / nonlogic) = number size / 2;
+    // internalPinDecoSize (clock notch) = name size / 2, falling back to number.
+    const radius = (NUM > 0 ? NUM : DEFAULT_TEXT) / 2;
+    const diam = radius * 2;
+    const clockSize = (NAME > 0 ? NAME : NUM > 0 ? NUM : DEFAULT_TEXT) / 2;
 
-    // Inverted pins draw a negation bubble at the body end (KiCad GRAPHIC_PINSHAPE).
-    const inverted = pin.shape === 'inverted' || pin.shape === 'inverted_clock';
+    const endLocal = pinBodyEnd(pin.at, pin.angle, pin.length);
+    const pos = localToWorld(origin, t, pin.at); // connection point (tip)
+    const p0 = localToWorld(origin, t, endLocal); // pin root (at the body)
+    // Direction from the root toward the tip, in world space (painter's `dir`) —
+    // computed after the symbol transform so rotated/mirrored symbols lay their
+    // decorations and text out exactly like upstream.
+    const len = pin.length;
+    const dir =
+      len > 0
+        ? { x: Math.sign(pos.x - p0.x), y: Math.sign(pos.y - p0.y) }
+        : { x: -pinDir(pin.angle).x, y: -pinDir(pin.angle).y };
+
+    const line = (ax: number, ay: number, bx: number, by: number) => {
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+    };
+    const triLine = (a1: Vec2, a2: Vec2, a3: Vec2) => {
+      ctx.beginPath();
+      ctx.moveTo(a1.x, a1.y);
+      ctx.lineTo(a2.x, a2.y);
+      ctx.lineTo(a3.x, a3.y);
+      ctx.stroke();
+    };
+
+    /** The pin line plus its GRAPHIC_PINSHAPE decoration (sch_painter.cpp). */
     const strokePinBody = (): void => {
-      if (inverted && pin.length > 0) {
-        // Unit vector pointing from the body end outward to the tip.
-        const ox = (a.x - b.x) / pin.length,
-          oy = (a.y - b.y) / pin.length;
-        ctx.beginPath();
-        ctx.arc(b.x + ox * DECO_R, b.y + oy * DECO_R, DECO_R, 0, Math.PI * 2);
-        ctx.stroke();
-        strokeLine(ctx, { x: b.x + ox * DECO_R * 2, y: b.y + oy * DECO_R * 2 }, a);
-      } else {
-        strokeLine(ctx, a, b);
+      if (pin.electricalType === 'no_connect') {
+        // N.C. pins draw the line plus an X at the connection point.
+        const R = 0.508 * MM * 0.25; // TARGET_PIN_RADIUS (15 mils)
+        line(p0.x, p0.y, pos.x, pos.y);
+        line(pos.x - R, pos.y - R, pos.x + R, pos.y + R);
+        line(pos.x + R, pos.y - R, pos.x - R, pos.y + R);
+        return;
+      }
+
+      const clockNotch = () => {
+        // Triangle pointing into the body at the pin root.
+        const pc = { x: p0.x - dir.x * clockSize, y: p0.y - dir.y * clockSize };
+        triLine({ x: p0.x + dir.y * clockSize, y: p0.y - dir.x * clockSize }, pc, {
+          x: p0.x - dir.y * clockSize,
+          y: p0.y + dir.x * clockSize,
+        });
+      };
+      const lowSlope = () => {
+        // IEEE active-low input slope outside the body.
+        if (!dir.y) {
+          triLine(
+            { x: p0.x + dir.x * diam, y: p0.y },
+            { x: p0.x + dir.x * diam, y: p0.y - diam },
+            p0,
+          );
+        } else {
+          triLine(
+            { x: p0.x, y: p0.y + dir.y * diam },
+            { x: p0.x - diam, y: p0.y + dir.y * diam },
+            p0,
+          );
+        }
+      };
+
+      switch (pin.shape) {
+        case 'inverted':
+        case 'inverted_clock': {
+          ctx.beginPath();
+          ctx.arc(p0.x + dir.x * radius, p0.y + dir.y * radius, radius, 0, Math.PI * 2);
+          ctx.stroke();
+          line(p0.x + dir.x * diam, p0.y + dir.y * diam, pos.x, pos.y);
+          if (pin.shape === 'inverted_clock') clockNotch();
+          break;
+        }
+        case 'clock':
+          line(p0.x, p0.y, pos.x, pos.y);
+          clockNotch();
+          break;
+        case 'clock_low':
+        case 'edge_clock_high': // FALLING_EDGE_CLOCK draws identically upstream
+          clockNotch();
+          lowSlope();
+          line(p0.x, p0.y, pos.x, pos.y);
+          break;
+        case 'input_low':
+          line(p0.x, p0.y, pos.x, pos.y);
+          lowSlope();
+          break;
+        case 'output_low':
+          line(p0.x, p0.y, pos.x, pos.y);
+          if (!dir.y) line(p0.x, p0.y - diam, p0.x + dir.x * diam, p0.y);
+          else line(p0.x - diam, p0.y, p0.x, p0.y + dir.y * diam);
+          break;
+        case 'non_logic':
+          line(p0.x, p0.y, pos.x, pos.y);
+          line(
+            p0.x - (dir.x + dir.y) * radius,
+            p0.y - (dir.y - dir.x) * radius,
+            p0.x + (dir.x + dir.y) * radius,
+            p0.y + (dir.y - dir.x) * radius,
+          );
+          line(
+            p0.x - (dir.x - dir.y) * radius,
+            p0.y - (dir.x + dir.y) * radius,
+            p0.x + (dir.x - dir.y) * radius,
+            p0.y + (dir.x + dir.y) * radius,
+          );
+          break;
+        default:
+          line(p0.x, p0.y, pos.x, pos.y);
       }
     };
 
@@ -1531,45 +1701,62 @@ function drawLibUnit(
     ctx.lineWidth = g_defaultPen;
     strokePinBody();
 
-    const dir = pinDir(pin.angle);
+    // ----- pin name/number placement (PIN_LAYOUT_CACHE) ----------------------
     const horiz = dir.y === 0;
+    const textAngle = horiz ? 0 : 90;
+    const mid = { x: (pos.x + p0.x) / 2, y: (pos.y + p0.y) / 2 };
+    const nameShown = !pins.namesHidden && NAME > 0 && !!pin.name && pin.name !== '~';
+    const numberShown = !pins.numbersHidden && NUM > 0 && !!pin.number && pin.number !== '~';
+    const nameInside = pins.nameOffset > 0;
 
-    // Pin number: centred over the pin line, offset to one side.
-    if (!pins.numbersHidden && NUM > 0 && pin.number && pin.number !== '~') {
-      const mid = { x: (pin.at.x + endLocal.x) / 2, y: (pin.at.y + endLocal.y) / 2 };
-      const off = NUM / 2 + MARGIN;
-      const anchor = localToWorld(
-        origin,
-        t,
-        horiz ? { x: mid.x, y: mid.y - off } : { x: mid.x - off, y: mid.y },
+    if (numberShown) {
+      // The number is centred along the pin: above it, or below when the name
+      // is shown outside (name above / number below).
+      const below = nameShown && !nameInside;
+      const off = (NUM / 2 + TEXT_OFFSET) * (below ? 1 : -1);
+      const anchor = horiz ? { x: mid.x, y: mid.y + off } : { x: mid.x + off, y: mid.y };
+      drawText(
+        ctx,
+        pin.number,
+        anchor,
+        NUM,
+        hiddenGhost ? theme.hidden : theme.pinNumber,
+        undefined,
+        textAngle,
       );
-      drawText(ctx, pin.number, anchor, NUM, hiddenGhost ? theme.hidden : theme.pinNumber);
     }
 
-    // Pin name: inside the body at the inner end (offset > 0), else just outside.
-    if (!pins.namesHidden && NAME > 0 && pin.name && pin.name !== '~') {
-      if (pins.nameOffset > 0) {
-        const anchor = localToWorld(origin, t, {
-          x: endLocal.x + dir.x * pins.nameOffset,
-          y: endLocal.y + dir.y * pins.nameOffset,
-        });
-        const justify = horiz ? [dir.x > 0 ? 'left' : 'right'] : ['left'];
-        drawText(ctx, pin.name, anchor, NAME, hiddenGhost ? theme.hidden : theme.pinName, justify);
-      } else {
-        const anchor = localToWorld(
-          origin,
-          t,
-          horiz
-            ? { x: endLocal.x - dir.x * MARGIN, y: endLocal.y - NAME / 2 }
-            : { x: endLocal.x, y: endLocal.y },
-        );
+    if (nameShown) {
+      if (nameInside) {
+        // Inside the body, just past the pin root, reading outward.
+        const anchor = {
+          x: p0.x - dir.x * pins.nameOffset,
+          y: p0.y - dir.y * pins.nameOffset,
+        };
+        // Rotated (vertical) text advances upward on screen, so the side the
+        // text extends toward flips with the pin direction.
+        const justify = horiz ? [dir.x < 0 ? 'left' : 'right'] : [dir.y < 0 ? 'right' : 'left'];
         drawText(
           ctx,
           pin.name,
           anchor,
           NAME,
           hiddenGhost ? theme.hidden : theme.pinName,
-          horiz ? [dir.x > 0 ? 'right' : 'left'] : undefined,
+          justify,
+          textAngle,
+        );
+      } else {
+        // Outside: centred over the middle of the pin.
+        const off = NAME / 2 + TEXT_OFFSET;
+        const anchor = horiz ? { x: mid.x, y: mid.y - off } : { x: mid.x - off, y: mid.y };
+        drawText(
+          ctx,
+          pin.name,
+          anchor,
+          NAME,
+          hiddenGhost ? theme.hidden : theme.pinName,
+          undefined,
+          textAngle,
         );
       }
     }
@@ -1609,6 +1796,7 @@ function drawArc(
   mid: Vec2,
   end: Vec2,
   fill = false,
+  stroke = true,
 ): void {
   const ax = start.x,
     ay = start.y,
@@ -1618,7 +1806,7 @@ function drawArc(
     cy = end.y;
   const d = 2 * (ax * (by - cy) + bx * (cy - ay) + cx * (ay - by));
   if (Math.abs(d) < 1e-6) {
-    strokeLine(ctx, start, end); // collinear: degenerate to a segment
+    if (stroke) strokeLine(ctx, start, end); // collinear: degenerate to a segment
     return;
   }
   const ux =
@@ -1640,7 +1828,7 @@ function drawArc(
   ctx.beginPath();
   ctx.arc(ux, uy, r, a0, a1, ccw);
   if (fill) ctx.fill(); // fills the segment (arc + chord); does not affect the stroked path
-  ctx.stroke();
+  if (stroke) ctx.stroke();
 }
 
 function isBetween(a0: number, aMid: number, a1: number): boolean {
@@ -1959,7 +2147,7 @@ export function renderSymbolPreview(
       if (g.kind === 'rectangle') {
         inc(g.start);
         inc(g.end);
-      } else if (g.kind === 'polyline') g.points.forEach(inc);
+      } else if (g.kind === 'polyline' || g.kind === 'bezier') g.points.forEach(inc);
       else if (g.kind === 'circle') {
         inc({ x: g.center.x - g.radius, y: g.center.y - g.radius });
         inc({ x: g.center.x + g.radius, y: g.center.y + g.radius });
@@ -1998,7 +2186,37 @@ export function renderSymbolPreview(
     namesHidden: lib.pinNamesHidden,
     nameOffset: lib.pinNameOffset,
   };
-  for (const u of units) drawLibUnit(ctx, u, { x: 0, y: 0 }, symbolTransform(0), theme, pins);
+  // Background fills of every unit, then foreground (painter layer order).
+  for (const u of units)
+    drawLibUnit(
+      ctx,
+      u,
+      { x: 0, y: 0 },
+      symbolTransform(0),
+      theme,
+      pins,
+      undefined,
+      0,
+      undefined,
+      0,
+      false,
+      'bg',
+    );
+  for (const u of units)
+    drawLibUnit(
+      ctx,
+      u,
+      { x: 0, y: 0 },
+      symbolTransform(0),
+      theme,
+      pins,
+      undefined,
+      0,
+      undefined,
+      0,
+      false,
+      'fg',
+    );
 }
 
 /** Compute a viewport that fits the schematic content into the given canvas size. */

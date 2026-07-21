@@ -248,6 +248,12 @@ export function readGraphic(node: SList, invertY = false): LibGraphic | undefine
       const points = pts ? childrenNamed(pts, 'xy').map((xy) => readPoint(xy, 0, invertY)) : [];
       return withSF({ kind: 'polyline' as const, points, source: node });
     }
+    case 'bezier': {
+      // Cubic Bézier: `(bezier (pts (xy start) (xy c1) (xy c2) (xy end)) ...)`.
+      const pts = childNamed(node, 'pts');
+      const points = pts ? childrenNamed(pts, 'xy').map((xy) => readPoint(xy, 0, invertY)) : [];
+      return withSF({ kind: 'bezier' as const, points, source: node });
+    }
     case 'text': {
       const { at, angle } = readAt(node, invertY);
       const effects = readEffects(node);

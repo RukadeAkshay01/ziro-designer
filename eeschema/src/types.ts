@@ -110,6 +110,14 @@ export type LibGraphic =
       readonly source: SList;
     }
   | {
+      readonly kind: 'bezier';
+      /** Cubic Bézier control points: start, ctrl1, ctrl2, end. */
+      readonly points: readonly Vec2[];
+      readonly stroke?: Stroke;
+      readonly fill?: Fill;
+      readonly source: SList;
+    }
+  | {
       readonly kind: 'text';
       readonly text: string;
       readonly at: Vec2;
