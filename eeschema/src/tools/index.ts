@@ -14,6 +14,7 @@ export * from './properties.js';
 export * from './boxselect.js';
 export * from './clipboard.js';
 export * from './sch_find_replace_tool.js';
+export * from './sch_line_wire_bus_tool.js';
 export * from './annotate.js';
 export * from './sch_sheet_path.js';
 export * from './page_settings.js';

@@ -176,6 +176,16 @@ export function buildLibGraphicNode(g: LibGraphic): SList {
         strokeNode(g.stroke),
         fillNode(g.fill),
       );
+    case 'bezier':
+      return list(
+        atom('bezier'),
+        {
+          kind: 'list',
+          items: [atom('pts'), ...g.points.map((p) => list(atom('xy'), atom(fx(p)), atom(fy(p))))],
+        },
+        strokeNode(g.stroke),
+        fillNode(g.fill),
+      );
     case 'text':
       return list(
         atom('text'),
@@ -259,7 +269,10 @@ function graphicNode(g: LibGraphic): SList {
         vecEq(orig.end, g.end) &&
         strokeEq(orig.stroke, g.stroke) &&
         fillEq(orig.fill, g.fill);
-    else if (orig.kind === 'polyline' && g.kind === 'polyline')
+    else if (
+      (orig.kind === 'polyline' && g.kind === 'polyline') ||
+      (orig.kind === 'bezier' && g.kind === 'bezier')
+    )
       same =
         orig.points.length === g.points.length &&
         orig.points.every((p, i) => vecEq(p, g.points[i])) &&

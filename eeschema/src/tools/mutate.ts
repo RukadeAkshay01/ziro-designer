@@ -139,8 +139,8 @@ export function deleteByIds(ids: ReadonlySet<string>): EditCommand {
  * `lib_symbols` cache (as KiCad does). Undo removes the instance and the def if it
  * was newly added.
  */
-export function placeSymbol(lib: LibSymbol, at: Vec2, orient?: Orientation): EditCommand {
-  return placeCmd(lib, makeSymbol(lib, at, orient));
+export function placeSymbol(lib: LibSymbol, at: Vec2, orient?: Orientation, unit = 1): EditCommand {
+  return placeCmd(lib, makeSymbol(lib, at, orient, unit));
 }
 
 function placeCmd(lib: LibSymbol, sym: SchSymbol): EditCommand {

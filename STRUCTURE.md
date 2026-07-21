@@ -39,6 +39,12 @@ Vitest suites for all of them, arranged by the module under test.
 - **Editor UI frames currently live in `designer/src/editors/`** (schematic,
   pcb, symbol, footprint). Migrating each frame into its engine package is
   planned once the shared-widget layer is extracted.
+- **Shared chooser widgets live in `designer/src/widgets/`**, mirroring
+  upstream `common/widgets/` + `common/lib_tree_model*` (`lib_tree.tsx`,
+  `lib_tree_model.ts`, `lib_tree_model_adapter.ts`,
+  `footprint_preview_widget.tsx`, `footprint_select_widget.tsx`); editor-
+  specific widgets sit in `designer/src/editors/<frame>/widgets/` after
+  their upstream `<frame>/widgets/` counterparts.
 - **The 3D viewer** (`designer/src/editors/pcb/pcb3d.ts`, `model3d.ts`,
   `component3d.ts`) stays in the app for now because it shares geometry/theme
   modules with the 2D board painter; it becomes its own package when split.

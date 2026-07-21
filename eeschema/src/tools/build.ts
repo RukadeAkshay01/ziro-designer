@@ -182,6 +182,7 @@ function buildSymbolNode(
   uuid: string,
   fields: SchField[],
   orient: Orientation,
+  unit = 1,
 ): SList {
   const items: SList['items'] = [
     atom('symbol'),
@@ -190,7 +191,7 @@ function buildSymbolNode(
   ];
   if (orient.mirror) items.push(list(atom('mirror'), atom(orient.mirror)));
   items.push(
-    list(atom('unit'), atom('1')),
+    list(atom('unit'), atom(String(unit))),
     list(atom('exclude_from_sim'), atom('no')),
     list(atom('in_bom'), atom('yes')),
     list(atom('on_board'), atom('yes')),
@@ -210,6 +211,7 @@ export function makeSymbol(
   lib: LibSymbol,
   at: Vec2,
   orient: Orientation = { angle: 0 },
+  unit = 1,
 ): SchSymbol {
   const uuid = newUuid();
   const refProp = lib.properties.find((p) => p.key === 'Reference');
@@ -239,14 +241,14 @@ export function makeSymbol(
     libId: lib.libId,
     at,
     angle: orient.angle,
-    unit: 1,
+    unit,
     bodyStyle: 1,
     inBom: true,
     onBoard: true,
     dnp: false,
     uuid,
     fields,
-    source: buildSymbolNode(lib.libId, at, uuid, fields, orient),
+    source: buildSymbolNode(lib.libId, at, uuid, fields, orient, unit),
   };
   if (orient.mirror) sym.mirror = orient.mirror;
   return sym;

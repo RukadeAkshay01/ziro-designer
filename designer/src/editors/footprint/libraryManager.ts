@@ -40,9 +40,10 @@ export interface ManagedFpLibrary {
 
 // Deployments point VITE_FOOTPRINTS_URL at the full hosted library set
 // (Cloudflare R2 — same pattern as demos/3D models); bundled subset fallback.
+// The cast keeps this module loadable outside Vite (the qa test runner).
+const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
 export const FOOTPRINTS_BASE =
-  (import.meta.env.VITE_FOOTPRINTS_URL as string | undefined) ||
-  `${import.meta.env.BASE_URL}footprints`;
+  viteEnv?.VITE_FOOTPRINTS_URL || `${viteEnv?.BASE_URL ?? '/'}footprints`;
 
 /** A footprint's name is the `.kicad_mod` basename (its FPID item name). */
 export const fpNameOf = (path: string): string =>

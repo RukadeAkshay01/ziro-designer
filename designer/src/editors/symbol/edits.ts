@@ -157,6 +157,7 @@ function moveGraphic(g: LibGraphic, d: Vec2): LibGraphic {
         mid: translate(g.mid, d),
         end: translate(g.end, d),
       };
+    case 'bezier':
     case 'polyline':
       return { ...g, points: g.points.map((p) => translate(p, d)) };
     case 'text':
@@ -185,6 +186,7 @@ function rotateGraphic(g: LibGraphic, c: Vec2, ccw: boolean): LibGraphic {
       return { ...g, center: r(g.center) };
     case 'arc':
       return { ...g, start: r(g.start), mid: r(g.mid), end: r(g.end) };
+    case 'bezier':
     case 'polyline':
       return { ...g, points: g.points.map(r) };
     case 'text':
@@ -237,6 +239,7 @@ function mirrorGraphic(g: LibGraphic, c: Vec2, horizontal: boolean): LibGraphic 
       return { ...g, center: m(g.center) };
     case 'arc':
       return { ...g, start: m(g.start), mid: m(g.mid), end: m(g.end) };
+    case 'bezier':
     case 'polyline':
       return { ...g, points: g.points.map(m) };
     case 'text': {
@@ -272,6 +275,7 @@ function itemPosition(sym: LibSymbol, ref: SymItemRef): Vec2 {
       return g.center;
     case 'arc':
       return g.start;
+    case 'bezier':
     case 'polyline':
       return g.points[0] ?? { x: 0, y: 0 };
     case 'text':
@@ -691,6 +695,7 @@ function hitGraphic(g: LibGraphic, p: Vec2, tol: number): boolean {
         if (distToSegment(p, pts[i - 1]!, pts[i]!) <= tol) return true;
       return false;
     }
+    case 'bezier':
     case 'polyline': {
       for (let i = 1; i < g.points.length; i++)
         if (distToSegment(p, g.points[i - 1]!, g.points[i]!) <= tol) return true;
@@ -816,6 +821,7 @@ function graphicPoints(g: LibGraphic): Vec2[] {
       ];
     case 'arc':
       return [g.start, g.mid, g.end];
+    case 'bezier':
     case 'polyline':
       return [...g.points];
     case 'text':

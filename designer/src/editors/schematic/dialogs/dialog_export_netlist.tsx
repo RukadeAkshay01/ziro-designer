@@ -77,7 +77,7 @@ export function DialogExportNetlist({ doc, libById, baseName, onClose }: Props):
             </div>
           ))}
         </div>
-        <div className="ze-modal-body" style={{ padding: '14px' }}>
+        <div className="ze-modal-body" style={{ display: 'block', padding: '14px' }}>
           <p className="ze-muted" style={{ fontSize: 12.5, margin: '0 0 8px' }}>
             {active.note}
           </p>
