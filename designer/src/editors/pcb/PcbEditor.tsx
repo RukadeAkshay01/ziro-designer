@@ -17,6 +17,9 @@ import {
   boardItemBBox,
   parseBoardItemId,
   moveBoardItems,
+  dragBoardItems,
+  connectedTrackEnds,
+  boardItemId,
   subsetBoardItems,
   deleteBoardItems,
   rotateBoardItems,
@@ -242,6 +245,13 @@ export function PcbEditor({
   // a move gesture is in flight; committed on pointer-up (PCB_MOVE_TOOL preview).
   const moveDeltaRef = useRef<{ x: number; y: number } | null>(null);
   const movingRef = useRef(false);
+  // Drag mode (Ctrl/Cmd-drag): move the part AND stretch its attached traces
+  // (EDIT_TOOL Drag), vs a plain move that leaves the routing behind.
+  const dragModeRef = useRef(false);
+  // The exact selection captured at gesture start (applySelect is async) plus,
+  // for a drag, the ids excluded from the backdrop raster (part + its traces).
+  const movingSelRef = useRef<ReadonlySet<string>>(new Set());
+  const dragAffectedRef = useRef<ReadonlySet<string>>(new Set());
   // While a move is in flight the base raster is the board with the moving items
   // removed; this scene holds just those items, painted live at the drag offset
   // so the real geometry follows the cursor (not merely its bounding box).
@@ -441,10 +451,13 @@ export function PcbEditor({
       const md = moveDeltaRef.current;
       const os = moveSceneRef.current ?? selSceneRef.current;
       if (os) {
+        // A drag overlay is already at its stretched absolute coords; a move
+        // overlay is the static subset translated by the drag delta.
+        const off = dragModeRef.current ? { x: 0, y: 0 } : (md ?? { x: 0, y: 0 });
         const offView = {
           scale: v.scale,
-          tx: v.tx + (md ? md.x : 0) * v.scale,
-          ty: v.ty + (md ? md.y : 0) * v.scale,
+          tx: v.tx + off.x * v.scale,
+          ty: v.ty + off.y * v.scale,
         };
         ctx.save();
         drawBoard(
@@ -785,6 +798,7 @@ export function PcbEditor({
     onItem: boolean;
     moved: boolean;
     shift: boolean;
+    drag: boolean;
   } | null>(null);
 
   // Does an item of this kind pass the Selection Filter panel? (KiCad's
@@ -869,6 +883,7 @@ export function PcbEditor({
         onItem: !!hitId,
         moved: false,
         shift: e.shiftKey,
+        drag: e.ctrlKey || e.metaKey,
       };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
@@ -905,6 +920,10 @@ export function PcbEditor({
           // then split the scene into a static backdrop (everything else) and a
           // live overlay of the moving items so the real geometry — not just a
           // bounding box — tracks the cursor.
+          const filter = {
+            hideFrontFootprints: !objects.footprintsFront,
+            hideBackFootprints: !objects.footprintsBack,
+          };
           if (!movingRef.current) {
             movingRef.current = true;
             let movingSel: ReadonlySet<string> = selForDrawRef.current;
@@ -912,14 +931,28 @@ export function PcbEditor({
               movingSel = new Set([d.hitId]);
               applySelect(d.hitId, false);
             }
+            movingSelRef.current = movingSel;
             const brd = boardRef.current;
             if (brd && movingSel.size > 0) {
-              const filter = {
-                hideFrontFootprints: !objects.footprintsFront,
-                hideBackFootprints: !objects.footprintsBack,
-              };
-              sceneRef.current = buildScene(deleteBoardItems(brd, movingSel), filter);
-              moveSceneRef.current = buildScene(subsetBoardItems(brd, movingSel), filter);
+              // Drag (Ctrl/Cmd) additionally carries the traces attached to any
+              // moving footprint, so the backdrop must also exclude those tracks.
+              const fpIdx = new Set<number>();
+              for (const id of movingSel) {
+                const r = parseBoardItemId(id);
+                if (r?.kind === 'footprint') fpIdx.add(r.index);
+              }
+              dragModeRef.current = d.drag && fpIdx.size > 0;
+              const affected = new Set<string>(movingSel);
+              if (dragModeRef.current) {
+                for (const e2 of connectedTrackEnds(brd, fpIdx))
+                  affected.add(boardItemId(e2.kind, e2.index));
+              }
+              dragAffectedRef.current = affected;
+              sceneRef.current = buildScene(deleteBoardItems(brd, affected), filter);
+              // Move preview is a static translated subset; drag rebuilds below.
+              moveSceneRef.current = dragModeRef.current
+                ? null
+                : buildScene(subsetBoardItems(brd, movingSel), filter);
               cacheRef.current = null;
             }
           }
@@ -928,7 +961,17 @@ export function PcbEditor({
           // follows the snapped crosshair (edit_tool_move_fct.cpp).
           const from = snapToGrid(d.world);
           const to = snapToGrid(cur);
-          moveDeltaRef.current = { x: to.x - from.x, y: to.y - from.y };
+          const delta = { x: to.x - from.x, y: to.y - from.y };
+          moveDeltaRef.current = delta;
+          // For a drag, rebuild the overlay from the stretched geometry each
+          // frame (traces don't translate uniformly), drawn at absolute coords.
+          if (dragModeRef.current && boardRef.current) {
+            const dragged = dragBoardItems(boardRef.current, movingSelRef.current, delta);
+            moveSceneRef.current = buildScene(
+              subsetBoardItems(dragged, dragAffectedRef.current),
+              filter,
+            );
+          }
           requestDraw();
         } else {
           // Drag from empty space rubber-bands a selection box.
@@ -943,20 +986,28 @@ export function PcbEditor({
     const box = boxRef.current;
     const moved = movingRef.current;
     const delta = moveDeltaRef.current;
+    const wasDrag = dragModeRef.current;
+    const dragSel = movingSelRef.current;
     panRef.current = null;
     downRef.current = null;
     boxRef.current = null;
     movingRef.current = false;
     moveDeltaRef.current = null;
+    dragModeRef.current = false;
     const hadMoveOverlay = moveSceneRef.current !== null;
     moveSceneRef.current = null;
     if (d) {
       if (!d.moved) {
         clickSelect(e.clientX, e.clientY, d.shift);
       } else if (moved && delta && boardRef.current && (delta.x !== 0 || delta.y !== 0)) {
-        // Commit the drag-move of the current selection (EDIT_TOOL::Move); this
+        // Commit the gesture: a drag (EDIT_TOOL Drag) stretches attached traces
+        // too; a plain move (EDIT_TOOL Move) moves only the selection. Either
         // rebuilds the full scene, replacing the split backdrop/overlay.
-        commitBoard(moveBoardItems(boardRef.current, selForDrawRef.current, delta));
+        commitBoard(
+          wasDrag
+            ? dragBoardItems(boardRef.current, dragSel, delta)
+            : moveBoardItems(boardRef.current, selForDrawRef.current, delta),
+        );
       } else if (hadMoveOverlay && boardRef.current) {
         // Move started but dropped in place (zero net delta): the backdrop is
         // still the board-minus-moving-items, so restore the full scene.
