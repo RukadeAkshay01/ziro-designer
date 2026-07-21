@@ -32,6 +32,11 @@ import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js
 
 const MM = 10000; // IU per mm, matches core units
 
+// Default net-class clearance (netclass.cpp DEFAULT_CLEARANCE = 0.2 mm). This
+// board carries no explicit net class (those live in the .kicad_pro), so KiCad
+// falls back to it for the pad-clearance outlines shown by default.
+const DEFAULT_PAD_CLEARANCE = 0.2 * MM;
+
 /**
  * COLOR4D::Brightened(f): push each channel toward white by factor f
  * (c·(1−f)+f). KiCad brightens selected items by 0.8 (pcb_painter.cpp getColor).
@@ -64,6 +69,8 @@ export interface PcbDrawOptions {
   zoneOpacity: number;
   /** Zone display mode: false = filled (default), true = outline sketch. */
   zoneOutline: boolean;
+  /** Show pad clearance outlines (m_Display.m_PadClearance, default on). */
+  padClearance: boolean;
 }
 
 /** KiCad defaults (project_local_settings.cpp + s_objectSettings). */
@@ -81,6 +88,7 @@ export const DEFAULT_DRAW_OPTIONS: PcbDrawOptions = {
   padOpacity: 1.0,
   zoneOpacity: 0.6,
   zoneOutline: false,
+  padClearance: true,
 };
 
 interface LayerBuckets {
@@ -88,6 +96,8 @@ interface LayerBuckets {
   hasZones: boolean;
   zoneOutlines: Path2D; // zone boundary borders (drawn full-opacity over the fill)
   hasZoneOutlines: boolean;
+  clearance: Path2D; // pad clearance outlines (stroked in the copper color)
+  hasClearance: boolean;
   tracks: Map<number, Path2D>; // width -> segments/arcs (object: Tracks)
   pads: Path2D; // pad flashes (object: Pads)
   hasPads: boolean;
@@ -117,6 +127,8 @@ const newBuckets = (): LayerBuckets => ({
   hasZones: false,
   zoneOutlines: new Path2D(),
   hasZoneOutlines: false,
+  clearance: new Path2D(),
+  hasClearance: false,
   tracks: new Map(),
   pads: new Path2D(),
   hasPads: false,
@@ -238,6 +250,41 @@ function addPadShape(path: Path2D, pad: PcbPad): void {
       }
       break;
     }
+  }
+  path.addPath(sub, m);
+}
+
+/**
+ * The pad outline inflated by `clr` — the pad-clearance outline KiCad strokes
+ * in the copper color (pcb_painter.cpp draw(PAD) clearance layer): a circle of
+ * radius+clr for round pads, otherwise the shape offset outward by clr (which
+ * rounds the corners with radius clr).
+ */
+function addPadClearanceShape(path: Path2D, pad: PcbPad, clr: number): void {
+  const m = new DOMMatrix().translate(pad.at.x, pad.at.y).rotate(-pad.angle);
+  const w = pad.size.x;
+  const h = pad.size.y;
+  const sub = new Path2D();
+  const x = -w / 2 - clr;
+  const y = -h / 2 - clr;
+  const rw = w + 2 * clr;
+  const rh = h + 2 * clr;
+  switch (pad.shape) {
+    case 'circle':
+      sub.arc(0, 0, w / 2 + clr, 0, Math.PI * 2);
+      break;
+    case 'oval':
+      sub.roundRect(x, y, rw, rh, Math.min(w, h) / 2 + clr);
+      break;
+    case 'roundrect': {
+      const r = Math.min(0.5, pad.roundrectRatio ?? 0.25) * Math.min(w, h);
+      sub.roundRect(x, y, rw, rh, r + clr);
+      break;
+    }
+    default:
+      // rect / trapezoid / custom: offset outward with clr-radius corners.
+      sub.roundRect(x, y, rw, rh, clr);
+      break;
   }
   path.addPath(sub, m);
 }
@@ -601,6 +648,12 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
         const b = buckets(scene, layer);
         addPadShape(b.pads, pad);
         b.hasPads = true;
+        // Pad clearance outline is drawn per copper layer the pad flashes on
+        // (not the mask layers), in that layer's color.
+        if (copperNames.includes(layer)) {
+          addPadClearanceShape(b.clearance, pad, DEFAULT_PAD_CLEARANCE);
+          b.hasClearance = true;
+        }
       }
       if (pad.drill && pad.type === 'thru_hole') {
         addHole(scene.padHoleWalls, pad, {
@@ -898,19 +951,17 @@ export function drawGrid(
   // Group dots by device size so the whole grid paints in a few fills.
   const paths = new Map<string, Path2D>();
   const rectAt = (dx: number, dy: number, sw: number, sh: number): void => {
-    const key = `${sw}:${sh}`;
+    // Pixel-align to whole device pixels so each dot is full-coverage (the OpenGL
+    // GAL's dots are crisp); a sub-pixel rect anti-aliases to a dim grey smear.
+    const w = Math.max(1, Math.round(sw));
+    const h = Math.max(1, Math.round(sh));
+    const key = `${w}:${h}`;
     let p = paths.get(key);
     if (!p) {
       p = new Path2D();
       paths.set(key, p);
     }
-    // Cairo drawGridPoint: round the centre, then offset by floor(size/2)+0.5.
-    p.rect(
-      Math.round(dx) - Math.floor(sw / 2) - 0.5,
-      Math.round(dy) - Math.floor(sh / 2) - 0.5,
-      sw,
-      sh,
-    );
+    p.rect(Math.round(dx) - (w >> 1), Math.round(dy) - (h >> 1), w, h);
   };
   for (let j = startY; j <= endY; j++) {
     const tickY = j % opts.tick === 0;
@@ -1017,6 +1068,17 @@ export function buildDrawSteps(
       ctx.globalAlpha = opts.viaOpacity;
       ctx.fillStyle = color;
       ctx.fill(b.vias, 'nonzero');
+      ctx.globalAlpha = 1;
+    }
+    // Pad clearance outlines: thin (min-pen) stroke in the copper color, the
+    // ring KiCad shows around every pad by default (m_Display.m_PadClearance).
+    // Drawn translucent so it reads as the light "glass" ring GAL's anti-aliased
+    // sub-pixel line gives, rather than a hard solid circle.
+    if (opts.padClearance && b.hasClearance) {
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = minPen;
+      ctx.stroke(b.clearance);
       ctx.globalAlpha = 1;
     }
   };
