@@ -5,8 +5,14 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { filterFootprints } from '@ziroeda/designer/src/widgets/footprint_list.js';
 import { parseFootprint } from '@ziroeda/designer/src/editors/footprint/footprintBoard.js';
+
+// Repo-relative so the fixture resolves on any checkout (CI runs elsewhere).
+const CM5IO_DIR = fileURLToPath(
+  new URL('../../../designer/public/footprints/CM5IO.pretty', import.meta.url),
+);
 
 describe('footprint filters', () => {
   const index = [
@@ -29,9 +35,8 @@ describe('footprint preview pipeline', () => {
   // buildScene needs the browser's Path2D; the canvas render is covered by the
   // in-app smoke. Here: every hosted .kicad_mod parses into a footprint.
   it('parses hosted .kicad_mod files', () => {
-    const dir = '/home/user/ziro-designer/designer/public/footprints/CM5IO.pretty';
-    for (const file of readdirSync(dir).filter((f) => f.endsWith('.kicad_mod'))) {
-      const fp = parseFootprint(readFileSync(`${dir}/${file}`, 'utf8'));
+    for (const file of readdirSync(CM5IO_DIR).filter((f) => f.endsWith('.kicad_mod'))) {
+      const fp = parseFootprint(readFileSync(`${CM5IO_DIR}/${file}`, 'utf8'));
       expect(fp, file).not.toBeNull();
     }
   });

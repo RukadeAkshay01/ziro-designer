@@ -16,16 +16,20 @@ import {
   refId,
 } from '@ziroeda/eeschema';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const EMPTY = `(kicad_sch (version 20250114) (generator "t") (uuid "00000000-0000-0000-0000-000000000001") (paper "A4"))`;
 
+// Repo-relative so the fixture resolves on any checkout (CI runs elsewhere).
+const DEVICE_LIB = fileURLToPath(
+  new URL('../../../designer/public/symbols/Device.kicad_sym', import.meta.url),
+);
+
 describe('move with connections', () => {
   it('drags wire endpoints that touch moved symbol pins', () => {
-    const lib = readSymbolLib(
-      parse(
-        readFileSync('/home/user/ziro-designer/designer/public/symbols/Device.kicad_sym', 'utf8'),
-      ),
-    ).find((s) => s.libId === 'R')!;
+    const lib = readSymbolLib(parse(readFileSync(DEVICE_LIB, 'utf8'))).find(
+      (s) => s.libId === 'R',
+    )!;
     const libR = { ...lib, libId: 'Device:R' };
     let sch = readSchematic(parse(EMPTY));
     sch = placeSymbol(libR, { x: 100000, y: 100000 }).apply(sch);
