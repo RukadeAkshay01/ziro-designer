@@ -667,6 +667,22 @@ export function drawGraphic(
       ctx.stroke();
       break;
     }
+    case 'bezier': {
+      if (g.points.length < 4) break;
+      ctx.beginPath();
+      ctx.moveTo(g.points[0]!.x, g.points[0]!.y);
+      ctx.bezierCurveTo(
+        g.points[1]!.x,
+        g.points[1]!.y,
+        g.points[2]!.x,
+        g.points[2]!.y,
+        g.points[3]!.x,
+        g.points[3]!.y,
+      );
+      if (filled && !shadow) ctx.fill();
+      ctx.stroke();
+      break;
+    }
     case 'text': {
       if (shadow) break; // no stroke halo for text (matches drawLibUnitShadow)
       const h = g.effects?.fontSize?.[0] ?? DEFAULT_TEXT;
@@ -873,7 +889,7 @@ export function symbolBounds(
         inc(g.start);
         inc(g.mid);
         inc(g.end);
-      } else if (g.kind === 'polyline') g.points.forEach(inc);
+      } else if (g.kind === 'polyline' || g.kind === 'bezier') g.points.forEach(inc);
       else inc(g.at);
     }
     for (const p of u.pins) {

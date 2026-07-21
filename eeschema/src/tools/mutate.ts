@@ -139,8 +139,8 @@ export function deleteByIds(ids: ReadonlySet<string>): EditCommand {
  * `lib_symbols` cache (as KiCad does). Undo removes the instance and the def if it
  * was newly added.
  */
-export function placeSymbol(lib: LibSymbol, at: Vec2, orient?: Orientation): EditCommand {
-  return placeCmd(lib, makeSymbol(lib, at, orient));
+export function placeSymbol(lib: LibSymbol, at: Vec2, orient?: Orientation, unit = 1): EditCommand {
+  return placeCmd(lib, makeSymbol(lib, at, orient, unit));
 }
 
 function placeCmd(lib: LibSymbol, sym: SchSymbol): EditCommand {
@@ -217,9 +217,11 @@ export function replaceLabel(index: number, next: SchLabel): EditCommand {
 }
 
 /**
- * Lock / unlock the selected symbols (SCH_EDIT_TOOL::Lock / Unlock / ToggleLock).
- * `mode` 'lock' sets, 'unlock' clears, 'toggle' flips each symbol individually.
- * Only symbols carry a lock state in the schematic grammar.
+ * Lock / unlock the selected symbols (SCH_EDIT_TOOL::modifyLockSelected).
+ * `mode` 'lock' sets, 'unlock' clears. 'toggle' resolves the way upstream does:
+ * if ANY selected symbol is locked the whole selection is unlocked, otherwise
+ * the whole selection is locked — it is not a per-item flip. Only symbols
+ * carry a lock state in the schematic grammar.
  */
 export function setSymbolsLockedCommand(
   ids: ReadonlySet<string>,
@@ -228,13 +230,16 @@ export function setSymbolsLockedCommand(
   return {
     label: mode === 'unlock' ? 'Unlock' : 'Lock',
     apply(doc: Schematic): Schematic {
+      // Resolve TOGGLE against the current state: any locked → unlock all.
+      const target =
+        mode === 'toggle'
+          ? !doc.symbols.some((s, i) => ids.has(refId('symbol', s.uuid, i)) && s.locked)
+          : mode === 'lock';
       return {
         ...doc,
-        symbols: doc.symbols.map((s, i) => {
-          if (!ids.has(refId('symbol', s.uuid, i))) return s;
-          const locked = mode === 'toggle' ? !s.locked : mode === 'lock';
-          return locked ? { ...s, locked: true } : { ...s, locked: false };
-        }),
+        symbols: doc.symbols.map((s, i) =>
+          ids.has(refId('symbol', s.uuid, i)) ? { ...s, locked: target } : s,
+        ),
       };
     },
     invert(before: Schematic): EditCommand {

@@ -43,7 +43,7 @@ export function DialogPrint({ onPrint, themeId, onPageSetup, onClose }: Props): 
             ✕
           </span>
         </div>
-        <div className="ze-modal-body" style={{ padding: '10px 14px' }}>
+        <div className="ze-modal-body" style={{ display: 'block', padding: '10px 14px' }}>
           <label
             style={{ display: 'block', margin: '4px 0' }}
             title="Print (or not) the Frame references."

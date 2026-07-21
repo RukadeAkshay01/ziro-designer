@@ -63,19 +63,101 @@ function spaceAdvance(): number {
   return glyphs()[0]!.advance;
 }
 
-/** Total advance width of `text` at glyph height `size` (IU) — no stroke building. */
-export function measureText(text: string, size: number): number {
+// ----- KiCad text markup (font.cpp MARKUP_NODE) --------------------------------
+// `~{...}` renders with an overbar, `_{...}` as subscript, `^{...}` as
+// superscript. Factors from stroke_font.cpp GetTextAsGlyphs and
+// font_metrics.h (m_OverbarHeight).
+const SUPER_SUB_SIZE_MULTIPLIER = 0.8;
+const SUPER_HEIGHT_OFFSET = 0.35;
+const SUB_HEIGHT_OFFSET = 0.15;
+const OVERBAR_HEIGHT = 1.23;
+
+type MarkupStyle = 'normal' | 'overbar' | 'sub' | 'super';
+interface MarkupRun {
+  text: string;
+  style: MarkupStyle;
+}
+
+/** Split one line into markup runs; plain text passes through untouched. */
+function parseMarkup(line: string): MarkupRun[] {
+  if (!/[~_^]\{/.test(line)) return [{ text: line, style: 'normal' }];
+  const runs: MarkupRun[] = [];
+  let plain = '';
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]!;
+    const next = line[i + 1];
+    if ((c === '~' || c === '_' || c === '^') && next === '{') {
+      // Find the matching close brace (markup can contain nested braces).
+      let depth = 1;
+      let j = i + 2;
+      while (j < line.length && depth > 0) {
+        if (line[j] === '{') depth++;
+        else if (line[j] === '}') depth--;
+        j++;
+      }
+      if (plain) {
+        runs.push({ text: plain, style: 'normal' });
+        plain = '';
+      }
+      runs.push({
+        text: line.slice(i + 2, depth === 0 ? j - 1 : j),
+        style: c === '~' ? 'overbar' : c === '_' ? 'sub' : 'super',
+      });
+      i = j - 1;
+    } else {
+      plain += c;
+    }
+  }
+  if (plain) runs.push({ text: plain, style: 'normal' });
+  return runs;
+}
+
+/** Advance one run's glyphs from `cursorX`; collect strokes when `out` given. */
+function layoutRun(run: MarkupRun, size: number, cursorX: number, out?: Vec2[][]): number {
   const gl = glyphs();
-  let w = 0;
-  for (const ch of text) {
+  const glyphSize =
+    run.style === 'sub' || run.style === 'super' ? size * SUPER_SUB_SIZE_MULTIPLIER : size;
+  const dy =
+    run.style === 'sub'
+      ? glyphSize * SUB_HEIGHT_OFFSET
+      : run.style === 'super'
+        ? -glyphSize * SUPER_HEIGHT_OFFSET
+        : 0;
+  const barStart = cursorX;
+  for (const ch of run.text) {
     if (ch === ' ') {
-      w += spaceAdvance() * size;
+      cursorX += spaceAdvance() * glyphSize;
       continue;
     }
     let dd = ch.codePointAt(0)! - 0x20;
-    if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20;
-    w += gl[dd]!.advance * size;
+    if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20; // non-printable -> '?'
+    const g = gl[dd]!;
+    if (out) {
+      const x0 = cursorX;
+      out.push(
+        ...g.strokes.map((s) =>
+          s.map((p) => ({ x: x0 + p.x * glyphSize, y: p.y * glyphSize + dy })),
+        ),
+      );
+    }
+    cursorX += g.advance * glyphSize;
   }
+  if (out && run.style === 'overbar') {
+    // Shorten the bar a little so its rounded ends don't make it over-long.
+    const barTrim = size * 0.1;
+    const y = -size * OVERBAR_HEIGHT;
+    out.push([
+      { x: barStart + barTrim, y },
+      { x: cursorX - barTrim, y },
+    ]);
+  }
+  return cursorX;
+}
+
+/** Total advance width of `text` at glyph height `size` (IU) — no stroke building. */
+export function measureText(text: string, size: number): number {
+  let w = 0;
+  for (const run of parseMarkup(text)) w = layoutRun(run, size, w);
   return w;
 }
 
@@ -89,27 +171,16 @@ export function measureText(text: string, size: number): number {
 const INTERLINE_PITCH = 1.68;
 
 export function layoutText(text: string, size: number): { strokes: Vec2[][]; width: number } {
-  const gl = glyphs();
   // KiCad draws multi-line text (EDA_TEXT with embedded \n) as stacked lines
   // spaced by GetInterline(); a lone newline must not render as a glyph.
   const lines = text.split('\n');
 
   // Pass 1: lay each line out left-aligned from x=0, keep its strokes + width.
+  // Markup runs (~{overbar}, _{sub}, ^{super}) are resolved here.
   const laid = lines.map((line) => {
     const strokes: Vec2[][] = [];
     let cursorX = 0;
-    for (const ch of line) {
-      if (ch === ' ') {
-        cursorX += spaceAdvance() * size;
-        continue;
-      }
-      let dd = ch.codePointAt(0)! - 0x20;
-      if (dd < 0 || dd >= gl.length) dd = '?'.charCodeAt(0) - 0x20; // non-printable -> '?'
-      const g = gl[dd]!;
-      for (const stroke of g.strokes)
-        strokes.push(stroke.map((p) => ({ x: cursorX + p.x * size, y: p.y * size })));
-      cursorX += g.advance * size;
-    }
+    for (const run of parseMarkup(line)) cursorX = layoutRun(run, size, cursorX, strokes);
     return { strokes, width: cursorX };
   });
 

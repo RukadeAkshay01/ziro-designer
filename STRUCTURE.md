@@ -12,6 +12,7 @@ format-compatibility.
 | `designer/`      | *(ours)*             | The Ziro Designer app (Vite + React): launcher/home, menus/toolbars, editor frames, auth + cloud sync, served libraries under `designer/public/` |
 | `eeschema/`      | `eeschema/`          | Schematic engine: document model, `sch_io/sexpr` reader/writer, `connectivity/` (nets, ERC), `tools/` (interactive editing) |
 | `pcbnew/`        | `pcbnew/`            | Board engine: board/footprint/pad/zone object model, `pcb_io/sexpr` parser + formatter, board and footprint editing |
+| `gerbview/`      | `gerbview/`          | Gerber viewer engine: RS-274X Gerber + Excellon drill readers, `D_CODE` apertures, `APERTURE_MACRO` primitives, `GERBER_DRAW_ITEM` model, `GBR_LAYOUT`, `.gbrjob` job-file parsing |
 | `common/`        | `common/`            | Shared EDA classes: shapes, text, units, placement transforms, stroke `font/` |
 | `pcb_calculator/`| `pcb_calculator/` + `common/transline_calculations/` | Calculator Tools engine: regulators, track/via/fusing current, E-series, electrical spacing (IPC-2221 + IEC 60664), board classes, galvanic corrosion, and the `transline/` models (microstrip, coupled microstrip, coplanar, coax, rectangular waveguide, stripline, twisted pair) |
 | `libs/kimath/`   | `libs/kimath/`       | Math: `math/vector2`, `geometry/eda_angle`, `trigo`                       |
@@ -38,6 +39,12 @@ Vitest suites for all of them, arranged by the module under test.
 - **Editor UI frames currently live in `designer/src/editors/`** (schematic,
   pcb, symbol, footprint). Migrating each frame into its engine package is
   planned once the shared-widget layer is extracted.
+- **Shared chooser widgets live in `designer/src/widgets/`**, mirroring
+  upstream `common/widgets/` + `common/lib_tree_model*` (`lib_tree.tsx`,
+  `lib_tree_model.ts`, `lib_tree_model_adapter.ts`,
+  `footprint_preview_widget.tsx`, `footprint_select_widget.tsx`); editor-
+  specific widgets sit in `designer/src/editors/<frame>/widgets/` after
+  their upstream `<frame>/widgets/` counterparts.
 - **The 3D viewer** (`designer/src/editors/pcb/pcb3d.ts`, `model3d.ts`,
   `component3d.ts`) stays in the app for now because it shares geometry/theme
   modules with the 2D board painter; it becomes its own package when split.
@@ -45,5 +52,6 @@ Vitest suites for all of them, arranged by the module under test.
   symbol/footprint/3D-model libraries under `designer/public/` are served as
   static assets.
 - **Future tools get their own engine dirs** following the same upstream
-  conventions (gerber viewer → `gerbview/`, drawing-sheet editor →
-  `pagelayout_editor/`, …), with their UI frames in the app.
+  conventions (gerber viewer → `gerbview/` ✅, drawing-sheet editor →
+  `pagelayout_editor/`, …), with their UI frames in the app. The Gerber
+  Viewer's UI frame lives in `designer/src/editors/gerbview/`.

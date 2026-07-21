@@ -80,7 +80,7 @@ export function DialogPlot({ themeId, onPlot, onClose }: Props): JSX.Element {
         </div>
         <div
           className="ze-modal-body"
-          style={{ padding: '10px 14px', maxHeight: '72vh', overflow: 'auto' }}
+          style={{ display: 'block', padding: '10px 14px', maxHeight: '72vh', overflow: 'auto' }}
         >
           <div style={row}>
             <span style={lab}>Output directory:</span>
@@ -91,6 +91,20 @@ export function DialogPlot({ themeId, onPlot, onClose }: Props): JSX.Element {
               placeholder="Browser downloads folder"
               title="Plots download through the browser; the target folder is your download setting."
             />
+          </div>
+          {/* KiCad 10's design-variant selector; the web app has no variant
+              support yet, so the base design is the only entry. */}
+          <div style={row}>
+            <span style={lab}>Design variant:</span>
+            <select
+              className="ze-select"
+              style={{ flex: 1 }}
+              disabled
+              value="default"
+              title="Design variants are not supported in the browser yet"
+            >
+              <option value="default">Default</option>
+            </select>
           </div>
 
           <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
@@ -123,8 +137,19 @@ export function DialogPlot({ themeId, onPlot, onClose }: Props): JSX.Element {
               <legend style={legend}>Options</legend>
               <div style={row}>
                 <span style={lab}>Page size:</span>
-                <select className="ze-select" style={{ flex: 1 }} disabled value="schematic">
+                <select
+                  className="ze-select"
+                  style={{ flex: 1 }}
+                  value="schematic"
+                  onChange={() => {}}
+                >
                   <option value="schematic">Schematic size</option>
+                  <option value="a4" disabled title="Not supported in the browser yet">
+                    A4
+                  </option>
+                  <option value="a" disabled title="Not supported in the browser yet">
+                    A
+                  </option>
                 </select>
               </div>
               <label style={{ display: 'block', margin: '5px 0', fontSize: 12.5 }}>

@@ -8,6 +8,7 @@ import { FootprintEditor } from './editors/footprint/FootprintEditor.js';
 import { CalculatorTools } from './editors/calculator/CalculatorTools.js';
 import { DrawingSheetEditor } from './editors/drawingsheet/DrawingSheetEditor.js';
 import { ImageConverter } from './editors/image/ImageConverter.js';
+import { GerberViewer } from './editors/gerbview/GerberViewer.js';
 import {
   storageAvailable,
   listProjects,
@@ -67,6 +68,7 @@ export function App(): JSX.Element {
     | 'calculator'
     | 'drawingsheet'
     | 'image'
+    | 'gerber'
   >('home');
   const [projectFiles, setProjectFiles] = useState<PickedFile[] | null>(null);
   // `.kicad_wks` saved into the open project this session (Drawing Sheet Editor
@@ -87,6 +89,7 @@ export function App(): JSX.Element {
   const [calcMounted, setCalcMounted] = useState(false);
   const [dsMounted, setDsMounted] = useState(false);
   const [imgMounted, setImgMounted] = useState(false);
+  const [gbMounted, setGbMounted] = useState(false);
   // "Add symbol to schematic": the symbol editor hands eeschema a symbol to place.
   const [placeRequest, setPlaceRequest] = useState<{ lib: LibSymbol; nonce: number } | null>(null);
   // The file the project manager double-clicked into the footprint / symbol
@@ -127,6 +130,7 @@ export function App(): JSX.Element {
         else if (s.view === 'calculator') setCalcMounted(true);
         else if (s.view === 'drawingsheet') setDsMounted(true);
         else if (s.view === 'image') setImgMounted(true);
+        else if (s.view === 'gerber') setGbMounted(true);
         setView(s.view);
       } catch {
         /* fall back to home */
@@ -420,6 +424,10 @@ export function App(): JSX.Element {
           setImgMounted(true);
           setView('image');
         }}
+        onOpenGerberViewer={() => {
+          setGbMounted(true);
+          setView('gerber');
+        }}
       />
     );
   }
@@ -496,6 +504,11 @@ export function App(): JSX.Element {
       {imgMounted && (
         <div style={{ display: view === 'image' ? 'contents' : 'none' }}>
           <ImageConverter onExitToHome={goHome} />
+        </div>
+      )}
+      {gbMounted && (
+        <div style={{ display: view === 'gerber' ? 'contents' : 'none' }}>
+          <GerberViewer onExitToHome={goHome} projectName={projectName} />
         </div>
       )}
     </>

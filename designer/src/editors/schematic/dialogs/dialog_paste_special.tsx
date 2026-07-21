@@ -35,7 +35,7 @@ export function DialogPasteSpecial({ onOk, onCancel }: Props): JSX.Element {
             ✕
           </span>
         </div>
-        <div className="ze-modal-body" style={{ padding: '10px 14px' }}>
+        <div className="ze-modal-body" style={{ display: 'block', padding: '10px 14px' }}>
           <fieldset
             style={{
               border: '1px solid var(--chrome-border)',

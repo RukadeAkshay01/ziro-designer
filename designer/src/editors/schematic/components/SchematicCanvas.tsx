@@ -18,13 +18,18 @@ import {
   addItems,
   deleteByIds,
   placeSymbol,
-  makeWire,
-  makeBus,
   makeJunction,
   makeNoConnect,
   makeLabel,
-  needsJunction,
   transformItems,
+  startSegments,
+  computeBreakPoint,
+  switchPosture90,
+  isTerminalPoint,
+  sheetPinSideAt,
+  finishWires,
+  segIsNull,
+  type WireSeg,
   makeRectangle,
   makeCircle,
   makeArc,
@@ -78,6 +83,9 @@ export interface InputPrefs {
   mouseLeft: 'select' | 'drag_selected' | 'drag_any';
   mouseMiddle: 'pan' | 'zoom' | 'none';
   mouseRight: 'pan' | 'zoom' | 'none';
+  /** eeschema input.drag_is_move: the mouse-drag gesture performs a Move
+   *  (leave wires behind) instead of a Drag (rubber-band them along). */
+  dragIsMove: boolean;
   autoStartWires: boolean;
   crosshair: 'small' | 'full' | '45';
   alwaysShowCrosshair: boolean;
@@ -96,6 +104,7 @@ export const DEFAULT_INPUT_PREFS: InputPrefs = {
   mouseLeft: 'drag_selected',
   mouseMiddle: 'pan',
   mouseRight: 'pan',
+  dragIsMove: false,
   autoStartWires: true,
   crosshair: 'full',
   alwaysShowCrosshair: false,
@@ -239,21 +248,6 @@ export interface PendingLabel {
   shape: LabelShape;
 }
 
-/** Constrain `pt` relative to `anchor` per the active line-posture mode. */
-function constrain(anchor: Vec2, pt: Vec2, mode: LineMode): Vec2 {
-  if (mode === 'free') return pt;
-  const dx = pt.x - anchor.x;
-  const dy = pt.y - anchor.y;
-  const adx = Math.abs(dx);
-  const ady = Math.abs(dy);
-  if (mode === '90') return adx >= ady ? { x: pt.x, y: anchor.y } : { x: anchor.x, y: pt.y };
-  // 45: horizontal, vertical, or pure diagonal — whichever is closest.
-  if (adx > ady * 2.414) return { x: pt.x, y: anchor.y };
-  if (ady > adx * 2.414) return { x: anchor.x, y: pt.y };
-  const d = Math.max(adx, ady);
-  return { x: anchor.x + Math.sign(dx) * d, y: anchor.y + Math.sign(dy) * d };
-}
-
 export interface CanvasController {
   zoomToFit: () => void;
   /** Fit the view to a world-space box (Zoom to Selected Objects). */
@@ -273,6 +267,10 @@ interface Props {
   activeTool: string;
   lineMode: LineMode;
   placeLib: LibSymbol | null;
+  /** Unit of `placeLib` attached to the cursor ("Place all units" stepping). */
+  placeUnit?: number;
+  /** A symbol was just placed — the editor steps units / reopens the chooser. */
+  onSymbolPlaced?: () => void;
   /** A named label that follows the cursor until clicked to place (null = none yet). */
   pendingLabel: PendingLabel | null;
   /** Wire ids whose net is highlighted (KiCad's net-highlight overlay). */
@@ -356,6 +354,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     activeTool,
     lineMode,
     placeLib,
+    placeUnit = 1,
+    onSymbolPlaced,
     pendingLabel,
     highlight,
     onSelect,
@@ -451,8 +451,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   // Lasso-selection trace (KiCad selectLasso): the freehand polygon in world coords.
   const lassoPointsRef = useRef<Vec2[]>([]);
 
-  // Wire-drawing state.
-  const wireAnchorRef = useRef<Vec2 | null>(null);
+  // Wire-drawing state (SCH_LINE_WIRE_BUS_TOOL): the chain of segments being
+  // drawn (m_wires) — the last two are "live" and follow the cursor — plus the
+  // 45°-mode posture flag (static bool posture) and the mode we last drew with
+  // (lastMode, to adjust the chain when line mode changes mid-draw).
+  const wiresRef = useRef<WireSeg[]>([]);
+  const wirePostureRef = useRef(false);
+  const wireLastModeRef = useRef<LineMode>(lineMode);
+  // Current line mode, readable from effects/handlers without re-running them.
+  const lineModeRef = useRef<LineMode>(lineMode);
+  lineModeRef.current = lineMode;
   const cursorRef = useRef<Vec2 | null>(null);
   // A dangling pin the next drawWire activation should start from (auto-start wire).
   const pendingWireStartRef = useRef<Vec2 | null>(null);
@@ -492,17 +500,55 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     },
     [anchors],
   );
-  /** Wire endpoint: a nearby connectable anchor if any, else the line-mode-constrained grid point. */
-  const wireEndPoint = useCallback(
-    (start: Vec2 | null, cur: Vec2): Vec2 => {
-      const vp = viewportRef.current;
-      const maxDist = vp && vp.scale > 0 ? 10 / vp.scale : GRID / 2;
-      const a = nearestAnchor(cur, anchors, maxDist);
-      if (a) return a;
-      return start ? constrain(start, snap(cur), lineMode) : snap(cur);
+  /**
+   * Track the cursor with the live segment(s) of the wire chain — the motion
+   * handler of SCH_LINE_WIRE_BUS_TOOL::doDrawSegments, including the
+   * adjustment when the H/V/45 mode is switched mid-draw. Returns the
+   * possibly-adjusted cursor position (sheet-pin pushes).
+   */
+  const updateWireChain = useCallback(
+    (cursorPos: Vec2): Vec2 => {
+      const wires = wiresRef.current;
+      if (wires.length === 0) return cursorPos;
+
+      if (wireLastModeRef.current !== lineMode) {
+        // Delete the extra segment / add one so we can move orthogonally.
+        if (lineMode === 'free' && wires.length >= 2) {
+          wires.pop();
+        } else if (wireLastModeRef.current === 'free') {
+          const last = wires[wires.length - 1]!;
+          last.b = { ...cursorPos };
+          wires.push({ a: { ...cursorPos }, b: { ...cursorPos } });
+        }
+        wireLastModeRef.current = lineMode;
+      }
+
+      if (lineMode !== 'free' && wires.length >= 2) {
+        const segment = wires[wires.length - 2]!;
+        const side = sheetPinSideAt(schematic, segment.a);
+        return computeBreakPoint(
+          segment,
+          wires[wires.length - 1]!,
+          cursorPos,
+          lineMode,
+          wirePostureRef.current,
+          side,
+          GRID,
+        );
+      }
+      wires[wires.length - 1]!.b = { ...cursorPos };
+      return cursorPos;
     },
-    [anchors, lineMode],
+    [lineMode, schematic, GRID],
   );
+
+  /** finishSegments: commit the chain as wires/buses + automatic junctions. */
+  const finishWireChain = useCallback(() => {
+    const kind = activeTool === 'drawBus' ? 'bus' : 'wire';
+    const cmd = finishWires(schematic, libById, wiresRef.current, kind);
+    wiresRef.current = [];
+    if (cmd) onCommand(cmd);
+  }, [activeTool, schematic, libById, onCommand]);
 
   // 'move' (M) translates only the selected items, leaving connected wires
   // behind. 'drag' (G) keeps them attached: in H/V line mode it adds 90° bends
@@ -573,7 +619,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       cursorRef.current
     ) {
       // Ghost: show the symbol attached to the cursor (with its current orientation).
-      doc = placeSymbol(placeLib, snap(cursorRef.current), placeOrientRef.current).apply(schematic);
+      doc = placeSymbol(placeLib, snap(cursorRef.current), placeOrientRef.current, placeUnit).apply(
+        schematic,
+      );
     }
     // Ghost: the named label follows the cursor (with its flag) until clicked to place.
     if (pendingLabel && cursorRef.current) {
@@ -668,17 +716,20 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       ctx.stroke();
     }
 
-    // Wire / bus preview segment.
-    const anchor = wireAnchorRef.current;
+    // Wire / bus chain preview: every non-null segment of m_wires, with the
+    // live pair coerced to the cursor by computeBreakPoint.
     const cur = cursorRef.current;
-    if ((activeTool === 'drawWire' || activeTool === 'drawBus') && anchor && cur) {
-      const end = wireEndPoint(anchor, cur);
+    if ((activeTool === 'drawWire' || activeTool === 'drawBus') && wiresRef.current.length && cur) {
+      updateWireChain(snapConn(cur));
       ctx.setTransform(vp.scale, 0, 0, vp.scale, vp.offsetX, vp.offsetY);
       ctx.strokeStyle = activeTool === 'drawBus' ? theme.bus : theme.wire;
       ctx.lineWidth = (activeTool === 'drawBus' ? 0.3048 : 0.1524) * 10000; // bus 12 mil, wire 6 mil
       ctx.beginPath();
-      ctx.moveTo(anchor.x, anchor.y);
-      ctx.lineTo(end.x, end.y);
+      for (const seg of wiresRef.current) {
+        if (segIsNull(seg)) continue;
+        ctx.moveTo(seg.a.x, seg.a.y);
+        ctx.lineTo(seg.b.x, seg.b.y);
+      }
       ctx.stroke();
     }
 
@@ -730,12 +781,14 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     activeTool,
     lineMode,
     placeLib,
+    placeUnit,
     pendingLabel,
     pastePending,
     pendingImage,
     highlight,
     ercMarkers,
-    wireEndPoint,
+    updateWireChain,
+    snapConn,
     buildMove,
     onScaleChange,
     theme,
@@ -844,11 +897,14 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   // pin, seed the wire's first anchor with that pin instead of clearing it.
   useEffect(() => {
     if (activeTool === 'drawWire' && pendingWireStartRef.current) {
-      wireAnchorRef.current = pendingWireStartRef.current;
+      // Auto-start from the dangling pin (startSegments primes the chain).
+      wiresRef.current = startSegments(pendingWireStartRef.current, lineModeRef.current);
       pendingWireStartRef.current = null;
     } else {
-      wireAnchorRef.current = null;
+      wiresRef.current = [];
     }
+    wirePostureRef.current = false;
+    wireLastModeRef.current = lineModeRef.current;
     placeOrientRef.current = { angle: 0 };
     // Switching tools abandons any in-progress shape and resets the entry stub.
     drawStateRef.current = null;
@@ -914,19 +970,6 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       );
     },
     [zoomAbout, draw, inputPrefs],
-  );
-
-  const commitWireSegment = useCallback(
-    (anchor: Vec2, end: Vec2, bus: boolean) => {
-      const line = bus ? makeBus(anchor, end) : makeWire(anchor, end);
-      const withLine = addItems({ lines: [line] }).apply(schematic);
-      // Buses don't auto-junction (junctions are a wire/net concept in KiCad).
-      const junctions = bus
-        ? []
-        : [anchor, end].filter((p) => needsJunction(withLine, p)).map((p) => makeJunction(p));
-      onCommand(addItems({ lines: [line], junctions }));
-    },
-    [schematic, onCommand],
   );
 
   // Finish a rectangle/circle/arc (2nd click), a bezier (control click), or a
@@ -1038,16 +1081,32 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       }
 
       if (activeTool === 'drawWire' || activeTool === 'drawBus') {
-        const bus = activeTool === 'drawBus';
-        const anchor = wireAnchorRef.current;
-        if (!anchor) {
-          wireAnchorRef.current = wireEndPoint(null, world);
-        } // start snaps to a pin/anchor
-        else {
-          const end = wireEndPoint(anchor, world);
-          if (end.x !== anchor.x || end.y !== anchor.y) {
-            commitWireSegment(anchor, end, bus);
-            wireAnchorRef.current = end; // continue the chain
+        const kind = activeTool === 'drawBus' ? 'bus' : 'wire';
+        const wires = wiresRef.current;
+        const cursorPos = snapConn(world);
+        if (wires.length === 0) {
+          wiresRef.current = startSegments(cursorPos, lineMode);
+          wireLastModeRef.current = lineMode;
+        } else {
+          const pos = updateWireChain(cursorPos);
+          const twoSegments = lineMode !== 'free';
+          const last = wires[wires.length - 1]!;
+          // Only place once something has actually been drawn.
+          if (
+            !segIsNull(last) ||
+            (twoSegments && wires.length >= 2 && !segIsNull(wires[wires.length - 2]!))
+          ) {
+            // Terminate the run if the end point is on a pin, junction,
+            // label, or another wire or bus (IsTerminalPoint).
+            if (isTerminalPoint(schematic, libById, pos, kind)) {
+              finishWireChain();
+            } else {
+              // Fix the segment and chain new live segment(s) after it. With
+              // the 45° end the user targets the endpoint with the angled
+              // portion, so both segments place at once.
+              const placedSegments = lineMode === '45' ? 2 : 1;
+              for (let i = 0; i < placedSegments; i++) wires.push({ a: { ...pos }, b: { ...pos } });
+            }
           }
         }
         draw();
@@ -1132,7 +1191,12 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       }
 
       if (activeTool === 'placeSymbol' || activeTool === 'placePower') {
-        if (placeLib) onCommand(placeSymbol(placeLib, snap(world), placeOrientRef.current)); // stays active to place more
+        if (placeLib) {
+          onCommand(placeSymbol(placeLib, snap(world), placeOrientRef.current, placeUnit));
+          // The editor steps to the next unit, keeps placing copies, or
+          // reopens the chooser (sch_drawing_tools.cpp after commit.Push).
+          onSymbolPlaced?.();
+        }
         return;
       }
 
@@ -1180,7 +1244,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
             : new Set([hit.id]);
         onSelect(hit.id, additive);
         modeRef.current = 'move';
-        moveKindRef.current = 'drag'; // button-drag keeps connections
+        // The drag gesture rubber-bands connected wires along unless the
+        // "drag is move" preference turns it into a plain Move (SCH_MOVE_TOOL).
+        moveKindRef.current = inputPrefs.dragIsMove ? 'move' : 'drag';
         effSelRef.current = effSel;
         moveStartRef.current = world;
         moveDeltaRef.current = { x: 0, y: 0 };
@@ -1211,6 +1277,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       activeTool,
       lineMode,
       placeLib,
+      placeUnit,
+      onSymbolPlaced,
       pendingLabel,
       pastePending,
       pendingImage,
@@ -1225,9 +1293,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       onSheetPinClick,
       danglingPinAt,
       onCommand,
-      commitWireSegment,
-      wireEndPoint,
       snapConn,
+      updateWireChain,
+      finishWireChain,
       finalizeShape,
       draw,
       inputPrefs,
@@ -1285,7 +1353,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       }
 
       if (activeTool === 'drawWire' || activeTool === 'drawBus') {
-        if (wireAnchorRef.current) draw();
+        if (wiresRef.current.length) draw();
         return;
       }
       if (activeTool === 'placeSymbol' || activeTool === 'placePower') {
@@ -1450,8 +1518,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
   const onDoubleClick = useCallback(
     (e: React.MouseEvent) => {
+      // Double-click ends the wire run at the point (the two plain clicks it
+      // contains already fixed the segments; the extras are null and merge away).
       if (activeTool === 'drawWire' || activeTool === 'drawBus') {
-        wireAnchorRef.current = null;
+        if (wiresRef.current.length) {
+          updateWireChain(snapConn(toWorld(e.clientX, e.clientY)));
+          finishWireChain();
+        }
         draw();
         return;
       }
@@ -1474,16 +1547,50 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         if (hit) onEditItem?.(hit.id, hit.kind);
       }
     },
-    [activeTool, draw, schematic, libById, onEditItem, finishPoly],
+    [
+      activeTool,
+      draw,
+      schematic,
+      libById,
+      onEditItem,
+      finishPoly,
+      updateWireChain,
+      finishWireChain,
+      snapConn,
+    ],
   );
 
-  // Escape ends an in-progress wire; R/X/Y rotate/mirror (KiCad hotkeys): the
-  // attached symbol while placing, otherwise the current selection.
+  // Escape ends an in-progress wire; '/' switches the segment posture and
+  // Backspace undoes the last segment while drawing; R/X/Y rotate/mirror
+  // (KiCad hotkeys): the attached symbol while placing, else the selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && wireAnchorRef.current) {
-        wireAnchorRef.current = null;
+      if (e.key === 'Escape' && wiresRef.current.length) {
+        wiresRef.current = [];
         draw();
+        return;
+      }
+      // SCH_ACTIONS::switchSegmentPosture ('/') while drawing a wire/bus.
+      if (e.key === '/' && wiresRef.current.length >= 2) {
+        const wires = wiresRef.current;
+        wirePostureRef.current = !wirePostureRef.current;
+        if (lineModeRef.current === '90') {
+          // 90° has no forced posture; just swap the live pair's directions.
+          switchPosture90(wires[wires.length - 2]!, wires[wires.length - 1]!);
+        }
+        e.preventDefault();
+        draw(); // 45° recomputes the break point from the flipped posture
+        return;
+      }
+      // SCH_ACTIONS::undoLastSegment (Backspace/Delete) while drawing.
+      if ((e.key === 'Backspace' || e.key === 'Delete') && wiresRef.current.length) {
+        const wires = wiresRef.current;
+        const free = lineModeRef.current === 'free';
+        if ((free && wires.length > 1) || (!free && wires.length > 2)) {
+          wires.pop();
+          e.preventDefault();
+          draw();
+        }
         return;
       }
       if (e.key === 'Escape' && drawStateRef.current) {
@@ -1496,13 +1603,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         return;
       }
 
+      // Skip while typing — a focused checkbox/radio (Selection Filter panel)
+      // isn't typing and must not eat the R/X/Y hotkeys.
       const tgt = e.target as HTMLElement | null;
       if (
         tgt &&
-        (tgt.tagName === 'INPUT' ||
-          tgt.tagName === 'TEXTAREA' ||
+        (tgt.tagName === 'TEXTAREA' ||
           tgt.tagName === 'SELECT' ||
-          tgt.isContentEditable)
+          tgt.isContentEditable ||
+          (tgt.tagName === 'INPUT' &&
+            !/^(checkbox|radio|button|range)$/.test((tgt as HTMLInputElement).type)))
       )
         return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1559,7 +1669,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         onContextMenu={(e) => {
           e.preventDefault();
           if (activeTool === 'drawWire' || activeTool === 'drawBus') {
-            wireAnchorRef.current = null;
+            wiresRef.current = [];
             draw();
           } else if (drawStateRef.current?.tool === 'lines') finishPoly();
           else if (drawStateRef.current) {

@@ -50,7 +50,11 @@ export interface CommonSettings {
   system: {
     file_history_size: number;
     autosave_interval: number; // seconds; 0 = disabled
-    session: { remember_open_files: boolean };
+    session: {
+      remember_open_files: boolean;
+      /** Libraries pinned to the top of the chooser tree (SESSION.pinned_symbol_libs). */
+      pinned_symbol_libs: string[];
+    };
   };
   backup: {
     enabled: boolean;
@@ -93,7 +97,7 @@ export const COMMON_DEFAULTS: CommonSettings = {
   system: {
     file_history_size: 9,
     autosave_interval: 600,
-    session: { remember_open_files: false },
+    session: { remember_open_files: false, pinned_symbol_libs: [] },
   },
   backup: {
     enabled: true,
@@ -186,6 +190,16 @@ export interface EeschemaSettings {
     method: 0 | 1 | 2; // first free | sheet*100 | sheet*1000
     sort_order: 0 | 1; // by X | by Y
   };
+  /** LIB_TREE persisted state (EESCHEMA_SETTINGS m_LibTree). */
+  lib_tree: {
+    open_libs: string[];
+  };
+  /** Symbol Chooser dialog state (EESCHEMA_SETTINGS m_SymChooserPanel). */
+  sym_chooser: {
+    sash_pos_h: number; // px width of the right (preview) pane
+    sash_pos_v: number; // px height of the details pane (power layout)
+    sort_mode: 0 | 1; // SORT_MODE: 0 best match, 1 alphabetic
+  };
   window: {
     grid: {
       sizes: string[]; // "50 mil", "25 mil", ...
@@ -274,6 +288,14 @@ export const EESCHEMA_DEFAULTS: EeschemaSettings = {
     recursive: true,
     method: 0,
     sort_order: 0,
+  },
+  lib_tree: {
+    open_libs: [],
+  },
+  sym_chooser: {
+    sash_pos_h: 360,
+    sash_pos_v: 150,
+    sort_mode: 0,
   },
   window: {
     grid: {

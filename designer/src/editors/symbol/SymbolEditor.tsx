@@ -22,6 +22,7 @@ import { SymbolCanvas, type SymbolCanvasController } from './SymbolCanvas.js';
 import { SymbolLibraryManager, type ManagedLibrary } from './libraryManager.js';
 import { loadIndex } from '../schematic/symbols/index.js';
 import { useSchematicTheme } from '../../prefs/useSettings.js';
+import { pcm } from '../../pcm/pcmStore.js';
 import {
   addGraphicToSymbol,
   addPinToSymbol,
@@ -213,6 +214,10 @@ export function SymbolEditor({
       const name = basename(f.name).replace(/\.kicad_sym$/i, '');
       manager.current.addProjectLibrary(name, f.name, f.text);
     }
+    // Libraries installed through the Plugin and Content Manager (loaded eagerly
+    // from their stored `.kicad_sym` text).
+    for (const lib of pcm.installedLibraries())
+      manager.current.addInstalledLibrary(lib.name, lib.text);
     // Bundled global libraries: names first (like KiCad's lazy library loads).
     loadIndex()
       .then((idx) => {

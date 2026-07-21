@@ -15,6 +15,7 @@
     "@ziroeda/core": "workspace:*",
     "@ziroeda/designer": "workspace:*",
     "@ziroeda/eeschema": "workspace:*",
+    "@ziroeda/gerbview": "workspace:*",
     "@ziroeda/kimath": "workspace:*",
     "@ziroeda/pcb_calculator": "workspace:*",
     "@ziroeda/pcbnew": "workspace:*",

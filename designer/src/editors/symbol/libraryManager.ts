@@ -98,6 +98,32 @@ export class SymbolLibraryManager {
     this.touch();
   }
 
+  /**
+   * Add a global library from already-loaded file text — used for libraries
+   * installed through the Plugin and Content Manager (their `.kicad_sym` text
+   * lives in the PCM store rather than at a URL, so it is loaded eagerly).
+   */
+  addInstalledLibrary(name: string, text: string): void {
+    if (this.libs.has(name)) return;
+    const lib: ManagedLibrary = {
+      name,
+      fileName: `${name}.kicad_sym`,
+      scope: 'global',
+      loaded: true,
+      pendingNames: [],
+      symbols: new Map(),
+      original: new Map(),
+      modified: new Set(),
+      libModified: false,
+    };
+    for (const sym of readSymbolLib(parse(text))) {
+      lib.symbols.set(sym.libId, sym);
+      lib.original.set(sym.libId, sym);
+    }
+    this.libs.set(name, lib);
+    this.touch();
+  }
+
   /** Create a new, empty library (ACTIONS::newLibrary). */
   createLibrary(name: string): ManagedLibrary {
     const lib: ManagedLibrary = {

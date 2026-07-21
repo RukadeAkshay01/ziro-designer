@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { settings } from './settings.js';
 import { BUILTIN_THEMES, KICAD_DEFAULT, type Theme } from '../editors/schematic/theme.js';
+import { pcm } from '../pcm/pcmStore.js';
 
 export function useSettingsVersion(): number {
   return useSyncExternalStore(settings.subscribe, () => settings.version);
@@ -20,11 +21,15 @@ export function useEeschemaSettings(): typeof settings.eeschema {
   return settings.eeschema;
 }
 
-/** Resolve the active theme (COLOR_SETTINGS lookup): builtin id or the User theme. */
+/** Resolve the active theme (COLOR_SETTINGS lookup): builtin id, a PCM-installed
+ *  theme, or the User theme. */
 export function resolveTheme(): Theme {
   const id = settings.eeschema.appearance.color_theme;
   const builtin = BUILTIN_THEMES[id];
   if (builtin) return builtin.theme;
+  // A colour theme installed via the Plugin and Content Manager.
+  const installed = pcm.themeById(id);
+  if (installed) return installed;
   // "User" theme: the default theme with the stored per-layer overrides.
   return { ...KICAD_DEFAULT, ...settings.userColors } as Theme;
 }

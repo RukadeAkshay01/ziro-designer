@@ -53,6 +53,7 @@ function includeUnit(b: BBox, unit: LibSymbolUnit, origin: Vec2, t: Transform): 
           includePoint(b, localToWorld(origin, t, c));
         break;
       case 'polyline':
+      case 'bezier': // control-point hull is a conservative bound
         for (const p of g.points) includePoint(b, localToWorld(origin, t, p));
         break;
       case 'circle':

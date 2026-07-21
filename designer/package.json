@@ -15,6 +15,7 @@
     "@supabase/supabase-js": "^2.110.0",
     "@ziroeda/common": "workspace:*",
     "@ziroeda/eeschema": "workspace:*",
+    "@ziroeda/gerbview": "workspace:*",
     "@ziroeda/kimath": "workspace:*",
     "@ziroeda/pcb_calculator": "workspace:*",
     "@ziroeda/pcbnew": "workspace:*",

@@ -195,6 +195,44 @@ const BITMAP: Record<string, string> = {
   previewSettings: 'sheetset',
   layoutNormalMode: 'pagelayout_normal_view_mode',
   layoutEditMode: 'pagelayout_special_view_mode',
+  // gerber viewer (icons per GERBVIEW_ACTIONS/ACTIONS .Icon() in gerbview toolbars_gerber.cpp).
+  // GerbView-specific bitmaps aren't vendored yet, so these reuse the closest SVGs.
+  gerbClear: 'trash',
+  gerbOpen: 'directory_open',
+  gerbOpenJob: 'import',
+  gerbOpenDrill: 'import',
+  gerbOpenZip: 'import',
+  gerbExportToPcb: 'icon_pcbnew_24',
+  gerbReload: 'refresh',
+  gerbSort: 'spreadsheet',
+  gerbDcodeList: 'spreadsheet',
+  gerbMeasure: 'measurement',
+  gerbTogglePolar: 'polar_coord',
+  gerbFlashedSketch: 'pad_sketch',
+  gerbLinesSketch: 'showtrack',
+  gerbPolygonsSketch: 'show_zone',
+  gerbNegativeObjects: 'via_sketch',
+  gerbShowDcodes: 'text_sketch',
+  gerbDiffMode: 'contrast_mode',
+  gerbHighContrast: 'contrast_mode',
+  gerbFlipView: 'mirror_h',
+  gerbLayerManager: 'layers_manager',
+  gerbHighlight: 'net_highlight',
+  gerbClearHighlight: 'net_highlight',
+  gerbNextLayer: 'right',
+  gerbPrevLayer: 'left',
+  // The toolbar resolves icons by the tool *id*, so the left/right Gerber
+  // toggles (whose ids differ from their `icon` field) need id-keyed entries
+  // too — otherwise they render as empty placeholder squares.
+  togglePolar: 'polar_coord',
+  flashedSketch: 'pad_sketch',
+  linesSketch: 'showtrack',
+  polygonsSketch: 'show_zone',
+  showNegativeObjects: 'via_sketch',
+  showDcodes: 'text_sketch',
+  diffMode: 'contrast_mode',
+  flipView: 'mirror_h',
+  showLayerManager: 'layers_manager',
 };
 
 /** KiCad icon URL for a toolbar tool id, or undefined if none is mapped. */
