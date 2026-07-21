@@ -11,6 +11,7 @@
  */
 
 import type { Schematic } from '@ziroeda/eeschema';
+import type { WksSheet } from '@ziroeda/common';
 import type { Theme } from '../theme.js';
 import { KICAD_CLASSIC } from '../theme.js';
 import { renderSchematic, paperSizeIU, setVectorText, type RenderOpts } from './renderer.js';
@@ -23,6 +24,8 @@ export interface PlotOpts {
   color: boolean;
   /** Draw the page border + title block (m_plotDrawingSheet). */
   drawingSheet: boolean;
+  /** Custom drawing sheet to plot (a loaded `.kicad_wks`); unset = default. */
+  sheet?: WksSheet;
   /** Fill the page with the theme background colour (m_useBackgroundColor). */
   background: boolean;
   /** Raster resolution for PNG/PDF output (the PNG Options DPI; default 300). */
@@ -90,6 +93,7 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     showHiddenFields: false,
     showPageLimits: false,
     showDrawingSheet: opts.drawingSheet,
+    ...(opts.sheet ? { drawingSheet: opts.sheet } : {}),
     defaultPenIU: opts.defaultPenIU,
     selectionThicknessMils: 0,
     highlightThicknessMils: 0,

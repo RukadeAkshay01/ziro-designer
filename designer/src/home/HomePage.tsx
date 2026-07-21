@@ -33,7 +33,6 @@ import {
   treeIconFor,
   isHiddenFile,
   inArchiveAllowList,
-  isRootFileName,
   basename,
   fmtBytes,
   fmtWhen,
@@ -162,6 +161,8 @@ export function HomePage({
   onOpenImageConverter,
   onOpenGerberViewer,
   initialFiles,
+  activePro,
+  onSwitchProject,
 }: {
   onOpenSchematic: () => void;
   onOpenProject?: (files: PickedHomeFile[], startFile?: string) => void;
@@ -175,13 +176,17 @@ export function HomePage({
   /** Launch the Calculator Tools (standalone, no project needed). */
   onOpenCalculator?: () => void;
   /** Launch the Drawing Sheet Editor (pl_editor); a standalone tool. */
-  onOpenDrawingSheetEditor?: () => void;
+  onOpenDrawingSheetEditor?: (file?: PickedHomeFile) => void;
   /** Launch the Image Converter (bitmap2cmp); a standalone tool. */
   onOpenImageConverter?: () => void;
   /** Launch the Gerber Viewer (gerbview); a standalone tool. */
   onOpenGerberViewer?: () => void;
   /** A project already open in the app: keep it in the tree on return to home. */
   initialFiles?: PickedHomeFile[] | null;
+  /** The active project's .kicad_pro (full name) when a folder holds several. */
+  activePro?: string;
+  /** Switch the active project (double-clicking another .kicad_pro in the tree). */
+  onSwitchProject?: (proFullName: string) => void;
 }): JSX.Element {
   const { session, signOut } = useAuth();
   // Guest-first: sign-in is offered, never forced. The dialog opens from the
@@ -556,15 +561,40 @@ export function HomePage({
     document.body.style.cursor = 'col-resize';
   };
 
+  // The active .kicad_pro anchors the tree (KiCad's active project); a folder
+  // may hold several. Falls back to the first when none is marked active.
   const proFile = useMemo(
-    () => picked?.find((f) => /\.kicad_pro$/i.test(f.name)) ?? null,
-    [picked],
+    () =>
+      picked?.find((f) => f.name === activePro) ??
+      picked?.find((f) => /\.kicad_pro$/i.test(f.name)) ??
+      null,
+    [picked, activePro],
   );
 
   // The project name drives KiCad's root-file detection (which schematic shows,
   // and the sort weight). Falls back to the root .kicad_sch / first file.
-  const projName = useMemo(() => (picked ? projectNameOf(picked) : ''), [picked]);
+  const projName = useMemo(
+    () => (proFile ? projectNameOf([proFile]) : picked ? projectNameOf(picked) : ''),
+    [proFile, picked],
+  );
   const projLower = projName.toLowerCase();
+  // KiCad's getProjects(dir): the basenames of every .kicad_pro in the folder.
+  // A folder may hold several projects (e.g. the ecc83 demo's ecc83-pp and
+  // ecc83-pp_v2); the tree shows the root sheet of each, so this set — not just
+  // the active project — decides which .kicad_sch are visible (subsheets hide).
+  const projectNames = useMemo<ReadonlySet<string>>(
+    () =>
+      new Set(
+        (picked ?? [])
+          .filter((f) => /\.kicad_pro$/i.test(f.name))
+          .map((f) =>
+            basename(f.name)
+              .replace(/\.kicad_pro$/i, '')
+              .toLowerCase(),
+          ),
+      ),
+    [picked],
+  );
   // KiCad's tree root shows the full .kicad_pro filename (m_root = fn.GetFullName()).
   const rootLabel = proFile
     ? basename(proFile.name)
@@ -595,7 +625,12 @@ export function HomePage({
   // libraries stay inside collapsible folders instead of flooding the list.
   const stripPrefix = useMemo<string>(() => {
     if (!picked) return '';
-    const anyPath = (proFile?.name ?? picked[0]?.name ?? '').replace(/\\/g, '/');
+    // The project folder is the .kicad_pro's own directory. Strip it so the
+    // tree is flat under the project — robustly, even if some file (e.g. a
+    // drawing sheet) doesn't share the prefix (it just shows at the root).
+    const pro = proFile?.name.replace(/\\/g, '/');
+    if (pro?.includes('/')) return pro.slice(0, pro.lastIndexOf('/') + 1);
+    const anyPath = (picked[0]?.name ?? '').replace(/\\/g, '/');
     const firstSeg = anyPath.includes('/') ? `${anyPath.split('/')[0]}/` : '';
     return firstSeg && picked.every((f) => f.name.replace(/\\/g, '/').startsWith(firstSeg))
       ? firstSeg
@@ -802,7 +837,7 @@ export function HomePage({
           picked={picked}
           dirRoot={dirRoot}
           rootLabel={rootLabel}
-          projLower={projLower}
+          projectNames={projectNames}
           width={panelWidth}
           expanded={expanded}
           onToggleDir={toggleDir}
@@ -818,6 +853,10 @@ export function HomePage({
           onOpenSymbolFile={
             onOpenSymbolEditor ? (f) => onOpenSymbolEditor(picked ?? undefined, f.name) : undefined
           }
+          onOpenDrawingSheetFile={
+            onOpenDrawingSheetEditor ? (f) => onOpenDrawingSheetEditor(f) : undefined
+          }
+          onSwitchProject={onSwitchProject}
           onOpenFootprintFile={
             onOpenFootprintEditor
               ? (f) => onOpenFootprintEditor(picked ?? undefined, f.name)

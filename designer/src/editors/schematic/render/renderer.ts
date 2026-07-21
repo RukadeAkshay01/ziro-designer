@@ -16,6 +16,7 @@ import {
   layoutDrawingSheet,
   defaultDrawingSheet,
   type WksResolveContext,
+  type WksSheet,
   type Transform,
 } from '@ziroeda/common';
 import {
@@ -157,6 +158,9 @@ export interface RenderOpts {
   /** Draw the page border + title block (LAYER_DRAWINGSHEET). Defaults to true;
    *  Print/Plot's "drawing sheet" option turns it off. */
   showDrawingSheet?: boolean;
+  /** Custom drawing sheet (a loaded `.kicad_wks`), like KiCad's project
+   *  `m_DrawingSheetFileName`. Unset = the built-in default stationery. */
+  drawingSheet?: WksSheet;
   /** Pen width (IU) for zero-width strokes — the plot dialog's "Minimum line
    *  width" (default pen thickness). Unset = KiCad's 6-mil default. */
   defaultPenIU?: number;
@@ -311,7 +315,7 @@ export function renderSchematic(
       ctx.strokeRect(0, 0, page.w, page.h);
     }
   }
-  if (opts.showDrawingSheet !== false) drawDrawingSheet(ctx, sch, theme);
+  if (opts.showDrawingSheet !== false) drawDrawingSheet(ctx, sch, theme, opts.drawingSheet);
 
   const hl = (id: string): boolean => highlight?.has(id) ?? false;
 
@@ -2018,7 +2022,12 @@ export function paperSizeIU(paper: string | undefined): { w: number; h: number }
 /** No drawing-sheet item is ever "selected" on the schematic canvas. */
 const NO_DS_SELECTION: ReadonlySet<number> = new Set();
 
-function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: Theme): void {
+function drawDrawingSheet(
+  ctx: CanvasRenderingContext2D,
+  sch: Schematic,
+  theme: Theme,
+  sheet?: WksSheet,
+): void {
   const page = paperSizeIU(sch.paper);
   if (!page) return;
   // Render the real default drawing sheet through the same resolver + painter
@@ -2041,7 +2050,7 @@ function drawDrawingSheet(ctx: CanvasRenderingContext2D, sch: Schematic, theme: 
     appVersion: 'ZiroEDA',
   };
   const draws = layoutDrawingSheet(
-    defaultDrawingSheet(),
+    sheet ?? defaultDrawingSheet(),
     { widthMM: iuToMM(page.w), heightMM: iuToMM(page.h) },
     resolveCtx,
   );

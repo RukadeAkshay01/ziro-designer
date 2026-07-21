@@ -27,10 +27,26 @@ import {
   type PcbShape,
   type PcbTextItem,
 } from '@ziroeda/pcbnew';
-import { PCB_PAINT_ORDER, PCB_SPECIAL, layerColor, PCB_BACKGROUND } from './pcbTheme.js';
+import { PCB_PAINT_ORDER, PCB_SPECIAL, layerColor, PCB_GRID } from './pcbTheme.js';
 import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
 const MM = 10000; // IU per mm, matches core units
+
+/**
+ * COLOR4D::Brightened(f): push each channel toward white by factor f
+ * (c·(1−f)+f). KiCad brightens selected items by 0.8 (pcb_painter.cpp getColor).
+ * Parses the `rgb()/rgba()` strings the theme emits and re-emits the same form.
+ */
+export function brightenColor(color: string, f: number): string {
+  if (f <= 0) return color;
+  const m = /rgba?\(([^)]+)\)/.exec(color);
+  if (!m) return color;
+  const parts = m[1]!.split(',').map((s) => s.trim());
+  const r = Math.round(Number(parts[0]) * (1 - f) + 255 * f);
+  const g = Math.round(Number(parts[1]) * (1 - f) + 255 * f);
+  const b = Math.round(Number(parts[2]) * (1 - f) + 255 * f);
+  return parts.length > 3 ? `rgba(${r},${g},${b},${parts[3]})` : `rgb(${r},${g},${b})`;
+}
 
 /** Object visibility + opacity, mirroring pcbnew's Appearance>Objects tab. */
 export interface PcbDrawOptions {
@@ -70,6 +86,8 @@ export const DEFAULT_DRAW_OPTIONS: PcbDrawOptions = {
 interface LayerBuckets {
   zones: Path2D;
   hasZones: boolean;
+  zoneOutlines: Path2D; // zone boundary borders (drawn full-opacity over the fill)
+  hasZoneOutlines: boolean;
   tracks: Map<number, Path2D>; // width -> segments/arcs (object: Tracks)
   pads: Path2D; // pad flashes (object: Pads)
   hasPads: boolean;
@@ -97,6 +115,8 @@ export interface BoardScene {
 const newBuckets = (): LayerBuckets => ({
   zones: new Path2D(),
   hasZones: false,
+  zoneOutlines: new Path2D(),
+  hasZoneOutlines: false,
   tracks: new Map(),
   pads: new Path2D(),
   hasPads: false,
@@ -335,7 +355,14 @@ function addText(map: Map<number, Path2D>, t: PcbTextItem): void {
   const vAlign = justify.includes('top') ? 'top' : justify.includes('bottom') ? 'bottom' : 'center';
   const offX = hAlign === 'left' ? 0 : hAlign === 'right' ? -width : -width / 2;
   const offY = vAlign === 'top' ? size : vAlign === 'bottom' ? 0 : size / 2;
-  const rad = (-t.angle * Math.PI) / 180;
+  // PCB_TEXT::GetDrawRotation: footprint text keeps its angle in ]-90°, 90°] so
+  // it stays readable — e.g. a 270° "POWER" field draws at 90°, not upside-down.
+  let drawAngle = t.angle;
+  if (t.keepUpright) {
+    while (drawAngle > 90) drawAngle -= 180;
+    while (drawAngle <= -90) drawAngle += 180;
+  }
+  const rad = (-drawAngle * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
   const mir = t.mirror ? -1 : 1;
@@ -362,6 +389,91 @@ export interface SceneFilter {
   /** Appearance>Objects "Footprints Front/Back": hide whole footprints per side. */
   hideFrontFootprints?: boolean;
   hideBackFootprints?: boolean;
+}
+
+/** Even-odd ray cast: is point `p` inside the closed polygon `poly`? */
+function pointInPoly(p: Vec2, poly: Vec2[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!;
+    const b = poly[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x)
+      inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Zone border hatch ticks (SHAPE_POLY_SET::GenerateHatchLines / ZONE::HatchBorder):
+ * a family of parallel lines y = slope·x + a spaced by `spacing` is intersected
+ * with the outline; each in-polygon crossing yields a tick of length `lineLen`
+ * running inward from the border (`lineLen = -1` keeps the full crossing, for the
+ * DIAGONAL_FULL style). Copper zones use slope −1 (all copper layer ids are even).
+ */
+function zoneHatchSegments(
+  outline: Vec2[],
+  slope: number,
+  spacing: number,
+  lineLen: number,
+): [Vec2, Vec2][] {
+  const out: [Vec2, Vec2][] = [];
+  if (outline.length < 3 || spacing <= 0) return out;
+  let minX = outline[0]!.x;
+  let maxX = minX;
+  let minY = outline[0]!.y;
+  let maxY = minY;
+  for (const p of outline) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  let maxA: number;
+  let minA: number;
+  if (slope > 0) {
+    maxA = Math.round(maxY - slope * minX);
+    minA = Math.round(minY - slope * maxX);
+  } else {
+    maxA = Math.round(maxY - slope * maxX);
+    minA = Math.round(minY - slope * minX);
+  }
+  minA = Math.floor(minA / spacing) * spacing;
+  const n = outline.length;
+  for (let a = minA; a < maxA; a += spacing) {
+    const pts: Vec2[] = [];
+    for (let i = 0; i < n; i++) {
+      const A = outline[i]!;
+      const B = outline[(i + 1) % n]!;
+      // Segment A→B ∩ line y = slope·x + a. f(t) = f0 + t·d, t ∈ [0,1).
+      const f0 = A.y - slope * A.x - a;
+      const d = B.y - A.y - slope * (B.x - A.x);
+      if (d === 0) continue;
+      const t = -f0 / d;
+      if (t < 0 || t >= 1) continue;
+      const x = A.x + t * (B.x - A.x);
+      const y = A.y + t * (B.y - A.y);
+      if (x < minX || x > maxX || y < minY || y > maxY) continue;
+      pts.push({ x, y });
+    }
+    if (pts.length > 2) pts.sort((p, q) => q.x - p.x); // descending x
+    for (let ip = 0; ip + 1 < pts.length; ip++) {
+      const p1 = pts[ip]!;
+      const p2 = pts[ip + 1]!;
+      if (p1.x === p2.x && p1.y === p2.y) continue;
+      const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+      if (!pointInPoly(mid, outline)) continue;
+      const dx = p2.x - p1.x;
+      if (lineLen === -1 || Math.abs(dx) < 2 * lineLen) {
+        out.push([p1, p2]);
+      } else {
+        const s = (p2.y - p1.y) / dx;
+        const ddx = dx > 0 ? lineLen : -lineLen;
+        out.push([p1, { x: p1.x + ddx, y: p1.y + ddx * s }]);
+        out.push([p2, { x: p2.x - ddx, y: p2.y - ddx * s }]);
+      }
+    }
+  }
+  return out;
 }
 
 /** Compile the board into retained per-layer, per-object paths. */
@@ -431,6 +543,36 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
         b.hasZones = true;
         for (const pt of poly) grow(pt.x, pt.y);
       }
+    }
+    // The zone boundary is drawn as a border on each of the zone's layers
+    // (pcb_painter.cpp draw(ZONE): outline of GetBoardOutline in the layer color).
+    if (z.outline && z.outline.length >= 3) {
+      // DIAGONAL_EDGE = short ticks (length = pitch, spacing = pitch);
+      // DIAGONAL_FULL = full diagonals (spacing = pitch·2). Copper slope = −1.
+      const style = z.hatchStyle ?? 'edge';
+      const pitch = z.hatchPitch ?? 0;
+      const hatch =
+        style !== 'none' && pitch > 0
+          ? zoneHatchSegments(
+              z.outline,
+              -1,
+              style === 'full' ? pitch * 2 : pitch,
+              style === 'full' ? -1 : pitch,
+            )
+          : [];
+      for (const layer of z.layers) {
+        const b = buckets(scene, layer);
+        b.zoneOutlines.moveTo(z.outline[0]!.x, z.outline[0]!.y);
+        for (let i = 1; i < z.outline.length; i++)
+          b.zoneOutlines.lineTo(z.outline[i]!.x, z.outline[i]!.y);
+        b.zoneOutlines.closePath();
+        for (const [p, q] of hatch) {
+          b.zoneOutlines.moveTo(p.x, p.y);
+          b.zoneOutlines.lineTo(q.x, q.y);
+        }
+        b.hasZoneOutlines = true;
+      }
+      for (const pt of z.outline) grow(pt.x, pt.y);
     }
   }
   for (const s of board.shapes) {
@@ -677,6 +819,113 @@ export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo)
   sheetText(ctx, tb?.company ?? '', rx(109), ry(20), t15, 'left', true);
 }
 
+// ----- grid (GAL DrawGrid) ---------------------------------------------------
+
+/** Grid render options — the GAL DOTS grid with KiCad's pcbnew defaults. */
+export interface PcbGridOptions {
+  /** Grid spacing in IU (world units). pcbnew default grid = 0.5 mm. */
+  size: number;
+  /** Grid origin in IU (GAL m_gridOrigin; board grid origin). */
+  origin: Vec2;
+  /** Coarse-grid multiple: every `tick`th dot is doubled (SetCoarseGrid(10)). */
+  tick: number;
+  /** Minimum on-screen dot spacing in device px (m_gridMinSpacing = 10). */
+  minSpacing: number;
+  /** LAYER_GRID color. */
+  color: string;
+}
+
+export const DEFAULT_GRID_OPTIONS: PcbGridOptions = {
+  size: 0.5 * MM,
+  origin: { x: 0, y: 0 },
+  tick: 10,
+  minSpacing: 10,
+  color: PCB_GRID,
+};
+
+/**
+ * Paint the dotted grid the way GAL does (CAIRO_GAL_BASE::DrawGrid, DOTS
+ * branch): a dot at every grid node in device space, every `tick`th row/column
+ * doubled in size, with the spacing scaled up by whole `tick`s until it clears
+ * the minimum on-screen spacing so a zoomed-out board isn't a solid wall of
+ * dots. Drawn on the live canvas (identity transform) so it stays crisp every
+ * frame like GAL's NONCACHED grid target, behind the board raster. `dpr` is the
+ * device-pixel ratio (GAL's scaleFactor).
+ */
+export function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  view: PcbViewTransform,
+  widthPx: number,
+  heightPx: number,
+  dpr: number,
+  opts: PcbGridOptions = DEFAULT_GRID_OPTIONS,
+): void {
+  if (opts.size <= 0 || view.scale <= 0) return;
+  const worldScale = view.scale; // device px per IU
+  // GAL: m_gridLineWidth = scaleFactor * 0.5 + 0.25; a normal dot is this wide,
+  // a coarse dot twice that, each clamped to a minimum of 1 device px.
+  const lineW = dpr * 0.5 + 0.25;
+
+  // Visible world rectangle (screen corners → world).
+  const wsx = (0 - view.tx) / worldScale;
+  const wsy = (0 - view.ty) / worldScale;
+  const wex = (widthPx - view.tx) / worldScale;
+  const wey = (heightPx - view.ty) / worldScale;
+
+  // Scale spacing up by whole ticks until it clears the min screen spacing.
+  const threshold = Math.round(opts.minSpacing / worldScale); // IU
+  let step = opts.size;
+  while (step <= threshold) step *= opts.tick;
+
+  const ox = opts.origin.x;
+  const oy = opts.origin.y;
+  let startX = Math.round((wsx - ox) / step);
+  let endX = Math.round((wex - ox) / step);
+  let startY = Math.round((wsy - oy) / step);
+  let endY = Math.round((wey - oy) / step);
+  if (startX > endX) [startX, endX] = [endX, startX];
+  if (startY > endY) [startY, endY] = [endY, startY];
+  startX--;
+  endX++;
+  startY--;
+  endY++;
+
+  // Guard against pathological counts (e.g. a not-yet-sized view).
+  if (endX - startX > 4000 || endY - startY > 4000) return;
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = opts.color;
+  // Group dots by device size so the whole grid paints in a few fills.
+  const paths = new Map<string, Path2D>();
+  const rectAt = (dx: number, dy: number, sw: number, sh: number): void => {
+    const key = `${sw}:${sh}`;
+    let p = paths.get(key);
+    if (!p) {
+      p = new Path2D();
+      paths.set(key, p);
+    }
+    // Cairo drawGridPoint: round the centre, then offset by floor(size/2)+0.5.
+    p.rect(
+      Math.round(dx) - Math.floor(sw / 2) - 0.5,
+      Math.round(dy) - Math.floor(sh / 2) - 0.5,
+      sw,
+      sh,
+    );
+  };
+  for (let j = startY; j <= endY; j++) {
+    const tickY = j % opts.tick === 0;
+    const dy = (j * step + oy) * worldScale + view.ty;
+    const sh = Math.max(1, tickY ? lineW * 2 : lineW);
+    for (let i = startX; i <= endX; i++) {
+      const tickX = i % opts.tick === 0;
+      const dx = (i * step + ox) * worldScale + view.tx;
+      const sw = Math.max(1, tickX ? lineW * 2 : lineW);
+      rectAt(dx, dy, sw, sh);
+    }
+  }
+  for (const p of paths.values()) ctx.fill(p);
+}
+
 /**
  * The paint sequence as resumable steps, one per stacking pass. The editor
  * runs these across animation frames with a time budget so a 20k-track board
@@ -691,41 +940,62 @@ export function buildDrawSteps(
   heightPx: number,
   opts: PcbDrawOptions = DEFAULT_DRAW_OPTIONS,
   sheet?: SheetInfo,
+  // Overlay pass (live move preview): paint the items on top of an existing
+  // frame, so skip the background clear and the drawing sheet.
+  overlay = false,
+  // Selection brightening (pcb_painter.cpp: selected items are Brightened(0.8)).
+  // 0 = paint the layer colors as-is.
+  brighten = 0,
 ): (() => void)[] {
   const steps: (() => void)[] = [];
+  // Per-layer color, brightened toward white for a selection overlay.
+  const col = (layer: string): string => brightenColor(layerColor(layer), brighten);
+  const sp = (c: string): string => brightenColor(c, brighten);
   steps.push(() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = PCB_BACKGROUND;
-    ctx.fillRect(0, 0, widthPx, heightPx);
+    // The raster is kept transparent so the grid (painted on the live canvas
+    // behind the raster, like GAL's GRID_DEPTH) shows through the empty board
+    // areas. The visible canvas fills PCB_BACKGROUND before blitting.
     ctx.setTransform(view.scale, 0, 0, view.scale, view.tx, view.ty);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     // Drawing sheet (page frame + title block) behind the board, like pcbnew.
-    if (sheet && opts.drawingSheet) drawDrawingSheet(ctx, sheet);
+    if (!overlay && sheet && opts.drawingSheet) drawDrawingSheet(ctx, sheet);
   });
 
   const minPen = view.scale > 0 ? 1 / view.scale : 0; // 1 device px in IU
 
   const paintZones = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
-    if (!b?.hasZones || !opts.zones) return;
-    const color = layerColor(layer);
-    ctx.globalAlpha = opts.zoneOpacity;
-    if (opts.zoneOutline) {
-      // PCB_ACTIONS::zoneDisplayOutline — sketch the fill outlines.
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 0.05 * MM;
-      ctx.stroke(b.zones);
-    } else {
-      ctx.fillStyle = color;
-      ctx.fill(b.zones, 'nonzero');
+    if (!b || !opts.zones || (!b.hasZones && !b.hasZoneOutlines)) return;
+    const color = col(layer);
+    if (b.hasZones) {
+      ctx.globalAlpha = opts.zoneOpacity;
+      if (opts.zoneOutline) {
+        // PCB_ACTIONS::zoneDisplayOutline — sketch the fill outlines.
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 0.05 * MM;
+        ctx.stroke(b.zones);
+      } else {
+        ctx.fillStyle = color;
+        ctx.fill(b.zones, 'nonzero');
+      }
+      ctx.globalAlpha = 1;
     }
-    ctx.globalAlpha = 1;
+    // Zone boundary border: full opacity (color.WithAlpha(1.0)), min-pen width
+    // (m_outlineWidth = 1 IU), drawn over the fill — the outline KiCad always
+    // shows around a filled zone.
+    if (b.hasZoneOutlines) {
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = minPen;
+      ctx.stroke(b.zoneOutlines);
+    }
   };
   const paintCopper = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
-    const color = layerColor(layer);
+    const color = col(layer);
     if (b.hasGfxFill) {
       ctx.fillStyle = color;
       ctx.fill(b.gfxFill, 'nonzero');
@@ -753,7 +1023,7 @@ export function buildDrawSteps(
   const paintText = (layer: string) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
-    ctx.strokeStyle = layerColor(layer);
+    ctx.strokeStyle = col(layer);
     if (opts.fpReferences) strokeAll(ctx, b.textRef);
     if (opts.fpValues) strokeAll(ctx, b.textVal);
     if (opts.fpText) strokeAll(ctx, b.textFp);
@@ -769,19 +1039,19 @@ export function buildDrawSteps(
 
   steps.push(() => {
     if (opts.pads) {
-      ctx.fillStyle = PCB_SPECIAL.padHoleWall;
+      ctx.fillStyle = sp(PCB_SPECIAL.padHoleWall);
       ctx.fill(scene.padHoleWalls);
-      ctx.fillStyle = PCB_SPECIAL.padPlatedHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.padPlatedHole);
       ctx.fill(scene.padHolesPlated);
     }
     if (opts.vias) {
-      ctx.fillStyle = PCB_SPECIAL.viaHoleWall;
+      ctx.fillStyle = sp(PCB_SPECIAL.viaHoleWall);
       ctx.fill(scene.viaHoleWalls);
-      ctx.fillStyle = PCB_SPECIAL.viaHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.viaHole);
       ctx.fill(scene.viaHoles);
     }
     if (opts.pads) {
-      ctx.fillStyle = PCB_SPECIAL.nonPlatedHole;
+      ctx.fillStyle = sp(PCB_SPECIAL.nonPlatedHole);
       ctx.fill(scene.padHolesNP);
     }
   });
@@ -799,8 +1069,23 @@ export function drawBoard(
   widthPx: number,
   heightPx: number,
   opts: PcbDrawOptions = DEFAULT_DRAW_OPTIONS,
+  sheet?: SheetInfo,
+  overlay = false,
+  brighten = 0,
 ): void {
-  for (const step of buildDrawSteps(ctx, scene, view, visible, widthPx, heightPx, opts)) step();
+  for (const step of buildDrawSteps(
+    ctx,
+    scene,
+    view,
+    visible,
+    widthPx,
+    heightPx,
+    opts,
+    sheet,
+    overlay,
+    brighten,
+  ))
+    step();
 }
 
 export { measureText };

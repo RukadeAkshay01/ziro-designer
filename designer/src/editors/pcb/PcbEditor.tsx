@@ -17,6 +17,7 @@ import {
   boardItemBBox,
   parseBoardItemId,
   moveBoardItems,
+  subsetBoardItems,
   deleteBoardItems,
   rotateBoardItems,
   duplicateBoardItems,
@@ -29,13 +30,16 @@ import { Toolbar } from '../../ui/Toolbar.js';
 import {
   buildScene,
   buildDrawSteps,
+  drawBoard,
+  drawGrid,
+  DEFAULT_GRID_OPTIONS,
   DEFAULT_DRAW_OPTIONS,
   type BoardScene,
   type PcbDrawOptions,
   type SheetInfo,
 } from './renderBoard.js';
 import type { Viewer3D } from './pcb3d.js';
-import { layerColor, PCB_PAINT_ORDER } from './pcbTheme.js';
+import { layerColor, PCB_PAINT_ORDER, PCB_CURSOR } from './pcbTheme.js';
 import {
   PCB_TOP_TOOLBAR,
   PCB_LEFT_TOOLBAR,
@@ -45,6 +49,22 @@ import {
 import '../../ui/shell.css';
 
 const MM = 10000;
+
+// pcb_painter.cpp getColor: a selected item is drawn in its layer colour
+// Brightened(0.8) (per channel c·0.2 + 0.8), i.e. pushed 80% toward white.
+const SELECT_BRIGHTEN = 0.8;
+
+// Snap a world point to the active grid (GAL GetGridPoint). Shared by the
+// crosshair and the move so a dragged item follows the snapped crosshair and
+// lands on grid nodes, like KiCad (edit_tool_move_fct.cpp: m_cursor =
+// grid.BestSnapAnchor(mousePos); movement = m_cursor - prevPos).
+const snapToGrid = (p: { x: number; y: number }): { x: number; y: number } => {
+  const { size, origin } = DEFAULT_GRID_OPTIONS;
+  return {
+    x: Math.round((p.x - origin.x) / size) * size + origin.x,
+    y: Math.round((p.y - origin.y) / size) * size + origin.y,
+  };
+};
 
 // KiCad's own visibility (eye) icons, vendored under assets/.
 const EYE_ICONS = import.meta.glob('../assets/toolbar/visibility*.svg', {
@@ -205,6 +225,9 @@ export function PcbEditor({
   const [show3D, setShow3D] = useState(false);
   const viewer3dRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  // Live (world) cursor position read by draw()'s crosshair pass without
+  // re-creating the callback; null when the pointer is off the canvas.
+  const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const [scale, setScale] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -219,6 +242,14 @@ export function PcbEditor({
   // a move gesture is in flight; committed on pointer-up (PCB_MOVE_TOOL preview).
   const moveDeltaRef = useRef<{ x: number; y: number } | null>(null);
   const movingRef = useRef(false);
+  // While a move is in flight the base raster is the board with the moving items
+  // removed; this scene holds just those items, painted live at the drag offset
+  // so the real geometry follows the cursor (not merely its bounding box).
+  const moveSceneRef = useRef<BoardScene | null>(null);
+  // Selected items, compiled on their own so they can be repainted brightened
+  // over the raster — KiCad's selection is the item's colour Brightened(0.8),
+  // not a bounding box (pcb_painter.cpp getColor).
+  const selSceneRef = useRef<BoardScene | null>(null);
   // Whole-board snapshot undo/redo (EDIT_TOOL's SaveCopyInUndoList).
   const undoRef = useRef<Board[]>([]);
   const redoRef = useRef<Board[]>([]);
@@ -382,6 +413,12 @@ export function PcbEditor({
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = 'rgb(0,16,35)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Grid sits behind the board (GAL GRID_DEPTH), painted crisply at the live
+    // view every frame so it stays sharp during pan/zoom. The raster is drawn on
+    // top with a transparent background so the grid shows through empty areas.
+    if (objects.grid && toggles.has('toggleGrid')) {
+      drawGrid(ctx, v, canvas.width, canvas.height, dpr, DEFAULT_GRID_OPTIONS);
+    }
     const c = cacheRef.current;
     if (c) {
       const k = v.scale / c.view.scale;
@@ -394,36 +431,39 @@ export function PcbEditor({
       ctx.imageSmoothingEnabled = true;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
-    // Selection highlight: dashed boxes around selected items (drawn on top of
-    // the raster in device-pixel space, like the footprint editor's overlay).
-    const sel = selForDrawRef.current;
-    const brd = boardRef.current;
-    if (brd && sel.size > 0) {
-      const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
-        x: p.x * v.scale + v.tx,
-        y: p.y * v.scale + v.ty,
-      });
+    // Selection / move overlay: the selected items repainted brightened over the
+    // raster — KiCad draws a selected item in its layer colour Brightened(0.8),
+    // not a bounding box (pcb_painter.cpp getColor). While a move is in flight the
+    // moving items are excluded from the raster and this overlay follows the
+    // cursor at the drag offset (EDIT_TOOL::Move's GAL overlay); otherwise it
+    // sits exactly over the raster so the selection just lights up in place.
+    {
       const md = moveDeltaRef.current;
-      const ox = md ? md.x : 0,
-        oy = md ? md.y : 0;
-      ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-      ctx.lineWidth = Math.max(1, dpr);
-      ctx.setLineDash([4 * dpr, 3 * dpr]);
-      for (const id of sel) {
-        const b = boardItemBBox(brd, id);
-        if (!b) continue;
-        const p0 = toPx({ x: b.minX + ox, y: b.minY + oy });
-        const p1 = toPx({ x: b.maxX + ox, y: b.maxY + oy });
-        const pad = 2 * dpr;
-        ctx.strokeRect(
-          Math.min(p0.x, p1.x) - pad,
-          Math.min(p0.y, p1.y) - pad,
-          Math.abs(p1.x - p0.x) + 2 * pad,
-          Math.abs(p1.y - p0.y) + 2 * pad,
+      const os = moveSceneRef.current ?? selSceneRef.current;
+      if (os) {
+        const offView = {
+          scale: v.scale,
+          tx: v.tx + (md ? md.x : 0) * v.scale,
+          ty: v.ty + (md ? md.y : 0) * v.scale,
+        };
+        ctx.save();
+        drawBoard(
+          ctx,
+          os,
+          offView,
+          visible,
+          canvas.width,
+          canvas.height,
+          drawOpts,
+          undefined,
+          true,
+          SELECT_BRIGHTEN,
         );
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
-      ctx.setLineDash([]);
     }
+    const brd = boardRef.current;
     // Rubber-band marquee: KiCad tints it blue for a left→right window
     // (contained) select, green for a right→left crossing select.
     const box = boxRef.current;
@@ -467,6 +507,38 @@ export function PcbEditor({
         );
       }
     }
+    // Crosshair cursor (GAL blitCursor): a white cross at the grid-snapped
+    // cursor. crosshairSmall = an 80px cross (default), crosshairFull = full
+    // screen lines, crosshair45 = a big diagonal X. Drawn topmost.
+    const cur = cursorRef.current;
+    if (cur) {
+      const snapped = snapToGrid(cur);
+      const px = snapped.x * v.scale + v.tx;
+      const py = snapped.y * v.scale + v.ty;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.strokeStyle = PCB_CURSOR;
+      ctx.lineWidth = Math.max(1, dpr);
+      ctx.beginPath();
+      if (toggles.has('crosshairFull')) {
+        ctx.moveTo(0, py);
+        ctx.lineTo(canvas.width, py);
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, canvas.height);
+      } else if (toggles.has('crosshair45')) {
+        const d = canvas.width + canvas.height;
+        ctx.moveTo(px - d, py - d);
+        ctx.lineTo(px + d, py + d);
+        ctx.moveTo(px - d, py + d);
+        ctx.lineTo(px + d, py - d);
+      } else {
+        const s = 40 * dpr; // 80px cross, ±40
+        ctx.moveTo(px - s, py);
+        ctx.lineTo(px + s, py);
+        ctx.moveTo(px, py - s);
+        ctx.lineTo(px, py + s);
+      }
+      ctx.stroke();
+    }
     setScale(v.scale);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startCrispRender]);
@@ -482,10 +554,26 @@ export function PcbEditor({
     requestDraw();
   }, [visible, drawOpts, requestDraw]);
 
-  // The selection / disambiguation hover live only in the overlay — just repaint.
+  // Recompile the selected items into their own scene, so the overlay can paint
+  // them brightened over the raster (KiCad's selection look).
+  const rebuildSelScene = useCallback(() => {
+    const brd = boardRef.current;
+    const sel = selForDrawRef.current;
+    selSceneRef.current =
+      brd && sel.size > 0
+        ? buildScene(subsetBoardItems(brd, sel), {
+            hideFrontFootprints: !objects.footprintsFront,
+            hideBackFootprints: !objects.footprintsBack,
+          })
+        : null;
+  }, [objects.footprintsFront, objects.footprintsBack]);
+
+  // The selection / disambiguation hover live only in the overlay — recompile the
+  // selection scene and repaint.
   useEffect(() => {
+    rebuildSelScene();
     requestDraw();
-  }, [selection, disambig, requestDraw]);
+  }, [selection, disambig, requestDraw, rebuildSelScene]);
 
   // ----- board model mutation (edits + undo/redo) -----------------------------
 
@@ -496,10 +584,11 @@ export function PcbEditor({
         hideFrontFootprints: !objects.footprintsFront,
         hideBackFootprints: !objects.footprintsBack,
       });
+      rebuildSelScene();
       cacheRef.current = null;
       requestDraw();
     },
-    [objects.footprintsFront, objects.footprintsBack, requestDraw],
+    [objects.footprintsFront, objects.footprintsBack, requestDraw, rebuildSelScene],
   );
 
   const setBoardModel = useCallback(
@@ -792,6 +881,9 @@ export function PcbEditor({
       const wx = ((e.clientX - rect.left) * dpr - v.tx) / v.scale;
       const wy = ((e.clientY - rect.top) * dpr - v.ty) / v.scale;
       setCursor({ x: wx, y: wy });
+      cursorRef.current = { x: wx, y: wy };
+      // Repaint so the crosshair follows even on a plain hover (no pan/drag).
+      requestDraw();
     }
     if (panRef.current) {
       const v = viewRef.current;
@@ -809,12 +901,34 @@ export function PcbEditor({
         if (!cur) return;
         if (d.onItem) {
           // Drag on an item = move it (PCB_MOVE_TOOL). On the first move, make
-          // sure the grabbed item is selected so the whole selection follows.
+          // sure the grabbed item is selected so the whole selection follows,
+          // then split the scene into a static backdrop (everything else) and a
+          // live overlay of the moving items so the real geometry — not just a
+          // bounding box — tracks the cursor.
           if (!movingRef.current) {
             movingRef.current = true;
-            if (d.hitId && !selForDrawRef.current.has(d.hitId)) applySelect(d.hitId, false);
+            let movingSel: ReadonlySet<string> = selForDrawRef.current;
+            if (d.hitId && !movingSel.has(d.hitId)) {
+              movingSel = new Set([d.hitId]);
+              applySelect(d.hitId, false);
+            }
+            const brd = boardRef.current;
+            if (brd && movingSel.size > 0) {
+              const filter = {
+                hideFrontFootprints: !objects.footprintsFront,
+                hideBackFootprints: !objects.footprintsBack,
+              };
+              sceneRef.current = buildScene(deleteBoardItems(brd, movingSel), filter);
+              moveSceneRef.current = buildScene(subsetBoardItems(brd, movingSel), filter);
+              cacheRef.current = null;
+            }
           }
-          moveDeltaRef.current = { x: cur.x - d.world.x, y: cur.y - d.world.y };
+          // Snap both the grab origin and the current cursor to the grid, so the
+          // net offset is a whole number of grid steps and the grabbed point
+          // follows the snapped crosshair (edit_tool_move_fct.cpp).
+          const from = snapToGrid(d.world);
+          const to = snapToGrid(cur);
+          moveDeltaRef.current = { x: to.x - from.x, y: to.y - from.y };
           requestDraw();
         } else {
           // Drag from empty space rubber-bands a selection box.
@@ -834,12 +948,19 @@ export function PcbEditor({
     boxRef.current = null;
     movingRef.current = false;
     moveDeltaRef.current = null;
+    const hadMoveOverlay = moveSceneRef.current !== null;
+    moveSceneRef.current = null;
     if (d) {
       if (!d.moved) {
         clickSelect(e.clientX, e.clientY, d.shift);
       } else if (moved && delta && boardRef.current && (delta.x !== 0 || delta.y !== 0)) {
-        // Commit the drag-move of the current selection (EDIT_TOOL::Move).
+        // Commit the drag-move of the current selection (EDIT_TOOL::Move); this
+        // rebuilds the full scene, replacing the split backdrop/overlay.
         commitBoard(moveBoardItems(boardRef.current, selForDrawRef.current, delta));
+      } else if (hadMoveOverlay && boardRef.current) {
+        // Move started but dropped in place (zero net delta): the backdrop is
+        // still the board-minus-moving-items, so restore the full scene.
+        rebuildScene(boardRef.current);
       } else if (box && boardRef.current) {
         // Left→right = window (contained); right→left = crossing (touching).
         const contained = box.b.x >= box.a.x;
@@ -858,6 +979,12 @@ export function PcbEditor({
         });
       }
     }
+    requestDraw();
+  };
+  // Pointer left the canvas — drop the crosshair.
+  const onPointerLeave = (): void => {
+    cursorRef.current = null;
+    setCursor(null);
     requestDraw();
   };
 
@@ -1253,10 +1380,12 @@ export function PcbEditor({
         <div className="ze-canvas-wrap" ref={wrapRef} style={{ position: 'relative' }}>
           <canvas
             ref={canvasRef}
-            style={{ position: 'absolute', inset: 0, cursor: 'crosshair' }}
+            // Hide the native pointer; KiCad draws its own crosshair on the canvas.
+            style={{ position: 'absolute', inset: 0, cursor: 'none' }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerLeave={onPointerLeave}
           />
           {!board && !error && (
             <div className="ze-canvas-loading">

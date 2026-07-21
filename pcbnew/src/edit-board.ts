@@ -666,6 +666,27 @@ export function deleteBoardItems(board: Board, ids: ReadonlySet<string>): Board 
   };
 }
 
+/**
+ * A board holding only the selected items, keeping all board metadata (layers,
+ * stackup, paper…) so it renders identically. Used as the live move overlay:
+ * the moving items are drawn from this subset following the cursor while the
+ * static backdrop is the board with those same items removed (EDIT_TOOL::Move,
+ * which puts the dragged items on a GAL overlay and hides them in the base view).
+ */
+export function subsetBoardItems(board: Board, ids: ReadonlySet<string>): Board {
+  const idx = indicesByKind(ids);
+  return {
+    ...board,
+    tracks: board.tracks.filter((_, i) => idx.track.has(i)),
+    arcs: board.arcs.filter((_, i) => idx.arc.has(i)),
+    vias: board.vias.filter((_, i) => idx.via.has(i)),
+    zones: board.zones.filter((_, i) => idx.zone.has(i)),
+    shapes: board.shapes.filter((_, i) => idx.shape.has(i)),
+    texts: board.texts.filter((_, i) => idx.text.has(i)),
+    footprints: board.footprints.filter((_, i) => idx.footprint.has(i)),
+  };
+}
+
 // ----- rotate (EDIT_TOOL::Rotate) ---------------------------------------------
 
 /** Normalise degrees to [0, 360). */

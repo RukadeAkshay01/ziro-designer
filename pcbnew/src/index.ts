@@ -43,6 +43,7 @@ export {
   boardHitCandidates,
   boardItemsInBox,
   moveBoardItems,
+  subsetBoardItems,
   deleteBoardItems,
   rotateBoardItems,
   duplicateBoardItems,

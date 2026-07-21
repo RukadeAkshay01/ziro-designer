@@ -181,6 +181,12 @@ function readPcbText(
   const angle = at ? (numArg(at, 2) ?? 0) : 0;
   const fx = readTextEffects(item);
   const hideNode = childNamed(item, 'hide');
+  // Footprint text (t != null) keeps upright unless it carries `unlocked`
+  // (either positional after the angle in `at`, or a child `(unlocked yes)`).
+  const unlockedNode = childNamed(item, 'unlocked');
+  const unlocked =
+    (at ? args(at).includes('unlocked') : false) ||
+    (unlockedNode ? arg(unlockedNode, 0) !== 'no' : false);
   return {
     kind,
     text,
@@ -193,6 +199,7 @@ function readPcbText(
     italic: fx.italic,
     mirror: fx.mirror,
     justify: fx.justify,
+    keepUpright: t !== null && !unlocked,
     hide: hideNode ? arg(hideNode, 0) !== 'no' : false,
     knockout: childNamed(item, 'layer')
       ? args(childNamed(item, 'layer')!).includes('knockout')
@@ -434,11 +441,24 @@ function readZone(item: SList): PcbZone {
     if (existing) existing.polys.push(pts);
     else fills.push({ layer, polys: [pts] });
   }
+  // The zone boundary `(polygon (pts …))` — drawn as the border, and larger
+  // than the (clearance-inset) fill.
+  const polyNode = childNamed(item, 'polygon');
+  const outline = polyNode ? readPts(childNamed(polyNode, 'pts'), null) : [];
+  // `(hatch <style> <pitch>)` — border display style + hatch pitch (mm).
+  const hatchNode = childNamed(item, 'hatch');
+  const hatchWord = hatchNode ? arg(hatchNode, 0) : undefined;
+  const hatchStyle: PcbZone['hatchStyle'] =
+    hatchWord === 'none' ? 'none' : hatchWord === 'full' ? 'full' : hatchWord ? 'edge' : undefined;
+  const hatchPitch = hatchNode ? mmToIU(Number(arg(hatchNode, 1) ?? 0)) : 0;
   return {
     net: netNode ? (numArg(netNode, 0) ?? 0) : 0,
     netName: stringField(item, 'net_name'),
     layers,
     fills,
+    outline: outline.length >= 3 ? outline : undefined,
+    hatchStyle,
+    hatchPitch,
     uuid: uuidOf(item),
     source: item,
   };

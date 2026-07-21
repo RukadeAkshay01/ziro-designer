@@ -129,9 +129,17 @@ const NEW_BASE = {
 export function DrawingSheetEditor({
   onExitToHome,
   projectName,
+  onSaveToProject,
+  openRequest,
 }: {
   onExitToHome: () => void;
   projectName?: string;
+  /** Save the current sheet into the open project as a `.kicad_wks`. Absent
+   *  when no project is open (the menu item is then hidden). */
+  onSaveToProject?: (fileName: string, text: string) => void;
+  /** A `.kicad_wks` the project manager double-clicked to open here; re-sent with
+   *  a fresh nonce so the resident editor re-opens on the newly-picked file. */
+  openRequest?: { name: string; text: string; nonce: number } | null;
 }): JSX.Element {
   const [sheet, setSheet] = useState<WksSheet>(() => defaultDrawingSheet());
   const [fileName, setFileName] = useState('drawing_sheet.kicad_wks');
@@ -295,6 +303,16 @@ export function DrawingSheetEditor({
     [openText],
   );
 
+  // Open the .kicad_wks the project manager double-clicked (a fresh nonce each
+  // activation re-opens even while the editor stays resident).
+  const openReqNonce = openRequest?.nonce;
+  useEffect(() => {
+    if (!openRequest) return;
+    const base = openRequest.name.split(/[\\/]/).pop() ?? openRequest.name;
+    void openText(base, openRequest.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openReqNonce]);
+
   const appendFile = useCallback(
     async (file: File) => {
       try {
@@ -310,24 +328,29 @@ export function DrawingSheetEditor({
     [sheet, commit],
   );
 
-  const save = useCallback(() => {
-    const text = serializeDrawingSheet(sheet);
-    download(fileName, text);
-    addRecent(fileName, text);
-    setDirty(false);
-    setStatus(`Saved ${fileName}`);
-  }, [fileName, sheet, addRecent]);
+  // Save the sheet into the open project (IndexedDB/cloud) so the schematic's
+  // Page Settings can select it. Only when no project is open (the standalone
+  // editor) does it fall back to a local-file download.
+  const writeSheet = useCallback(
+    (name: string, note = 'Saved') => {
+      const text = serializeDrawingSheet(sheet);
+      if (onSaveToProject) onSaveToProject(name, text);
+      else download(name, text);
+      addRecent(name, text);
+      setDirty(false);
+      setStatus(`${note} ${name}${onSaveToProject ? ' to project' : ''}`);
+    },
+    [sheet, addRecent, onSaveToProject],
+  );
+
+  const save = useCallback(() => writeSheet(fileName), [writeSheet, fileName]);
 
   const saveAs = useCallback(() => {
     const name = window.prompt('Save drawing sheet as:', fileName) || fileName;
     const finalName = /\.kicad_wks$/i.test(name) ? name : `${name}.kicad_wks`;
-    const text = serializeDrawingSheet(sheet);
     setFileName(finalName);
-    download(finalName, text);
-    addRecent(finalName, text);
-    setDirty(false);
-    setStatus(`Saved ${finalName}`);
-  }, [fileName, sheet, addRecent]);
+    writeSheet(finalName);
+  }, [fileName, writeSheet]);
 
   /** Print the sheet: render the page alone to a bitmap and print that. */
   const printSheet = useCallback(() => {

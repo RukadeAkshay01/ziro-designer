@@ -33,6 +33,23 @@ const projectNameOf = (files: PickedFile[]): string => {
 
 const pcbBasename = (p: string): string => p.split('/').pop()!.split('\\').pop()!;
 
+// A project's basename (no extension), e.g. "proj/proj.kicad_pro" → "proj".
+const projBaseOf = (proName: string): string => pcbBasename(proName).replace(/\.kicad_pro$/i, '');
+
+// Does `fileName` belong to the project whose basename is `base`? KiCad's per-
+// project files share the exact basename (proj.kicad_sch / proj.kicad_pcb), so
+// the file basename starts with "base." — this keeps "proj" and "proj_v2" apart.
+const inProject = (fileName: string, base: string): boolean =>
+  pcbBasename(fileName).toLowerCase().startsWith(`${base.toLowerCase()}.`);
+
+// The project's folder prefix (e.g. "proj/"), taken from the .kicad_pro's own
+// directory, or '' when it sits at the root. New files added to the project
+// carry this prefix so they land in the project folder like the other files.
+const projectDirPrefix = (files: PickedFile[]): string => {
+  const pro = files.find((f) => /\.kicad_pro$/i.test(f.name))?.name.replace(/\\/g, '/');
+  return pro?.includes('/') ? pro.slice(0, pro.lastIndexOf('/') + 1) : '';
+};
+
 /**
  * Top-level app: KiCad's project manager, then the schematic, symbol and PCB
  * editors. Like KiCad, the editors share one open project and stay resident —
@@ -54,7 +71,15 @@ export function App(): JSX.Element {
     | 'gerber'
   >('home');
   const [projectFiles, setProjectFiles] = useState<PickedFile[] | null>(null);
+  // `.kicad_wks` saved into the open project this session (Drawing Sheet Editor
+  // → Save to Project). Kept separate from projectFiles so adding one doesn't
+  // reload/reset the mounted editors; offered as schematic Page Settings choices.
+  const [sessionSheets, setSessionSheets] = useState<PickedFile[]>([]);
   const [startFile, setStartFile] = useState<string | null>(null);
+  // The active project's .kicad_pro (full name) when a folder holds more than
+  // one project (KiCad's active project). null → the first .kicad_pro. Double-
+  // clicking another .kicad_pro switches it, re-scoping every editor's root.
+  const [activePro, setActivePro] = useState<string | null>(null);
   // A board opened directly (no schematic project around it).
   const [standalonePcb, setStandalonePcb] = useState<PickedFile | null>(null);
   const [schMounted, setSchMounted] = useState(false);
@@ -72,6 +97,14 @@ export function App(): JSX.Element {
   // each activation so a resident editor re-opens on the newly-picked file.
   const [fpRequest, setFpRequest] = useState<{ file: string | null; nonce: number } | null>(null);
   const [symRequest, setSymRequest] = useState<{ file: string | null; nonce: number } | null>(null);
+  // A .kicad_wks the project manager double-clicked into the Drawing Sheet
+  // Editor: its name + content, re-sent with a fresh nonce so a resident editor
+  // re-opens on the newly-picked file.
+  const [dsRequest, setDsRequest] = useState<{
+    name: string;
+    text: string;
+    nonce: number;
+  } | null>(null);
   // Restore the last view on reload: reopen the most-recently-opened project
   // (top of Recent) into the saved view, so a refresh doesn't lose your work.
   // On reload, reopen the most-recently-opened project (top of Recent) — into
@@ -120,37 +153,120 @@ export function App(): JSX.Element {
   const projectFilesRef = useRef(projectFiles);
   projectFilesRef.current = projectFiles;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const onProjectChange = useCallback((changed: PickedFile[]) => {
+  // Pending autosave (file name → bytes), coalesced until the timer fires or a
+  // flush forces it out.
+  const pendingWrite = useRef<Map<string, Uint8Array>>(new Map());
+  const writePending = useCallback(() => {
     const cur = projectFilesRef.current;
-    if (!cur || !storageAvailable()) return;
-    const fullByBase = new Map(cur.map((f) => [pcbBasename(f.name), f.name]));
-    const fullChanged = changed
-      .filter((f) => fullByBase.has(pcbBasename(f.name)))
-      .map((f) => ({ name: fullByBase.get(pcbBasename(f.name))!, bytes: enc.encode(f.text) }));
-    if (fullChanged.length === 0) return;
+    if (!cur || pendingWrite.current.size === 0 || !storageAvailable()) return;
+    const files = [...pendingWrite.current].map(([name, bytes]) => ({ name, bytes }));
+    pendingWrite.current = new Map();
+    void (async () => {
+      try {
+        const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
+        if (rec) await updateProjectFiles(rec.id, files);
+      } catch {
+        /* storage disabled */
+      }
+    })();
+  }, []);
+  const onProjectChange = useCallback(
+    (changed: PickedFile[]) => {
+      const cur = projectFilesRef.current;
+      if (!cur || !storageAvailable()) return;
+      const fullByBase = new Map(cur.map((f) => [pcbBasename(f.name), f.name]));
+      let queued = false;
+      for (const f of changed) {
+        const full = fullByBase.get(pcbBasename(f.name));
+        if (!full) continue;
+        pendingWrite.current.set(full, enc.encode(f.text));
+        queued = true;
+      }
+      if (!queued) return;
+      clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(writePending, 1200);
+    },
+    [writePending],
+  );
+  // Flush any pending autosave now — on leaving an editor and before reopening,
+  // so a quick "edit → home → reopen" never reads a stale project.
+  const schFlush = useRef<(() => void) | null>(null);
+  const registerSchFlush = useCallback((fn: (() => void) | null) => {
+    schFlush.current = fn;
+  }, []);
+  // Edits mirrored into the in-memory project so the home tree (and a reopen
+  // from it) reflect them — autosave only writes IndexedDB, which a tree reopen
+  // does not re-read. Cleared when a project is (re)opened.
+  const liveEdits = useRef<Map<string, string>>(new Map());
+  const flushSaves = useCallback(() => {
+    schFlush.current?.(); // push the editor's latest serialized sheets into the queue
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
-          if (rec) await updateProjectFiles(rec.id, fullChanged);
-        } catch {
-          /* storage disabled */
-        }
-      })();
-    }, 1200);
+    for (const [name, bytes] of pendingWrite.current)
+      liveEdits.current.set(name, dec.decode(bytes));
+    writePending();
+  }, [writePending]);
+  useEffect(() => {
+    liveEdits.current.clear();
+  }, [projectFiles]);
+
+  // Persist project files to IndexedDB/cloud immediately (no autosave debounce),
+  // used for discrete actions — drawing-sheet reference changes and Save to
+  // Project — so a "go back and reopen" reads them straight back.
+  const persistFilesNow = useCallback((files: PickedFile[]) => {
+    const cur = projectFilesRef.current;
+    if (!cur || files.length === 0 || !storageAvailable()) return;
+    void (async () => {
+      try {
+        const rec = (await listProjects()).find((p) => p.name === projectNameOf(cur));
+        if (rec)
+          await updateProjectFiles(
+            rec.id,
+            files.map((f) => ({ name: f.name, bytes: enc.encode(f.text) })),
+          );
+      } catch {
+        /* storage disabled */
+      }
+    })();
   }, []);
 
-  const pcbFile = useMemo<PickedFile | null>(
-    () => standalonePcb ?? projectFiles?.find((f) => /\.kicad_pcb$/i.test(f.name)) ?? null,
-    [projectFiles, standalonePcb],
+  // Drawing Sheet Editor → Save (Save As): write the .kicad_wks into the open
+  // project and offer it as a schematic drawing-sheet choice + in the file tree.
+  // Place it under the project's folder (the shared path prefix) so it sits
+  // alongside the .kicad_sch/.kicad_pcb rather than spawning a stray root entry.
+  const onSaveToProject = useCallback(
+    (fileName: string, text: string) => {
+      const cur = projectFilesRef.current;
+      if (!cur) return;
+      const name = fileName.includes('/') ? fileName : projectDirPrefix(cur) + fileName;
+      setSessionSheets((prev) => [...prev.filter((f) => f.name !== name), { name, text }]);
+      persistFilesNow([{ name, text }]);
+    },
+    [persistFilesNow],
   );
+
+  // The active project's .kicad_pro (full name), validated against the open
+  // files; defaults to the first .kicad_pro. `activeBase` scopes every editor.
+  const activeProName = useMemo(() => {
+    if (!projectFiles) return null;
+    const pros = projectFiles.filter((f) => /\.kicad_pro$/i.test(f.name)).map((f) => f.name);
+    return (activePro && pros.includes(activePro) ? activePro : pros[0]) ?? null;
+  }, [projectFiles, activePro]);
+  const activeBase = activeProName ? projBaseOf(activeProName) : '';
+
+  const pcbFile = useMemo<PickedFile | null>(() => {
+    if (standalonePcb) return standalonePcb;
+    if (!projectFiles) return null;
+    const boards = projectFiles.filter((f) => /\.kicad_pcb$/i.test(f.name));
+    // The active project's board, else any board (single-project projects).
+    return boards.find((f) => activeBase && inProject(f.name, activeBase)) ?? boards[0] ?? null;
+  }, [projectFiles, standalonePcb, activeBase]);
   const hasSchematic = useMemo(
     () => !!projectFiles?.some((f) => /\.kicad_sch$/i.test(f.name)),
     [projectFiles],
   );
-  // KiCad shows "<project> — <Editor>" in the window title; we put it in the menu bar.
-  const projectName = useMemo(
+  // The folder's identity (first .kicad_pro) — stable across in-folder project
+  // switches, so it keys the "new project opened" reset without self-firing.
+  const folderName = useMemo(
     () =>
       projectFiles
         ? projectNameOf(projectFiles)
@@ -159,8 +275,29 @@ export function App(): JSX.Element {
           : '',
     [projectFiles, standalonePcb],
   );
+  // KiCad shows "<project> — <Editor>" in the window title; we put it in the
+  // menu bar. With several projects in a folder, it names the active one.
+  const projectName = activeBase || folderName;
 
-  const goHome = useCallback(() => setView('home'), []);
+  // A different project folder drops any drawing sheets saved into the previous
+  // one, and resets the active project to its default (first .kicad_pro).
+  useEffect(() => {
+    setSessionSheets([]);
+    setActivePro(null);
+  }, [folderName]);
+
+  // Switch the active project (double-clicking another .kicad_pro in the tree).
+  // Like KiCad's PROJECT_TREE_ITEM::Activate → LoadProject: it only makes that
+  // project active and re-roots the manager tree; it does NOT launch an editor.
+  // Setting activePro re-scopes every editor's root for the next time one opens.
+  const switchProject = useCallback((proFullName: string) => {
+    setActivePro(proFullName);
+  }, []);
+
+  const goHome = useCallback(() => {
+    flushSaves(); // persist pending edits before the tree/reopen can read them
+    setView('home');
+  }, [flushSaves]);
   const showPcb = useCallback(() => {
     setPcbMounted(true);
     setView('pcb');
@@ -205,11 +342,27 @@ export function App(): JSX.Element {
   }
 
   if (view === 'home') {
-    // Keep the open project visible in the manager tree on return from an editor.
-    const openFiles = projectFiles ?? (standalonePcb ? [standalonePcb] : null);
+    // Keep the open project visible in the manager tree on return from an editor,
+    // including any .kicad_wks saved into it this session (not yet in projectFiles).
+    // Overlay flushed edits (liveEdits) so a reopen from the tree sees them, and
+    // append any .kicad_wks saved into the project this session.
+    const edited = projectFiles
+      ? projectFiles.map((f) =>
+          liveEdits.current.has(f.name)
+            ? { name: f.name, text: liveEdits.current.get(f.name)! }
+            : f,
+        )
+      : null;
+    const base = edited ?? (standalonePcb ? [standalonePcb] : null);
+    const openFiles =
+      base && sessionSheets.length
+        ? [...base, ...sessionSheets.filter((s) => !base.some((f) => f.name === s.name))]
+        : base;
     return (
       <HomePage
         initialFiles={openFiles}
+        activePro={activeProName ?? undefined}
+        onSwitchProject={switchProject}
         onOpenSchematic={() => {
           setProjectFiles(null);
           setStandalonePcb(null);
@@ -257,9 +410,15 @@ export function App(): JSX.Element {
           setCalcMounted(true);
           setView('calculator');
         }}
-        onOpenDrawingSheetEditor={() => {
+        onOpenDrawingSheetEditor={(file) => {
           setDsMounted(true);
           setView('drawingsheet');
+          if (file)
+            setDsRequest((prev) => ({
+              name: file.name,
+              text: file.text,
+              nonce: (prev?.nonce ?? 0) + 1,
+            }));
         }}
         onOpenImageConverter={() => {
           setImgMounted(true);
@@ -285,8 +444,12 @@ export function App(): JSX.Element {
             onShowCalculator={showCalculator}
             initialProject={projectFiles}
             initialFile={startFile}
+            rootPro={activeBase || undefined}
             placeRequest={placeRequest}
             onProjectChange={onProjectChange}
+            onPersistFiles={persistFilesNow}
+            registerAutosaveFlush={registerSchFlush}
+            extraSheetFiles={sessionSheets}
             projectName={projectName}
           />
         </div>
@@ -330,7 +493,12 @@ export function App(): JSX.Element {
       )}
       {dsMounted && (
         <div style={{ display: view === 'drawingsheet' ? 'contents' : 'none' }}>
-          <DrawingSheetEditor onExitToHome={goHome} projectName={projectName} />
+          <DrawingSheetEditor
+            onExitToHome={goHome}
+            projectName={projectName}
+            onSaveToProject={projectFiles ? onSaveToProject : undefined}
+            openRequest={dsRequest}
+          />
         </div>
       )}
       {imgMounted && (

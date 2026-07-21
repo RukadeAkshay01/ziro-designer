@@ -86,6 +86,12 @@ export interface PcbTextItem {
   italic?: boolean;
   mirror?: boolean;
   justify?: string[];
+  /**
+   * Footprint text keeps its rotation in ]-90°, 90°] so it stays readable
+   * (PCB_TEXT::GetDrawRotation). True for footprint text unless the file carries
+   * an `unlocked` flag; never set for board (gr_text) text.
+   */
+  keepUpright?: boolean;
   hide?: boolean;
   knockout?: boolean;
   uuid?: string;
@@ -166,6 +172,12 @@ export interface PcbZone {
   netName?: string;
   layers: string[];
   fills: PcbZoneFill[];
+  /** The user-drawn zone boundary `(polygon (pts …))`, drawn as the zone border. */
+  outline?: Vec2[];
+  /** Border display style from `(hatch <style> <pitch>)`: none / edge / full. */
+  hatchStyle?: 'none' | 'edge' | 'full';
+  /** Border hatch pitch in IU (the `(hatch … <pitch>)` distance). */
+  hatchPitch?: number;
   uuid?: string;
   source: SList;
 }

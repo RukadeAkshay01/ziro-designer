@@ -30,17 +30,21 @@ export const treeIconFor = (file: string): string =>
       ? 'icon_eeschema_16'
       : /\.kicad_pcb$/i.test(file)
         ? 'icon_pcbnew_16'
-        : /\.kicad_sym$/i.test(file)
-          ? 'library'
-          : /\.kicad_mod$/i.test(file)
-            ? 'module'
-            : /\.(step|stp|wrl|wings)$/i.test(file)
-              ? 'three_d'
-              : /\.pdf$/i.test(file)
-                ? 'file_pdf'
-                : /\.(txt|md|rpt|net)$/i.test(file)
-                  ? 'datasheet'
-                  : 'directory_browser';
+        : /\.kicad_wks$/i.test(file)
+          ? // KiCad's project tree shows a .kicad_wks with the page-layout
+            // editor icon (TREE_PAGE_LAYOUT_DESCR → BITMAPS::icon_pagelayout_editor).
+            'icon_pagelayout_editor_16'
+          : /\.kicad_sym$/i.test(file)
+            ? 'library'
+            : /\.kicad_mod$/i.test(file)
+              ? 'module'
+              : /\.(step|stp|wrl|wings)$/i.test(file)
+                ? 'three_d'
+                : /\.pdf$/i.test(file)
+                  ? 'file_pdf'
+                  : /\.(txt|md|rpt|net)$/i.test(file)
+                    ? 'datasheet'
+                    : 'directory_browser';
 
 /** A node in the project's on-disk directory tree. */
 export interface DirNode {
