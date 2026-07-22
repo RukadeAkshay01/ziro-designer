@@ -783,6 +783,9 @@ export interface PcbViewTransform {
   scale: number; // canvas px per IU
   tx: number;
   ty: number;
+  /** Horizontal mirror of the view (APPEARANCE_CONTROLS "Flip board view",
+   *  KIGFX::VIEW::SetMirror on X): screenX = worldX·(−scale) + tx. */
+  flipX?: boolean;
 }
 
 // KiCad renders every stroke at a minimum on-screen width so thin tracks stay
@@ -993,14 +996,16 @@ export function drawGrid(
 ): void {
   if (opts.size <= 0 || view.scale <= 0) return;
   const worldScale = view.scale; // device px per IU
+  // Signed X scale so grid nodes line up with the (mirrored) board and crosshair.
+  const sx = view.flipX ? -worldScale : worldScale;
   // GAL: m_gridLineWidth = scaleFactor * 0.5 + 0.25; a normal dot is this wide,
   // a coarse dot twice that, each clamped to a minimum of 1 device px.
   const lineW = dpr * 0.5 + 0.25;
 
   // Visible world rectangle (screen corners → world).
-  const wsx = (0 - view.tx) / worldScale;
+  const wsx = (0 - view.tx) / sx;
   const wsy = (0 - view.ty) / worldScale;
-  const wex = (widthPx - view.tx) / worldScale;
+  const wex = (widthPx - view.tx) / sx;
   const wey = (heightPx - view.ty) / worldScale;
 
   // Scale spacing up by whole ticks until it clears the min screen spacing.
@@ -1047,7 +1052,7 @@ export function drawGrid(
     const sh = Math.max(1, tickY ? lineW * 2 : lineW);
     for (let i = startX; i <= endX; i++) {
       const tickX = i % opts.tick === 0;
-      const dx = (i * step + ox) * worldScale + view.tx;
+      const dx = (i * step + ox) * sx + view.tx;
       const sw = Math.max(1, tickX ? lineW * 2 : lineW);
       rectAt(dx, dy, sw, sh);
     }
@@ -1086,7 +1091,8 @@ export function buildDrawSteps(
     // The raster is kept transparent so the grid (painted on the live canvas
     // behind the raster, like GAL's GRID_DEPTH) shows through the empty board
     // areas. The visible canvas fills PCB_BACKGROUND before blitting.
-    ctx.setTransform(view.scale, 0, 0, view.scale, view.tx, view.ty);
+    // A flipped view negates the X scale (SetMirror on X).
+    ctx.setTransform(view.flipX ? -view.scale : view.scale, 0, 0, view.scale, view.tx, view.ty);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     // Drawing sheet (page frame + title block) behind the board, like pcbnew.

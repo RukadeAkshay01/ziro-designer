@@ -687,10 +687,10 @@ body {
 .ze-layer-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 2px;
+  gap: 5px;
+  padding: 1px 5px 1px 2px;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.35;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -749,17 +749,60 @@ body {
 }
 
 /* Objects tab row: [swatch|spacer][eye|spacer][label][opacity slider] */
+/* Objects tab row, spaced like KiCad's appendObject:
+   [swatch] 5px [eye] 5px [label] [slider], 2px between rows. */
 .ze-object-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 2px;
+  gap: 5px;
+  padding: 1px 5px 1px 2px;
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.35;
   white-space: nowrap;
 }
-.ze-object-row input[type="range"] {
-  height: 14px;
+/* Label column: opacity rows fix its width so the sliders align (KiCad's
+   label->SetMinSize(labelWidth)); other rows let the label fill. */
+.ze-obj-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ze-obj-label.fixed {
+  flex: 0 0 auto;
+  width: 92px;
+}
+/* Opacity slider: KiCad's compact wxSlider — a thin track (min 80px) with a
+   small round thumb, not the browser's tall default control. */
+.ze-opacity {
+  flex: 0 0 auto;
+  width: 84px;
+  height: 4px;
+  margin: 0 5px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #55585d;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.ze-opacity::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #d0d3d7;
+  cursor: pointer;
+}
+.ze-opacity::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: none;
+  border-radius: 50%;
+  background: #d0d3d7;
+  cursor: pointer;
+}
+.ze-opacity:disabled {
+  opacity: 0.5;
 }
 
 /* Color swatch that opens a picker (COLOR_SWATCH): the native color input is

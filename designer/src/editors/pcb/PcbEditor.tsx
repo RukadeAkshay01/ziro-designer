@@ -558,6 +558,8 @@ export function PcbEditor({
   const [appWidth, setAppWidth] = useState(220);
   // High-contrast (inactive layer) mode: HIGH_CONTRAST_MODE Normal/Dim/Hide.
   const [contrast, setContrast] = useState<'normal' | 'dim' | 'hide'>('normal');
+  // "Flip board view" (PCB_ACTIONS::flipBoard): mirror the view horizontally.
+  const [flipView, setFlipView] = useState(false);
   // "Layer Display Options" collapsible pane state (collapsed by default).
   const [layerOptsOpen, setLayerOptsOpen] = useState(false);
   // Layer right-click context menu position (rightClickHandler).
@@ -614,7 +616,7 @@ export function PcbEditor({
   const [scale, setScale] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef({ scale: 0.005, tx: 0, ty: 0 });
+  const viewRef = useRef({ scale: 0.005, tx: 0, ty: 0, flipX: false });
   const boardRef = useRef<Board | null>(null);
   // Live selection read by draw()'s overlay pass without re-creating the callback.
   const selForDrawRef = useRef<ReadonlySet<string>>(selection);
@@ -782,7 +784,7 @@ export function PcbEditor({
   // re-sharpens *during* a zoom/pan instead of only after it stops.
   const cacheRef = useRef<{
     canvas: HTMLCanvasElement;
-    view: { scale: number; tx: number; ty: number };
+    view: { scale: number; tx: number; ty: number; flipX?: boolean };
   } | null>(null);
   const renderingRef = useRef(false);
   const viewChangedRef = useRef(true);
@@ -797,6 +799,7 @@ export function PcbEditor({
       c.view.scale === v.scale &&
       c.view.tx === v.tx &&
       c.view.ty === v.ty &&
+      c.view.flipX === v.flipX &&
       c.canvas.width === canvas.width &&
       c.canvas.height === canvas.height
     );
@@ -860,6 +863,8 @@ export function PcbEditor({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const v = viewRef.current;
+    // Signed X scale for the flipped (mirrored) view; world→screen X uses this.
+    const sx = v.flipX ? -v.scale : v.scale;
     if (!viewMatchesCache()) {
       viewChangedRef.current = true;
       startCrispRender();
@@ -912,9 +917,9 @@ export function PcbEditor({
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.lineWidth = Math.max(1, dpr);
         for (const { e, color } of rats) {
-          const x1 = e.ax * v.scale + v.tx;
+          const x1 = e.ax * sx + v.tx;
           const y1 = e.ay * v.scale + v.ty;
-          const x2 = e.bx * v.scale + v.tx;
+          const x2 = e.bx * sx + v.tx;
           const y2 = e.by * v.scale + v.ty;
           ctx.strokeStyle = color;
           ctx.beginPath();
@@ -947,7 +952,8 @@ export function PcbEditor({
         const off = dragModeRef.current ? { x: 0, y: 0 } : (md ?? { x: 0, y: 0 });
         const offView = {
           scale: v.scale,
-          tx: v.tx + off.x * v.scale,
+          flipX: v.flipX,
+          tx: v.tx + off.x * sx,
           ty: v.ty + off.y * v.scale,
         };
         ctx.save();
@@ -975,7 +981,7 @@ export function PcbEditor({
       if (r && cur0) {
         const end = snapToGrid(cur0);
         ctx.save();
-        ctx.setTransform(v.scale, 0, 0, v.scale, v.tx, v.ty);
+        ctx.setTransform(sx, 0, 0, v.scale, v.tx, v.ty);
         ctx.strokeStyle = layerColor(r.layer);
         ctx.lineWidth = r.dims.trackWidth;
         ctx.lineCap = 'round';
@@ -997,7 +1003,7 @@ export function PcbEditor({
       if (z && z.pts.length > 0 && cur0) {
         const p = snapToGrid(cur0);
         ctx.save();
-        ctx.setTransform(v.scale, 0, 0, v.scale, v.tx, v.ty);
+        ctx.setTransform(sx, 0, 0, v.scale, v.tx, v.ty);
         ctx.strokeStyle = layerColor(z.layer);
         ctx.lineWidth = Math.max(1, dpr) / v.scale;
         ctx.globalAlpha = 0.9;
@@ -1024,9 +1030,9 @@ export function PcbEditor({
       const cur0 = cursorRef.current;
       if (m && (m.b || cur0)) {
         const b = m.b ?? snapToGrid(cur0!);
-        const ax = m.a.x * v.scale + v.tx;
+        const ax = m.a.x * sx + v.tx;
         const ay = m.a.y * v.scale + v.ty;
-        const bx = b.x * v.scale + v.tx;
+        const bx = b.x * sx + v.tx;
         const by = b.y * v.scale + v.ty;
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.strokeStyle = 'rgba(120,230,255,0.95)';
@@ -1063,7 +1069,7 @@ export function PcbEditor({
       if (kind && pts.length > 0 && cur0) {
         const p = snapToGrid(cur0);
         ctx.save();
-        ctx.setTransform(v.scale, 0, 0, v.scale, v.tx, v.ty);
+        ctx.setTransform(sx, 0, 0, v.scale, v.tx, v.ty);
         ctx.strokeStyle = layerColor(activeLayer);
         ctx.lineWidth = defaultShapeWidth(activeLayer);
         ctx.lineCap = 'round';
@@ -1123,7 +1129,7 @@ export function PcbEditor({
     const box = boxRef.current;
     if (box) {
       const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
-        x: p.x * v.scale + v.tx,
+        x: p.x * sx + v.tx,
         y: p.y * v.scale + v.ty,
       });
       const p0 = toPx(box.a),
@@ -1145,7 +1151,7 @@ export function PcbEditor({
       const hb = boardItemBBox(brd, hover);
       if (hb) {
         const toPx = (p: { x: number; y: number }): { x: number; y: number } => ({
-          x: p.x * v.scale + v.tx,
+          x: p.x * sx + v.tx,
           y: p.y * v.scale + v.ty,
         });
         const q0 = toPx({ x: hb.minX, y: hb.minY }),
@@ -1167,7 +1173,7 @@ export function PcbEditor({
     const cur = cursorRef.current;
     if (cur) {
       const snapped = snapToGrid(cur);
-      const px = snapped.x * v.scale + v.tx;
+      const px = snapped.x * sx + v.tx;
       const py = snapped.y * v.scale + v.ty;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.strokeStyle = PCB_CURSOR;
@@ -1369,9 +1375,11 @@ export function PcbEditor({
       canvas.width / (maxX - minX + margin * 2),
       canvas.height / (maxY - minY + margin * 2),
     );
+    const flipX = viewRef.current.flipX;
     viewRef.current = {
       scale: s,
-      tx: canvas.width / 2 - ((minX + maxX) / 2) * s,
+      flipX,
+      tx: canvas.width / 2 - ((minX + maxX) / 2) * (flipX ? -s : s),
       ty: canvas.height / 2 - ((minY + maxY) / 2) * s,
     };
     requestDraw();
@@ -1384,10 +1392,11 @@ export function PcbEditor({
       const v = viewRef.current;
       const px = canvas.width / 2;
       const py = canvas.height / 2;
-      const wx = (px - v.tx) / v.scale;
+      const sx = v.flipX ? -v.scale : v.scale;
+      const wx = (px - v.tx) / sx;
       const wy = (py - v.ty) / v.scale;
       v.scale *= factor;
-      v.tx = px - wx * v.scale;
+      v.tx = px - wx * (v.flipX ? -v.scale : v.scale);
       v.ty = py - wy * v.scale;
       requestDraw();
     },
@@ -1418,6 +1427,20 @@ export function PcbEditor({
     return () => ro.disconnect();
   }, [dpr, requestDraw, zoomToFit, board]);
 
+  // Flip board view (PCB_ACTIONS::flipBoard → VIEW::SetMirror on X): toggle the
+  // view's horizontal mirror, re-centring so the board stays put, and rebuild
+  // the raster (which bakes in the mirror).
+  const toggleFlip = useCallback(() => {
+    const v = viewRef.current;
+    const canvas = canvasRef.current;
+    v.flipX = !v.flipX;
+    // Mirror tx about the viewport centre so the visible board doesn't jump.
+    if (canvas) v.tx = canvas.width - v.tx;
+    setFlipView(v.flipX);
+    cacheRef.current = null;
+    requestDraw();
+  }, [requestDraw]);
+
   // Wheel zoom about the cursor; drag to pan (left or middle button).
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1429,10 +1452,11 @@ export function PcbEditor({
       const rect = canvas.getBoundingClientRect();
       const px = (e.clientX - rect.left) * dpr;
       const py = (e.clientY - rect.top) * dpr;
-      const wx = (px - v.tx) / v.scale;
+      const sx = v.flipX ? -v.scale : v.scale;
+      const wx = (px - v.tx) / sx;
       const wy = (py - v.ty) / v.scale;
       v.scale *= factor;
-      v.tx = px - wx * v.scale;
+      v.tx = px - wx * (v.flipX ? -v.scale : v.scale);
       v.ty = py - wy * v.scale;
       requestDraw();
     };
@@ -1448,7 +1472,7 @@ export function PcbEditor({
       const rect = canvas.getBoundingClientRect();
       const v = viewRef.current;
       return {
-        x: ((clientX - rect.left) * dpr - v.tx) / v.scale,
+        x: ((clientX - rect.left) * dpr - v.tx) / (v.flipX ? -v.scale : v.scale),
         y: ((clientY - rect.top) * dpr - v.ty) / v.scale,
       };
     },
@@ -3034,16 +3058,17 @@ export function PcbEditor({
                             <EyeIcon on={on} />
                           </button>
                         )}
-                        <span style={{ flex: slider ? '0 0 auto' : 1, minWidth: slider ? 88 : 0 }}>
-                          {label}
-                        </span>
+                        {/* Opacity rows fix the label width so all sliders line
+                            up (KiCad's label->SetMinSize(labelWidth)); other
+                            rows let the label fill the row. */}
+                        <span className={`ze-obj-label${slider ? ' fixed' : ''}`}>{label}</span>
                         {slider && key in opacity && (
                           <input
                             type="range"
+                            className="ze-opacity"
                             min={0}
                             max={100}
                             value={Math.round(opacity[key as keyof typeof opacity] * 100)}
-                            style={{ flex: 1, minWidth: 60 }}
                             title={`Set opacity of ${label.toLowerCase()}`}
                             disabled={disabled}
                             onChange={(e) =>
@@ -3275,9 +3300,8 @@ export function PcbEditor({
                         </label>
                       </div>
                       <hr className="ze-hr" />
-                      {/* Not ported yet — greyed in its upstream position. */}
-                      <label className="ze-disabled">
-                        <input type="checkbox" disabled />
+                      <label>
+                        <input type="checkbox" checked={flipView} onChange={toggleFlip} />
                         Flip board view
                       </label>
                     </div>
