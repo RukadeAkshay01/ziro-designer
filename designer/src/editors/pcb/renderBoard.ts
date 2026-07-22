@@ -32,6 +32,11 @@ import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js
 
 const MM = 10000; // IU per mm, matches core units
 
+// Default net-class clearance (netclass.cpp DEFAULT_CLEARANCE = 0.2 mm). This
+// board carries no explicit net class (those live in the .kicad_pro), so KiCad
+// falls back to it for the pad-clearance outlines shown by default.
+const DEFAULT_PAD_CLEARANCE = 0.2 * MM;
+
 /**
  * COLOR4D::Brightened(f): push each channel toward white by factor f
  * (c·(1−f)+f). KiCad brightens selected items by 0.8 (pcb_painter.cpp getColor).
@@ -64,6 +69,13 @@ export interface PcbDrawOptions {
   zoneOpacity: number;
   /** Zone display mode: false = filled (default), true = outline sketch. */
   zoneOutline: boolean;
+  /** Show pad clearance outlines (m_Display.m_PadClearance, default on). */
+  padClearance: boolean;
+  /** Fill vs sketch (outline) for tracks / vias / pads (m_Display*Fill; default
+   *  filled). Sketch strokes each item's outline at min-pen, like pcb_painter. */
+  trackFill: boolean;
+  viaFill: boolean;
+  padFill: boolean;
 }
 
 /** KiCad defaults (project_local_settings.cpp + s_objectSettings). */
@@ -81,6 +93,10 @@ export const DEFAULT_DRAW_OPTIONS: PcbDrawOptions = {
   padOpacity: 1.0,
   zoneOpacity: 0.6,
   zoneOutline: false,
+  padClearance: true,
+  trackFill: true,
+  viaFill: true,
+  padFill: true,
 };
 
 interface LayerBuckets {
@@ -88,6 +104,10 @@ interface LayerBuckets {
   hasZones: boolean;
   zoneOutlines: Path2D; // zone boundary borders (drawn full-opacity over the fill)
   hasZoneOutlines: boolean;
+  clearance: Path2D; // pad clearance outlines (stroked in the copper color)
+  hasClearance: boolean;
+  trackOutlines: Path2D; // track/arc stadium outlines for sketch (unfilled) mode
+  hasTrackOutlines: boolean;
   tracks: Map<number, Path2D>; // width -> segments/arcs (object: Tracks)
   pads: Path2D; // pad flashes (object: Pads)
   hasPads: boolean;
@@ -117,6 +137,10 @@ const newBuckets = (): LayerBuckets => ({
   hasZones: false,
   zoneOutlines: new Path2D(),
   hasZoneOutlines: false,
+  clearance: new Path2D(),
+  hasClearance: false,
+  trackOutlines: new Path2D(),
+  hasTrackOutlines: false,
   tracks: new Map(),
   pads: new Path2D(),
   hasPads: false,
@@ -168,6 +192,53 @@ function viaSpan(from: string, to: string, copperNames: string[]): string[] {
   if (i0 < 0 || i1 < 0) return copperNames;
   const [a, b] = i0 <= i1 ? [i0, i1] : [i1, i0];
   return copperNames.slice(a, b + 1);
+}
+
+/**
+ * Stadium outline of a track centreline A→B of width `w` (radius r = w/2): the
+ * two parallel edges plus the semicircular end caps, as a closed subpath. This
+ * is what a track drawn in sketch mode outlines (pcb_painter.cpp DrawSegment in
+ * stroke mode). Caps are sampled to stay independent of arc-direction quirks.
+ */
+function addStadiumOutline(path: Path2D, a: Vec2, b: Vec2, r: number): void {
+  if (r <= 0) return;
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  const N = 8;
+  const pt: [number, number][] = [];
+  // Forward cap around B: from B-perp through B+dir to B+perp.
+  for (let i = 0; i <= N; i++) {
+    const t = ang - Math.PI / 2 + (Math.PI * i) / N;
+    pt.push([b.x + r * Math.cos(t), b.y + r * Math.sin(t)]);
+  }
+  // Backward cap around A: from A+perp through A-dir to A-perp.
+  for (let i = 0; i <= N; i++) {
+    const t = ang + Math.PI / 2 + (Math.PI * i) / N;
+    pt.push([a.x + r * Math.cos(t), a.y + r * Math.sin(t)]);
+  }
+  path.moveTo(pt[0]![0], pt[0]![1]);
+  for (let i = 1; i < pt.length; i++) path.lineTo(pt[i]![0], pt[i]![1]);
+  path.closePath();
+}
+
+/** Outline of a poly-line track (tessellated arc) of width `w`: offset each side. */
+function addPolylineOutline(path: Path2D, pts: Vec2[], r: number): void {
+  if (r <= 0 || pts.length < 2) return;
+  const left: [number, number][] = [];
+  const right: [number, number][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i]!;
+    const a = pts[Math.max(0, i - 1)]!;
+    const b = pts[Math.min(pts.length - 1, i + 1)]!;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const px = -Math.sin(ang) * r;
+    const py = Math.cos(ang) * r;
+    left.push([p.x + px, p.y + py]);
+    right.push([p.x - px, p.y - py]);
+  }
+  path.moveTo(left[0]![0], left[0]![1]);
+  for (let i = 1; i < left.length; i++) path.lineTo(left[i]![0], left[i]![1]);
+  for (let i = right.length - 1; i >= 0; i--) path.lineTo(right[i]![0], right[i]![1]);
+  path.closePath();
 }
 
 /** Pad outline as a Path2D subpath in board coordinates. */
@@ -238,6 +309,41 @@ function addPadShape(path: Path2D, pad: PcbPad): void {
       }
       break;
     }
+  }
+  path.addPath(sub, m);
+}
+
+/**
+ * The pad outline inflated by `clr` — the pad-clearance outline KiCad strokes
+ * in the copper color (pcb_painter.cpp draw(PAD) clearance layer): a circle of
+ * radius+clr for round pads, otherwise the shape offset outward by clr (which
+ * rounds the corners with radius clr).
+ */
+function addPadClearanceShape(path: Path2D, pad: PcbPad, clr: number): void {
+  const m = new DOMMatrix().translate(pad.at.x, pad.at.y).rotate(-pad.angle);
+  const w = pad.size.x;
+  const h = pad.size.y;
+  const sub = new Path2D();
+  const x = -w / 2 - clr;
+  const y = -h / 2 - clr;
+  const rw = w + 2 * clr;
+  const rh = h + 2 * clr;
+  switch (pad.shape) {
+    case 'circle':
+      sub.arc(0, 0, w / 2 + clr, 0, Math.PI * 2);
+      break;
+    case 'oval':
+      sub.roundRect(x, y, rw, rh, Math.min(w, h) / 2 + clr);
+      break;
+    case 'roundrect': {
+      const r = Math.min(0.5, pad.roundrectRatio ?? 0.25) * Math.min(w, h);
+      sub.roundRect(x, y, rw, rh, r + clr);
+      break;
+    }
+    default:
+      // rect / trapezoid / custom: offset outward with clr-radius corners.
+      sub.roundRect(x, y, rw, rh, clr);
+      break;
   }
   path.addPath(sub, m);
 }
@@ -504,17 +610,23 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
   };
 
   for (const t of board.tracks) {
-    const p = pathIn(buckets(scene, t.layer).tracks, Math.max(t.width, 1));
+    const b = buckets(scene, t.layer);
+    const p = pathIn(b.tracks, Math.max(t.width, 1));
     p.moveTo(t.start.x, t.start.y);
     p.lineTo(t.end.x, t.end.y);
+    addStadiumOutline(b.trackOutlines, t.start, t.end, t.width / 2);
+    b.hasTrackOutlines = true;
     grow(t.start.x, t.start.y, t.width);
     grow(t.end.x, t.end.y, t.width);
   }
   for (const a of board.arcs) {
     const pts = tessellateArc(a.start, a.mid, a.end);
-    const p = pathIn(buckets(scene, a.layer).tracks, Math.max(a.width, 1));
+    const b = buckets(scene, a.layer);
+    const p = pathIn(b.tracks, Math.max(a.width, 1));
     p.moveTo(pts[0]!.x, pts[0]!.y);
     for (let i = 1; i < pts.length; i++) p.lineTo(pts[i]!.x, pts[i]!.y);
+    addPolylineOutline(b.trackOutlines, pts, a.width / 2);
+    b.hasTrackOutlines = true;
     grow(a.start.x, a.start.y, a.width);
     grow(a.end.x, a.end.y, a.width);
   }
@@ -601,6 +713,12 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
         const b = buckets(scene, layer);
         addPadShape(b.pads, pad);
         b.hasPads = true;
+        // Pad clearance outline is drawn per copper layer the pad flashes on
+        // (not the mask layers), in that layer's color.
+        if (copperNames.includes(layer)) {
+          addPadClearanceShape(b.clearance, pad, DEFAULT_PAD_CLEARANCE);
+          b.hasClearance = true;
+        }
       }
       if (pad.drill && pad.type === 'thru_hole') {
         addHole(scene.padHoleWalls, pad, {
@@ -898,19 +1016,17 @@ export function drawGrid(
   // Group dots by device size so the whole grid paints in a few fills.
   const paths = new Map<string, Path2D>();
   const rectAt = (dx: number, dy: number, sw: number, sh: number): void => {
-    const key = `${sw}:${sh}`;
+    // Pixel-align to whole device pixels so each dot is full-coverage (the OpenGL
+    // GAL's dots are crisp); a sub-pixel rect anti-aliases to a dim grey smear.
+    const w = Math.max(1, Math.round(sw));
+    const h = Math.max(1, Math.round(sh));
+    const key = `${w}:${h}`;
     let p = paths.get(key);
     if (!p) {
       p = new Path2D();
       paths.set(key, p);
     }
-    // Cairo drawGridPoint: round the centre, then offset by floor(size/2)+0.5.
-    p.rect(
-      Math.round(dx) - Math.floor(sw / 2) - 0.5,
-      Math.round(dy) - Math.floor(sh / 2) - 0.5,
-      sw,
-      sh,
-    );
+    p.rect(Math.round(dx) - (w >> 1), Math.round(dy) - (h >> 1), w, h);
   };
   for (let j = startY; j <= endY; j++) {
     const tickY = j % opts.tick === 0;
@@ -1004,19 +1120,46 @@ export function buildDrawSteps(
     strokeAll(ctx, b.gfxStrokes, minPen);
     if (opts.tracks && b.tracks.size > 0) {
       ctx.globalAlpha = opts.trackOpacity;
-      strokeAll(ctx, b.tracks, minPen);
+      if (opts.trackFill) {
+        strokeAll(ctx, b.tracks, minPen);
+      } else if (b.hasTrackOutlines) {
+        // Sketch: outline each track at min-pen instead of filling it.
+        ctx.lineWidth = minPen;
+        ctx.stroke(b.trackOutlines);
+      }
       ctx.globalAlpha = 1;
     }
     if (opts.pads && b.hasPads) {
       ctx.globalAlpha = opts.padOpacity;
-      ctx.fillStyle = color;
-      ctx.fill(b.pads, 'nonzero');
+      if (opts.padFill) {
+        ctx.fillStyle = color;
+        ctx.fill(b.pads, 'nonzero');
+      } else {
+        ctx.lineWidth = minPen;
+        ctx.stroke(b.pads);
+      }
       ctx.globalAlpha = 1;
     }
     if (opts.vias && b.hasVias) {
       ctx.globalAlpha = opts.viaOpacity;
-      ctx.fillStyle = color;
-      ctx.fill(b.vias, 'nonzero');
+      if (opts.viaFill) {
+        ctx.fillStyle = color;
+        ctx.fill(b.vias, 'nonzero');
+      } else {
+        ctx.lineWidth = minPen;
+        ctx.stroke(b.vias);
+      }
+      ctx.globalAlpha = 1;
+    }
+    // Pad clearance outlines: thin (min-pen) stroke in the copper color, the
+    // ring KiCad shows around every pad by default (m_Display.m_PadClearance).
+    // Drawn translucent so it reads as the light "glass" ring GAL's anti-aliased
+    // sub-pixel line gives, rather than a hard solid circle.
+    if (opts.padClearance && b.hasClearance) {
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = minPen;
+      ctx.stroke(b.clearance);
       ctx.globalAlpha = 1;
     }
   };

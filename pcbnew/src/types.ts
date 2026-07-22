@@ -120,6 +120,13 @@ export interface PcbFootprint {
   layer: string;
   reference?: string;
   value?: string;
+  /** Library metadata: `(descr …)` and `(tags …)`. */
+  descr?: string;
+  tags?: string;
+  /** `(attr …)` flags (board_only, exclude_from_pos_files, exclude_from_bom, dnp, …). */
+  attributes?: string[];
+  /** `(locked yes)` on the footprint. */
+  locked?: boolean;
   pads: PcbPad[];
   shapes: PcbShape[];
   texts: PcbTextItem[];

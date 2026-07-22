@@ -257,6 +257,100 @@ body {
   font-weight: 500;
 }
 
+/* PCB Properties grid — mirrors KiCad's wxPropertyGrid (PROPERTIES_PANEL):
+   white name/value text (system WINDOWTEXT), grey read-only (GRAYTEXT), a
+   name|value split by a line, and category bars with the GTK disclosure
+   chevron reused from the project tree. Values are plain text, not boxed. */
+.ze-pg {
+  font-size: 12px;
+  user-select: none;
+}
+.ze-pg-title {
+  padding: 4px 6px;
+  color: #e6e7ea;
+}
+.ze-pg-cat {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 4px;
+  cursor: default;
+  background: rgba(255, 255, 255, 0.05);
+  color: #e6e7ea;
+  border-top: 1px solid var(--chrome-border);
+  border-bottom: 1px solid var(--chrome-border);
+}
+.ze-pg-cat .twisty {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+.ze-pg-cat .twisty.expandable::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  border-top: 1.5px solid #b8bcc2;
+  border-right: 1.5px solid #b8bcc2;
+  transform: translate(-65%, -50%) rotate(45deg);
+  transition: transform 0.1s ease;
+}
+.ze-pg-cat .twisty.expandable.open::before {
+  transform: translate(-50%, -70%) rotate(135deg);
+}
+.ze-pg-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.ze-pg-row .k {
+  width: 50%;
+  padding: 3px 6px;
+  color: #d7d9dd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.ze-pg-row .v {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  color: #ffffff;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ze-pg-row .v.ro {
+  color: #8b8e94;
+}
+.ze-pg-row .v input.pg-edit {
+  width: 100%;
+  min-width: 0;
+  background: #11161f;
+  border: 1px solid #3a4658;
+  border-radius: 2px;
+  color: #fff;
+  font: inherit;
+  padding: 1px 4px;
+  outline: none;
+}
+.ze-pg-swatch {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(0, 0, 0, 0.5);
+  flex: 0 0 auto;
+}
+
 /* Status bar */
 .ze-statusbar {
   display: flex;

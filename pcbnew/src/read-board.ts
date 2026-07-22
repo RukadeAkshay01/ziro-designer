@@ -338,11 +338,17 @@ function readFootprint(item: SList, local = false): PcbFootprint | null {
   // On a board, children are baked to board coords through the placement
   // transform (legacy RebakeFromLib); a library footprint keeps local coords.
   const t: FpTransform | null = local ? null : { pos, angle };
+  const attrNode = childNamed(item, 'attr');
+  const lockedNode = childNamed(item, 'locked');
   const fp: PcbFootprint = {
     lib,
     at: pos,
     angle,
     layer: layerOf(item),
+    descr: stringField(item, 'descr'),
+    tags: stringField(item, 'tags'),
+    attributes: attrNode ? args(attrNode) : undefined,
+    locked: lockedNode ? arg(lockedNode, 0) !== 'no' : false,
     pads: [],
     shapes: [],
     texts: [],

@@ -26,6 +26,7 @@
 import { atom, str, isList, head, type SList, type SNode } from '@ziroeda/sexpr/src/index.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { arcCenter, rotatePcb } from './read-board.js';
+import { connectedTrackEnds } from './connectivity.js';
 import { footprintBBox } from './edit-footprint.js';
 import type {
   Board,
@@ -626,6 +627,139 @@ export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Ve
   };
 }
 
+/** Move one or both ends of a track by `d`, patching only the moved ends. */
+const moveTrackEnds = (t: PcbTrack, ends: ReadonlySet<'start' | 'end'>, d: Vec2): PcbTrack => {
+  let src = t.source;
+  const start = ends.has('start') ? add(t.start, d) : t.start;
+  const end = ends.has('end') ? add(t.end, d) : t.end;
+  if (ends.has('start')) src = patchChild(src, 'start', xyNode('start', start));
+  if (ends.has('end')) src = patchChild(src, 'end', xyNode('end', end));
+  return { ...t, start, end, source: src };
+};
+
+/** Move one or both ends of an arc by `d` (mid stays; drag arc reshaping is later). */
+const moveArcEnds = (a: PcbArcTrack, ends: ReadonlySet<'start' | 'end'>, d: Vec2): PcbArcTrack => {
+  let src = a.source;
+  const start = ends.has('start') ? add(a.start, d) : a.start;
+  const end = ends.has('end') ? add(a.end, d) : a.end;
+  if (ends.has('start')) src = patchChild(src, 'start', xyNode('start', start));
+  if (ends.has('end')) src = patchChild(src, 'end', xyNode('end', end));
+  return { ...a, start, end, source: src };
+};
+
+/**
+ * Drag the selection like {@link moveBoardItems}, but additionally stretch the
+ * track/arc ends attached to any moving footprint so the routing follows the
+ * part (EDIT_TOOL's Drag, as opposed to Move which leaves the tracks behind).
+ * Ends whose track is itself selected are skipped — the whole track already
+ * moved with the selection.
+ */
+export function dragBoardItems(board: Board, ids: ReadonlySet<string>, delta: Vec2): Board {
+  if ((delta.x === 0 && delta.y === 0) || ids.size === 0) return board;
+  const idx = indicesByKind(ids);
+  const moved = moveBoardItems(board, ids, delta);
+  if (idx.footprint.size === 0) return moved;
+
+  const trackEnds = new Map<number, Set<'start' | 'end'>>();
+  const arcEnds = new Map<number, Set<'start' | 'end'>>();
+  for (const e of connectedTrackEnds(board, idx.footprint)) {
+    const target = e.kind === 'track' ? trackEnds : arcEnds;
+    const selected = e.kind === 'track' ? idx.track : idx.arc;
+    if (selected.has(e.index)) continue; // whole track already moved
+    let set = target.get(e.index);
+    if (!set) {
+      set = new Set();
+      target.set(e.index, set);
+    }
+    set.add(e.end);
+  }
+  if (trackEnds.size === 0 && arcEnds.size === 0) return moved;
+
+  return {
+    ...moved,
+    tracks: moved.tracks.map((t, i) => {
+      const es = trackEnds.get(i);
+      return es ? moveTrackEnds(t, es, delta) : t;
+    }),
+    arcs: moved.arcs.map((a, i) => {
+      const es = arcEnds.get(i);
+      return es ? moveArcEnds(a, es, delta) : a;
+    }),
+  };
+}
+
+// ----- footprint field edits (PCB_PROPERTIES_PANEL) ---------------------------
+
+/** Replace the `argIndex`-th positional atom (head = atom 0) of a source list. */
+function replaceArg(src: SList, argIndex: number, value: string): SList {
+  let atomN = -1;
+  const target = argIndex + 1;
+  const items = src.items.map((it) => {
+    if (!isList(it)) {
+      atomN++;
+      if (atomN === target) return str(value);
+    }
+    return it;
+  });
+  return { kind: 'list', items };
+}
+
+/** Drop every `name` child from a source list. */
+function removeChild(src: SList, name: string): SList {
+  return { kind: 'list', items: src.items.filter((it) => !(isList(it) && head(it) === name)) };
+}
+
+const replaceFp = (board: Board, index: number, fp: PcbFootprint): Board => ({
+  ...board,
+  footprints: board.footprints.map((f, i) => (i === index ? fp : f)),
+});
+
+/**
+ * Set a footprint's Reference or Value text. The writer emits these from the
+ * model's text items (their own `(property …)` / `(fp_text …)` source), so we
+ * patch each matching text item's text and its source's value atom (arg 1).
+ */
+export function setFootprintField(
+  board: Board,
+  index: number,
+  field: 'reference' | 'value',
+  value: string,
+): Board {
+  const f = board.footprints[index];
+  if (!f) return board;
+  const patchTextSrc = (src: SList): SList => {
+    const h = head(src);
+    return h === 'property' || h === 'fp_text' ? replaceArg(src, 1, value) : src;
+  };
+  return replaceFp(board, index, {
+    ...f,
+    reference: field === 'reference' ? value : f.reference,
+    value: field === 'value' ? value : f.value,
+    texts: f.texts.map((t) =>
+      t.kind === field ? { ...t, text: value, source: patchTextSrc(t.source) } : t,
+    ),
+  });
+}
+
+/** Lock or unlock a footprint (`(locked yes)`). */
+export function setFootprintLocked(board: Board, index: number, locked: boolean): Board {
+  const f = board.footprints[index];
+  if (!f) return board;
+  const source = locked
+    ? patchChild(f.source, 'locked', list(atom('locked'), atom('yes')))
+    : removeChild(f.source, 'locked');
+  return replaceFp(board, index, { ...f, locked, source });
+}
+
+/** Set a footprint's absolute orientation (degrees), rotating about its anchor. */
+export function setFootprintOrientation(board: Board, index: number, deg: number): Board {
+  const f = board.footprints[index];
+  if (!f || !Number.isFinite(deg)) return board;
+  const delta = deg - f.angle;
+  if (delta === 0) return board;
+  return replaceFp(board, index, rotateFootprintAbout(f, f.at, delta));
+}
+
 // ----- delete (EDIT_TOOL::Remove) ---------------------------------------------
 
 /** Split a selection id set into per-kind index sets. */
@@ -726,6 +860,25 @@ const rotShapeCoords = <
   return n as Partial<T>;
 };
 
+/** Rotate a whole footprint by `deg` about centre `c` (anchor + children + source). */
+function rotateFootprintAbout(f: PcbFootprint, c: Vec2, deg: number): PcbFootprint {
+  const at = rotAbout(f.at, c, deg);
+  const angle = norm360(f.angle + deg);
+  return {
+    ...f,
+    at,
+    angle,
+    pads: f.pads.map((p) => ({ ...p, at: rotAbout(p.at, c, deg), angle: norm360(p.angle + deg) })),
+    texts: f.texts.map((t) => ({
+      ...t,
+      at: rotAbout(t.at, c, deg),
+      angle: norm360(t.angle + deg),
+    })),
+    shapes: f.shapes.map((s) => ({ ...s, ...rotShapeCoords(s, c, deg) })),
+    source: patchChild(f.source, 'at', atNode(at, angle)),
+  };
+}
+
 /**
  * Rotate the selected items by ±90° about a centre (EDIT_TOOL::Rotate).
  * `ccw` picks the direction; `center` defaults to the selection's bounding-box
@@ -784,27 +937,7 @@ export function rotateBoardItems(
     if (next.pts) src = patchChild(src, 'pts', ptsNode(next.pts));
     return { ...next, source: src };
   };
-  const rotFootprint = (f: PcbFootprint): PcbFootprint => {
-    const at = rotAbout(f.at, c, deg),
-      angle = norm360(f.angle + deg);
-    return {
-      ...f,
-      at,
-      angle,
-      pads: f.pads.map((p) => ({
-        ...p,
-        at: rotAbout(p.at, c, deg),
-        angle: norm360(p.angle + deg),
-      })),
-      texts: f.texts.map((t) => ({
-        ...t,
-        at: rotAbout(t.at, c, deg),
-        angle: norm360(t.angle + deg),
-      })),
-      shapes: f.shapes.map((s) => ({ ...s, ...rotShapeCoords(s, c, deg) })),
-      source: patchChild(f.source, 'at', atNode(at, angle)),
-    };
-  };
+  const rotFootprint = (f: PcbFootprint): PcbFootprint => rotateFootprintAbout(f, c, deg);
 
   return {
     ...board,

@@ -8,7 +8,7 @@
  */
 
 import { iuToMM } from '@ziroeda/common';
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
 import { parse } from '@ziroeda/sexpr';
 import {
   readBoard,
@@ -17,6 +17,12 @@ import {
   boardItemBBox,
   parseBoardItemId,
   moveBoardItems,
+  dragBoardItems,
+  setFootprintField,
+  setFootprintLocked,
+  setFootprintOrientation,
+  connectedTrackEnds,
+  boardItemId,
   subsetBoardItems,
   deleteBoardItems,
   rotateBoardItems,
@@ -24,6 +30,7 @@ import {
   serializeBoard,
   type Board,
   type BoardItemKind,
+  type PcbFootprint,
 } from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
@@ -205,6 +212,9 @@ export function PcbEditor({
   const [preset, setPreset] = useState('All Layers');
   const [tab, setTab] = useState<'Layers' | 'Objects' | 'Nets'>('Layers');
   const [toggles, setToggles] = useState<Set<string>>(new Set(DEFAULT_TOGGLES));
+  // Properties pane width. KiCad's PCB_PROPERTIES_PANEL docks at BestSize 300,
+  // MinSize 240 (pcb_edit_frame.cpp), and the pane is user-resizable.
+  const [propWidth, setPropWidth] = useState(300);
   const [objects, setObjects] = useState<ObjectState>(DEFAULT_OBJECTS);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
   const [selFilter, setSelFilter] = useState<Set<string>>(
@@ -242,6 +252,20 @@ export function PcbEditor({
   // a move gesture is in flight; committed on pointer-up (PCB_MOVE_TOOL preview).
   const moveDeltaRef = useRef<{ x: number; y: number } | null>(null);
   const movingRef = useRef(false);
+  // Move (M / left-drag) leaves the routing behind; Drag (G) stretches the
+  // traces attached to the moving footprints (EDIT_TOOL Move vs Drag). Drag mode
+  // is on only while a 'drag' gesture actually has footprints to carry traces.
+  const moveKindRef = useRef<'move' | 'drag'>('move');
+  const dragModeRef = useRef(false);
+  // The exact selection captured at gesture start (applySelect is async) plus,
+  // for a drag, the ids excluded from the backdrop raster (part + its traces),
+  // and the world grab origin the delta is measured from.
+  const movingSelRef = useRef<ReadonlySet<string>>(new Set());
+  const dragAffectedRef = useRef<ReadonlySet<string>>(new Set());
+  const moveOriginRef = useRef<{ x: number; y: number } | null>(null);
+  // Keyboard grab (M/G): the selection follows the cursor until a click commits
+  // or Esc cancels — SCH/PCB move tool. Distinct from a left-button drag.
+  const grabbingRef = useRef(false);
   // While a move is in flight the base raster is the board with the moving items
   // removed; this scene holds just those items, painted live at the drag offset
   // so the real geometry follows the cursor (not merely its bounding box).
@@ -282,6 +306,10 @@ export function PcbEditor({
       padOpacity: opacity.pads,
       zoneOpacity: opacity.zones,
       zoneOutline: toggles.has('zoneDisplayOutline'),
+      // Display-mode toggles: on = sketch (outline) = fill off (m_Display*Fill).
+      trackFill: !toggles.has('trackDisplayMode'),
+      viaFill: !toggles.has('viaDisplayMode'),
+      padFill: !toggles.has('padDisplayMode'),
     }),
     [objects, opacity, toggles],
   );
@@ -441,10 +469,13 @@ export function PcbEditor({
       const md = moveDeltaRef.current;
       const os = moveSceneRef.current ?? selSceneRef.current;
       if (os) {
+        // A drag overlay is already at its stretched absolute coords; a move
+        // overlay is the static subset translated by the drag delta.
+        const off = dragModeRef.current ? { x: 0, y: 0 } : (md ?? { x: 0, y: 0 });
         const offView = {
           scale: v.scale,
-          tx: v.tx + (md ? md.x : 0) * v.scale,
-          ty: v.ty + (md ? md.y : 0) * v.scale,
+          tx: v.tx + off.x * v.scale,
+          ty: v.ty + off.y * v.scale,
         };
         ctx.save();
         drawBoard(
@@ -609,6 +640,32 @@ export function PcbEditor({
       setBoardModel(next);
     },
     [setBoardModel],
+  );
+
+  // Apply a footprint edit from the Properties grid, committing to the board
+  // (children + undo follow). Mirrors the PCB_PROPERTIES_PANEL edits.
+  const editFootprint = useCallback(
+    (index: number, e: FpEdit): void => {
+      const brd = boardRef.current;
+      const fp = brd?.footprints[index];
+      if (!brd || !fp) return;
+      if (e.kind === 'pos') {
+        if (!Number.isFinite(e.valueMM)) return;
+        const target = Math.round(e.valueMM * MM);
+        const delta =
+          e.axis === 'x' ? { x: target - fp.at.x, y: 0 } : { x: 0, y: target - fp.at.y };
+        if (delta.x === 0 && delta.y === 0) return;
+        commitBoard(moveBoardItems(brd, new Set([boardItemId('footprint', index)]), delta));
+      } else if (e.kind === 'orient') {
+        if (!Number.isFinite(e.deg)) return;
+        commitBoard(setFootprintOrientation(brd, index, e.deg));
+      } else if (e.kind === 'field') {
+        commitBoard(setFootprintField(brd, index, e.field, e.value));
+      } else if (e.kind === 'locked') {
+        commitBoard(setFootprintLocked(brd, index, e.locked));
+      }
+    },
+    [commitBoard],
   );
 
   const undo = useCallback(() => {
@@ -850,6 +907,115 @@ export function PcbEditor({
     setDisambig({ x: clientX, y: clientY, ids: cands, additive });
   };
 
+  // ----- interactive move / drag (EDIT_TOOL Move vs Drag) ---------------------
+
+  const sceneFilter = (): { hideFrontFootprints: boolean; hideBackFootprints: boolean } => ({
+    hideFrontFootprints: !objects.footprintsFront,
+    hideBackFootprints: !objects.footprintsBack,
+  });
+
+  // Start a move/drag of `sel` from world grab point `origin`. 'move' leaves the
+  // routing behind; 'drag' stretches the traces attached to moving footprints.
+  // Splits the scene into a backdrop (everything else) + a live moving overlay.
+  const beginMove = (
+    sel: ReadonlySet<string>,
+    kind: 'move' | 'drag',
+    origin: { x: number; y: number },
+  ): void => {
+    const brd = boardRef.current;
+    if (!brd || sel.size === 0) return;
+    movingSelRef.current = sel;
+    moveKindRef.current = kind;
+    moveOriginRef.current = origin;
+    const fpIdx = new Set<number>();
+    for (const id of sel) {
+      const r = parseBoardItemId(id);
+      if (r?.kind === 'footprint') fpIdx.add(r.index);
+    }
+    dragModeRef.current = kind === 'drag' && fpIdx.size > 0;
+    const affected = new Set<string>(sel);
+    if (dragModeRef.current) {
+      for (const e of connectedTrackEnds(brd, fpIdx)) affected.add(boardItemId(e.kind, e.index));
+    }
+    dragAffectedRef.current = affected;
+    sceneRef.current = buildScene(deleteBoardItems(brd, affected), sceneFilter());
+    moveSceneRef.current = dragModeRef.current
+      ? null
+      : buildScene(subsetBoardItems(brd, sel), sceneFilter());
+    moveDeltaRef.current = { x: 0, y: 0 };
+    cacheRef.current = null;
+  };
+
+  // Track the in-flight gesture to the grid-snapped cursor. A drag rebuilds the
+  // stretched geometry each frame (traces don't translate uniformly).
+  const updateMove = (cur: { x: number; y: number }): void => {
+    const brd = boardRef.current;
+    const origin = moveOriginRef.current;
+    if (!brd || !origin) return;
+    const from = snapToGrid(origin);
+    const to = snapToGrid(cur);
+    const delta = { x: to.x - from.x, y: to.y - from.y };
+    moveDeltaRef.current = delta;
+    if (dragModeRef.current) {
+      const dragged = dragBoardItems(brd, movingSelRef.current, delta);
+      moveSceneRef.current = buildScene(
+        subsetBoardItems(dragged, dragAffectedRef.current),
+        sceneFilter(),
+      );
+    }
+    requestDraw();
+  };
+
+  // Commit the gesture (drop). A zero net delta just restores the full scene.
+  const commitMove = (): void => {
+    const brd = boardRef.current;
+    const delta = moveDeltaRef.current;
+    const kind = moveKindRef.current;
+    const sel = movingSelRef.current;
+    const hadOverlay = moveSceneRef.current !== null || dragModeRef.current;
+    dragModeRef.current = false;
+    moveDeltaRef.current = null;
+    moveSceneRef.current = null;
+    moveOriginRef.current = null;
+    if (brd && delta && (delta.x !== 0 || delta.y !== 0)) {
+      commitBoard(
+        kind === 'drag' ? dragBoardItems(brd, sel, delta) : moveBoardItems(brd, sel, delta),
+      );
+    } else if (hadOverlay && brd) {
+      rebuildScene(brd);
+    }
+  };
+
+  // Abandon the gesture without committing (Esc), restoring the full scene.
+  const cancelMove = (): void => {
+    const brd = boardRef.current;
+    dragModeRef.current = false;
+    moveDeltaRef.current = null;
+    moveSceneRef.current = null;
+    moveOriginRef.current = null;
+    if (brd) rebuildScene(brd);
+  };
+
+  // Keyboard grab (M = Move, G = Drag): grab the selection at the cursor and
+  // follow it until a click commits or Esc cancels. Routed through refs so the
+  // stable global key handler always calls the latest closures.
+  const grabStartRef = useRef<(kind: 'move' | 'drag') => void>(() => {});
+  grabStartRef.current = (kind) => {
+    const sel = selForDrawRef.current;
+    const cur = cursorRef.current;
+    if (sel.size === 0 || !cur || movingRef.current || grabbingRef.current) return;
+    beginMove(sel, kind, cur);
+    grabbingRef.current = true;
+    requestDraw();
+  };
+  const grabCancelRef = useRef<() => void>(() => {});
+  grabCancelRef.current = () => {
+    if (!grabbingRef.current) return;
+    grabbingRef.current = false;
+    cancelMove();
+    requestDraw();
+  };
+
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button === 1) {
       panRef.current = { x: e.clientX, y: e.clientY };
@@ -857,6 +1023,13 @@ export function PcbEditor({
       return;
     }
     if (e.button === 0) {
+      // A left click during a keyboard grab (M/G) drops the selection there.
+      if (grabbingRef.current) {
+        grabbingRef.current = false;
+        commitMove();
+        requestDraw();
+        return;
+      }
       const w = worldAt(e.clientX, e.clientY);
       const brd = boardRef.current;
       const hitId =
@@ -893,6 +1066,13 @@ export function PcbEditor({
       requestDraw();
       return;
     }
+    // Keyboard grab (M/G) in flight: the selection follows the cursor freely
+    // until a click commits it (no button held).
+    if (grabbingRef.current) {
+      const cur = worldAt(e.clientX, e.clientY);
+      if (cur) updateMove(cur);
+      return;
+    }
     const d = downRef.current;
     if (d) {
       if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3 * dpr) d.moved = true;
@@ -900,11 +1080,10 @@ export function PcbEditor({
         const cur = worldAt(e.clientX, e.clientY);
         if (!cur) return;
         if (d.onItem) {
-          // Drag on an item = move it (PCB_MOVE_TOOL). On the first move, make
-          // sure the grabbed item is selected so the whole selection follows,
-          // then split the scene into a static backdrop (everything else) and a
-          // live overlay of the moving items so the real geometry — not just a
-          // bounding box — tracks the cursor.
+          // Left-drag on a footprint = Move (pcb_selection_tool.cpp: a non-track
+          // selection runs PCB_ACTIONS::move — the routing is left behind). On
+          // the first move, ensure the grabbed item is selected, then start the
+          // move gesture so the real geometry tracks the cursor.
           if (!movingRef.current) {
             movingRef.current = true;
             let movingSel: ReadonlySet<string> = selForDrawRef.current;
@@ -912,24 +1091,9 @@ export function PcbEditor({
               movingSel = new Set([d.hitId]);
               applySelect(d.hitId, false);
             }
-            const brd = boardRef.current;
-            if (brd && movingSel.size > 0) {
-              const filter = {
-                hideFrontFootprints: !objects.footprintsFront,
-                hideBackFootprints: !objects.footprintsBack,
-              };
-              sceneRef.current = buildScene(deleteBoardItems(brd, movingSel), filter);
-              moveSceneRef.current = buildScene(subsetBoardItems(brd, movingSel), filter);
-              cacheRef.current = null;
-            }
+            beginMove(movingSel, 'move', d.world);
           }
-          // Snap both the grab origin and the current cursor to the grid, so the
-          // net offset is a whole number of grid steps and the grabbed point
-          // follows the snapped crosshair (edit_tool_move_fct.cpp).
-          const from = snapToGrid(d.world);
-          const to = snapToGrid(cur);
-          moveDeltaRef.current = { x: to.x - from.x, y: to.y - from.y };
-          requestDraw();
+          updateMove(cur);
         } else {
           // Drag from empty space rubber-bands a selection box.
           boxRef.current = { a: d.world, b: cur };
@@ -942,25 +1106,16 @@ export function PcbEditor({
     const d = downRef.current;
     const box = boxRef.current;
     const moved = movingRef.current;
-    const delta = moveDeltaRef.current;
     panRef.current = null;
     downRef.current = null;
     boxRef.current = null;
     movingRef.current = false;
-    moveDeltaRef.current = null;
-    const hadMoveOverlay = moveSceneRef.current !== null;
-    moveSceneRef.current = null;
     if (d) {
       if (!d.moved) {
         clickSelect(e.clientX, e.clientY, d.shift);
-      } else if (moved && delta && boardRef.current && (delta.x !== 0 || delta.y !== 0)) {
-        // Commit the drag-move of the current selection (EDIT_TOOL::Move); this
-        // rebuilds the full scene, replacing the split backdrop/overlay.
-        commitBoard(moveBoardItems(boardRef.current, selForDrawRef.current, delta));
-      } else if (hadMoveOverlay && boardRef.current) {
-        // Move started but dropped in place (zero net delta): the backdrop is
-        // still the board-minus-moving-items, so restore the full scene.
-        rebuildScene(boardRef.current);
+      } else if (moved) {
+        // Drop the left-drag move (EDIT_TOOL Move); a zero net delta restores.
+        commitMove();
       } else if (box && boardRef.current) {
         // Left→right = window (contained); right→left = crossing (touching).
         const contained = box.b.x >= box.a.x;
@@ -1016,9 +1171,26 @@ export function PcbEditor({
         rotateSel(!e.shiftKey);
         return;
       } // R = CCW, Shift+R = CW
+      // M = Move (routing left behind), G = Drag (attached traces follow) — a
+      // keyboard grab that follows the cursor and commits on click (EDIT_TOOL).
+      if (!mod && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        grabStartRef.current('move');
+        return;
+      }
+      if (!mod && (e.key === 'g' || e.key === 'G')) {
+        e.preventDefault();
+        grabStartRef.current('drag');
+        return;
+      }
       if (!mod && (e.key === 'f' || e.key === 'F')) zoomToFit();
       if (e.key === 'Escape') {
-        // Escape first dismisses the disambiguation menu, then clears selection.
+        // Escape cancels an in-flight grab first, then the disambiguation menu,
+        // then clears the selection.
+        if (grabbingRef.current) {
+          grabCancelRef.current();
+          return;
+        }
         if (disambigRef.current) {
           hoverRef.current = null;
           setDisambig(null);
@@ -1097,6 +1269,22 @@ export function PcbEditor({
   }, [board, netQuery]);
 
   // ----- toolbar handlers -----------------------------------------------------
+
+  // Drag the splitter on the Properties pane's right edge (KiCad's resizable
+  // AUI pane), clamped to KiCad's MinSize width of 240.
+  const startPropResize = (e: React.PointerEvent): void => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = propWidth;
+    const onMove = (ev: PointerEvent): void =>
+      setPropWidth(Math.max(240, Math.min(600, startW + (ev.clientX - startX))));
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   const onLeftToggle = (id: string): void => {
     setToggles((prev) => {
@@ -1354,6 +1542,43 @@ export function PcbEditor({
       </div>
 
       <div className="ze-body">
+        {/* KiCad docks the Properties pane outermost-left (Layer 5), then the
+            left options toolbar (Layer 3), then the canvas. */}
+        {showProperties && (
+          <div
+            className="ze-leftdock"
+            style={{ width: propWidth, minWidth: 240, position: 'relative' }}
+          >
+            <div className="ze-panel grow">
+              <div className="ze-panel-header">Properties</div>
+              <div className="ze-panel-body">
+                {selection.size === 0 ? (
+                  <div className="ze-muted">No objects selected</div>
+                ) : (
+                  <PcbSelectionInfo
+                    board={board}
+                    selection={selection}
+                    onEditFootprint={editFootprint}
+                  />
+                )}
+              </div>
+            </div>
+            <div
+              onPointerDown={startPropResize}
+              title="Resize"
+              style={{
+                position: 'absolute',
+                top: 0,
+                right: 0,
+                width: 5,
+                height: '100%',
+                cursor: 'col-resize',
+                zIndex: 2,
+              }}
+            />
+          </div>
+        )}
+
         <Toolbar
           entries={PCB_LEFT_TOOLBAR}
           orientation="vertical"
@@ -1361,21 +1586,6 @@ export function PcbEditor({
           toggled={toggles}
           onActivate={onLeftToggle}
         />
-
-        {showProperties && (
-          <div className="ze-leftdock" style={{ width: 220 }}>
-            <div className="ze-panel grow">
-              <div className="ze-panel-header">Properties</div>
-              <div className="ze-panel-body">
-                {selection.size === 0 ? (
-                  <div className="ze-muted">No objects selected</div>
-                ) : (
-                  <PcbSelectionInfo board={board} selection={selection} />
-                )}
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="ze-canvas-wrap" ref={wrapRef} style={{ position: 'relative' }}>
           <canvas
@@ -1786,14 +1996,270 @@ function describeBoardItem(board: Board, id: string): string {
   }
 }
 
+// ---- KiCad property-grid components (PCB_PROPERTIES_PANEL wxPropertyGrid) -----
+// White name/value text, grey read-only, category bars with the GTK disclosure
+// chevron reused from the project tree — styled by .ze-pg* in shell.css.
+
+/** A collapsible category header (wxPropertyCategory). */
+const PgCat = ({
+  label,
+  open,
+  onToggle,
+}: {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+}): JSX.Element => (
+  <div className="ze-pg-cat" onClick={onToggle}>
+    <span className={`twisty expandable${open ? ' open' : ''}`} />
+    <span>{label}</span>
+  </div>
+);
+/** Name | value row. */
+const PgRow = ({ label, children }: { label: string; children: ReactNode }): JSX.Element => (
+  <div className="ze-pg-row">
+    <div className="k" title={label}>
+      {label}
+    </div>
+    <div className="v">{children}</div>
+  </div>
+);
+/** Read-only value (greyed). */
+const PgRO = ({ label, value }: { label: string; value: string }): JSX.Element => (
+  <div className="ze-pg-row">
+    <div className="k" title={label}>
+      {label}
+    </div>
+    <div className="v ro" title={value}>
+      {value}
+    </div>
+  </div>
+);
+/** A checkbox value; editable when `onChange` is supplied. */
+const PgCheck = ({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange?: (v: boolean) => void;
+}): JSX.Element => (
+  <PgRow label={label}>
+    <input
+      type="checkbox"
+      checked={checked}
+      readOnly={!onChange}
+      onChange={onChange ? (e) => onChange(e.target.checked) : undefined}
+      style={{ margin: 0 }}
+    />
+  </PgRow>
+);
+/** A layer value: color swatch + name. */
+const PgLayer = ({
+  label,
+  layer,
+  color,
+}: {
+  label: string;
+  layer: string;
+  color: string;
+}): JSX.Element => (
+  <PgRow label={label}>
+    <span className="ze-pg-swatch" style={{ background: color }} />
+    <span>{layer}</span>
+  </PgRow>
+);
+/** An editable value cell: shows text; click to edit; Enter/blur commits. */
+function PgEdit({
+  label,
+  value,
+  suffix,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  suffix?: string;
+  onCommit?: (v: string) => void;
+}): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const commit = (): void => {
+    setEditing(false);
+    if (onCommit && draft !== value) onCommit(draft);
+  };
+  return (
+    <PgRow label={label}>
+      {editing && onCommit ? (
+        <input
+          className="pg-edit"
+          value={draft}
+          // biome-ignore lint/a11y/noAutofocus: focus the just-opened cell editor
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commit();
+            else if (e.key === 'Escape') setEditing(false);
+          }}
+        />
+      ) : (
+        <span
+          style={{ cursor: onCommit ? 'text' : 'default', width: '100%' }}
+          onClick={() => {
+            if (onCommit) {
+              setDraft(value);
+              setEditing(true);
+            }
+          }}
+        >
+          {value}
+          {suffix ? ` ${suffix}` : ''}
+        </span>
+      )}
+    </PgRow>
+  );
+}
+
+/** Footprint orientation the KiCad way: normalized to (-180°, 180°], trimmed. */
+const fmtOrient = (deg: number): string => {
+  let a = ((deg % 360) + 360) % 360;
+  if (a > 180) a -= 360;
+  return String(Number.parseFloat(a.toFixed(4)));
+};
+
+/** A footprint edit from the Properties grid (PCB_PROPERTIES_PANEL fields). */
+type FpEdit =
+  | { kind: 'pos'; axis: 'x' | 'y'; valueMM: number }
+  | { kind: 'orient'; deg: number }
+  | { kind: 'field'; field: 'reference' | 'value'; value: string }
+  | { kind: 'locked'; locked: boolean };
+
+/** The FOOTPRINT property grid (collapsible categories; editable fields). */
+function FootprintProps({
+  fp,
+  index,
+  onEdit,
+}: {
+  fp: PcbFootprint;
+  index: number;
+  onEdit?: (index: number, e: FpEdit) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState<Record<string, boolean>>({
+    Basic: true,
+    Fields: true,
+    Attributes: true,
+    Overrides: true,
+  });
+  const toggle = (g: string): void => setOpen((o) => ({ ...o, [g]: !o[g] }));
+  const mm = (iu: number): string => iuToMM(iu).toFixed(4);
+  const attrs = fp.attributes ?? [];
+  const has = (a: string): boolean => attrs.includes(a);
+  return (
+    <div className="ze-pg">
+      <div className="ze-pg-title">Footprint</div>
+      <PgCat label="Basic Properties" open={open.Basic ?? true} onToggle={() => toggle('Basic')} />
+      {(open.Basic ?? true) && (
+        <>
+          <PgEdit
+            label="Position X"
+            value={mm(fp.at.x)}
+            suffix="mm"
+            onCommit={
+              onEdit
+                ? (v) => onEdit(index, { kind: 'pos', axis: 'x', valueMM: Number(v) })
+                : undefined
+            }
+          />
+          <PgEdit
+            label="Position Y"
+            value={mm(fp.at.y)}
+            suffix="mm"
+            onCommit={
+              onEdit
+                ? (v) => onEdit(index, { kind: 'pos', axis: 'y', valueMM: Number(v) })
+                : undefined
+            }
+          />
+          <PgCheck
+            label="Locked"
+            checked={!!fp.locked}
+            onChange={onEdit ? (c) => onEdit(index, { kind: 'locked', locked: c }) : undefined}
+          />
+          <PgLayer label="Layer" layer={fp.layer} color={layerColor(fp.layer)} />
+          <PgEdit
+            label="Orientation"
+            value={fmtOrient(fp.angle)}
+            suffix="°"
+            onCommit={onEdit ? (v) => onEdit(index, { kind: 'orient', deg: Number(v) }) : undefined}
+          />
+        </>
+      )}
+      <PgCat label="Fields" open={open.Fields ?? true} onToggle={() => toggle('Fields')} />
+      {(open.Fields ?? true) && (
+        <>
+          <PgEdit
+            label="Reference"
+            value={fp.reference ?? ''}
+            onCommit={
+              onEdit
+                ? (v) => onEdit(index, { kind: 'field', field: 'reference', value: v })
+                : undefined
+            }
+          />
+          <PgEdit
+            label="Value"
+            value={fp.value ?? ''}
+            onCommit={
+              onEdit ? (v) => onEdit(index, { kind: 'field', field: 'value', value: v }) : undefined
+            }
+          />
+          <PgRO label="Library Link" value={fp.lib} />
+          <PgRO label="Library Description" value={fp.descr ?? ''} />
+          <PgRO label="Keywords" value={fp.tags ?? ''} />
+          <PgRO label="Component Class" value="" />
+        </>
+      )}
+      <PgCat
+        label="Attributes"
+        open={open.Attributes ?? true}
+        onToggle={() => toggle('Attributes')}
+      />
+      {(open.Attributes ?? true) && (
+        <>
+          <PgCheck label="Not in Schematic" checked={has('board_only')} />
+          <PgCheck label="Exclude From Position Files" checked={has('exclude_from_pos_files')} />
+          <PgCheck label="Exclude From Bill of Materials" checked={has('exclude_from_bom')} />
+          <PgCheck label="Do not Populate" checked={has('dnp')} />
+        </>
+      )}
+      <PgCat label="Overrides" open={open.Overrides ?? true} onToggle={() => toggle('Overrides')} />
+      {(open.Overrides ?? true) && (
+        <>
+          <PgCheck
+            label="Exempt From Courtyard Requirement"
+            checked={has('allow_missing_courtyard')}
+          />
+          <PgRO label="Clearance Override" value="" />
+          <PgRO label="Solderpaste Margin Override" value="" />
+          <PgRO label="Solderpaste Margin Ratio Override" value="" />
+          <PgRO label="Zone Connection Style" value="Inherited" />
+        </>
+      )}
+    </div>
+  );
+}
+
 /** Read-only summary of the current selection for the Properties panel — the
  *  first slice of pcbnew's PCB_PROPERTIES_PANEL (editable fields come later). */
 function PcbSelectionInfo({
   board,
   selection,
+  onEditFootprint,
 }: {
   board: Board | null;
   selection: ReadonlySet<string>;
+  onEditFootprint?: (index: number, e: FpEdit) => void;
 }): JSX.Element {
   const mm = (iu: number): string => iuToMM(iu).toFixed(4);
   const ids = [...selection];
@@ -1804,11 +2270,21 @@ function PcbSelectionInfo({
     const ref = parseBoardItemId(ids[0]!);
     const netName = (code: number): string => board.nets.get(code) || `(net ${code})`;
     const row = (k: string, v: string): JSX.Element => (
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '1px 0' }}>
+      <div
+        key={k}
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          gap: 8,
+          padding: '2px 4px',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
         <span className="ze-muted">{k}</span>
-        <span>{v}</span>
+        <span style={{ textAlign: 'right' }}>{v}</span>
       </div>
     );
+    // Collapsible-style group header, like KiCad's property-grid categories.
     if (ref) {
       switch (ref.kind) {
         case 'track': {
@@ -1852,15 +2328,7 @@ function PcbSelectionInfo({
         }
         case 'footprint': {
           const f = board.footprints[ref.index];
-          if (f)
-            return (
-              <div>
-                <b>Footprint</b>
-                {row('Reference', f.reference ?? '—')}
-                {row('Value', f.value ?? '—')}
-                {row('Layer', f.layer)}
-              </div>
-            );
+          if (f) return <FootprintProps fp={f} index={ref.index} onEdit={onEditFootprint} />;
           break;
         }
         case 'zone': {
