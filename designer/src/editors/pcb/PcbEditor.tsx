@@ -1524,7 +1524,7 @@ export function PcbEditor({
             ? 'zones'
             : kind === 'shape'
               ? 'graphics'
-              : kind === 'text'
+              : kind === 'text' || kind === 'fptext'
                 ? 'text'
                 : null;
   const passesFilter = (id: string): boolean => {
@@ -3887,6 +3887,13 @@ function describeBoardItem(board: Board, id: string): string {
     case 'text': {
       const t = board.texts[r.index];
       return t ? `Text "${t.text}"` : 'Text';
+    }
+    case 'fptext': {
+      const f = board.footprints[r.index];
+      const t = f?.texts[r.sub ?? 0];
+      if (!t) return 'Text';
+      const label = t.kind === 'reference' ? 'Reference' : t.kind === 'value' ? 'Value' : 'Text';
+      return `${label} "${t.text}"${f?.reference ? ` of ${f.reference}` : ''}`;
     }
   }
 }

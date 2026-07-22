@@ -24,6 +24,7 @@
  */
 
 import { atom, str, isList, head, type SList, type SNode } from '@ziroeda/sexpr/src/index.js';
+import { childNamed } from '@ziroeda/sexpr/src/query.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { arcCenter, rotatePcb } from './read-board.js';
 import { connectedTrackEnds } from './connectivity.js';
@@ -42,10 +43,20 @@ import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
 // ----- item ids ---------------------------------------------------------------
 
-export type BoardItemKind = 'track' | 'arc' | 'via' | 'footprint' | 'zone' | 'shape' | 'text';
+export type BoardItemKind =
+  | 'track'
+  | 'arc'
+  | 'via'
+  | 'footprint'
+  | 'zone'
+  | 'shape'
+  | 'text'
+  | 'fptext';
 export interface BoardItemRef {
   kind: BoardItemKind;
   index: number;
+  /** For 'fptext': the text's index within footprint `index`. */
+  sub?: number;
 }
 
 const KINDS: ReadonlySet<string> = new Set<BoardItemKind>([
@@ -56,19 +67,25 @@ const KINDS: ReadonlySet<string> = new Set<BoardItemKind>([
   'zone',
   'shape',
   'text',
+  'fptext',
 ]);
 
-export const boardItemId = (kind: BoardItemKind, index: number): string => `${kind}:${index}`;
+/** `fptext` ids carry a second index: `fptext:<footprint>:<text>`. */
+export const boardItemId = (kind: BoardItemKind, index: number, sub?: number): string =>
+  kind === 'fptext' ? `fptext:${index}:${sub ?? 0}` : `${kind}:${index}`;
 
 export function parseBoardItemId(id: string): BoardItemRef | null {
-  const i = id.indexOf(':');
-  if (i < 0) return null;
-  const kind = id.slice(0, i);
-  const index = Number(id.slice(i + 1));
-  if (KINDS.has(kind) && Number.isInteger(index) && index >= 0) {
-    return { kind: kind as BoardItemKind, index };
+  const parts = id.split(':');
+  const kind = parts[0];
+  if (!kind || !KINDS.has(kind)) return null;
+  const index = Number(parts[1]);
+  if (!Number.isInteger(index) || index < 0) return null;
+  if (kind === 'fptext') {
+    const sub = Number(parts[2]);
+    if (!Number.isInteger(sub) || sub < 0) return null;
+    return { kind: 'fptext', index, sub };
   }
-  return null;
+  return { kind: kind as BoardItemKind, index };
 }
 
 // ----- geometry helpers -------------------------------------------------------
@@ -214,6 +231,11 @@ export function boardItemBBox(board: Board, id: string): BoardBBox | null {
       const t = board.texts[ref.index];
       return t ? textBBox(t) : null;
     }
+    case 'fptext': {
+      const f = board.footprints[ref.index];
+      const t = f?.texts[ref.sub ?? 0];
+      return t ? textBBox(t) : null;
+    }
   }
 }
 
@@ -308,6 +330,8 @@ const zoneHit = (z: PcbZone, pos: Vec2, tol: number): boolean => {
  *  for connected/smaller items in PCB_SELECTION_TOOL::guessSelectionCandidates). */
 const typeRank = (kind: BoardItemKind): number =>
   kind === 'zone' ? 2 : kind === 'footprint' ? 1 : 0;
+// fptext ranks as a small item (0) so a footprint's reference/value text can be
+// grabbed over the footprint body.
 
 /**
  * Every board item hit at `pos` within `tol`, best candidate first (smallest,
@@ -342,6 +366,15 @@ export function boardHitCandidates(board: Board, pos: Vec2, tol: number): string
     if (zoneHit(z, pos, tol)) add('zone', i);
   });
   board.footprints.forEach((f, i) => {
+    // A footprint's visible reference/value/text is individually selectable
+    // (PCB_SELECTION_TOOL selects the FP_TEXT, not the footprint, when the hit
+    // is on the text). Test these first so they rank as small items.
+    f.texts.forEach((t, ti) => {
+      if (!t.hide && boxContainsPt(inflate(textBBox(t), tol), pos)) {
+        const id = boardItemId('fptext', i, ti);
+        hits.push({ id, kind: 'fptext', area: bboxArea(textBBox(t)) });
+      }
+    });
     const b = footprintBBox(f);
     if (b && boxContainsPt(inflate(b, tol), pos)) add('footprint', i);
   });
@@ -614,6 +647,7 @@ const moveFootprint = (fp: PcbFootprint, d: Vec2): PcbFootprint => ({
 export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Vec2): Board {
   if ((delta.x === 0 && delta.y === 0) || ids.size === 0) return board;
   const idx = indicesByKind(ids);
+  const fpTexts = fpTextsByFp(ids);
   return {
     ...board,
     tracks: board.tracks.map((t, i) => (idx.track.has(i) ? moveTrack(t, delta) : t)),
@@ -621,9 +655,12 @@ export function moveBoardItems(board: Board, ids: ReadonlySet<string>, delta: Ve
     vias: board.vias.map((v, i) => (idx.via.has(i) ? moveVia(v, delta) : v)),
     shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? moveShape(s, delta) : s)),
     texts: board.texts.map((t, i) => (idx.text.has(i) ? moveText(t, delta) : t)),
-    footprints: board.footprints.map((f, i) =>
-      idx.footprint.has(i) ? moveFootprint(f, delta) : f,
-    ),
+    footprints: board.footprints.map((f, i) => {
+      // A whole-footprint move takes precedence over its individual texts.
+      if (idx.footprint.has(i)) return moveFootprint(f, delta);
+      const ti = fpTexts.get(i);
+      return ti ? moveFootprintTexts(f, ti, delta) : f;
+    }),
   };
 }
 
@@ -772,6 +809,7 @@ function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<numb
     zone: new Set(),
     shape: new Set(),
     text: new Set(),
+    fptext: new Set(),
   };
   for (const id of ids) {
     const r = parseBoardItemId(id);
@@ -779,6 +817,58 @@ function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<numb
   }
   return idx;
 }
+
+/** Map footprint index -> set of its selected text indices (from fptext ids). */
+function fpTextsByFp(ids: ReadonlySet<string>): Map<number, Set<number>> {
+  const m = new Map<number, Set<number>>();
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r?.kind === 'fptext') {
+      let s = m.get(r.index);
+      if (!s) {
+        s = new Set();
+        m.set(r.index, s);
+      }
+      s.add(r.sub ?? 0);
+    }
+  }
+  return m;
+}
+
+/** Replace the x/y atoms of an `(at x y …)` node, keeping any trailing tokens
+ *  (angle, `unlocked`) intact. */
+const patchAtCoords = (atSrc: SList, xMM: string, yMM: string): SList => {
+  const items = [...atSrc.items];
+  if (items.length >= 3) {
+    items[1] = atom(xMM);
+    items[2] = atom(yMM);
+  }
+  return { kind: 'list', items };
+};
+
+/**
+ * Move only the given texts of a footprint (individual FP_TEXT drag). The
+ * board-absolute `at` shifts for hit-test/render; the fp_text source's local
+ * `(at)` is rewritten from the new board position: local = rotate(board −
+ * fp.at, −fp.angle), the inverse of the reader's toBoard.
+ */
+const moveFootprintTexts = (
+  fp: PcbFootprint,
+  textIdx: ReadonlySet<number>,
+  d: Vec2,
+): PcbFootprint => ({
+  ...fp,
+  texts: fp.texts.map((t, i) => {
+    if (!textIdx.has(i)) return t;
+    const at = add(t.at, d);
+    const localIU = rotatePcb({ x: at.x - fp.at.x, y: at.y - fp.at.y }, -fp.angle);
+    const srcAt = childNamed(t.source, 'at');
+    const src = srcAt
+      ? patchChild(t.source, 'at', patchAtCoords(srcAt, mm(localIU.x), mm(localIU.y)))
+      : t.source;
+    return { ...t, at, source: src };
+  }),
+});
 
 /**
  * Remove the selected items from the board (Delete key / EDIT_TOOL::Remove).
@@ -788,6 +878,7 @@ function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<numb
 export function deleteBoardItems(board: Board, ids: ReadonlySet<string>): Board {
   if (ids.size === 0) return board;
   const idx = indicesByKind(ids);
+  const fpTexts = fpTextsByFp(ids);
   return {
     ...board,
     tracks: board.tracks.filter((_, i) => !idx.track.has(i)),
@@ -796,7 +887,15 @@ export function deleteBoardItems(board: Board, ids: ReadonlySet<string>): Board 
     zones: board.zones.filter((_, i) => !idx.zone.has(i)),
     shapes: board.shapes.filter((_, i) => !idx.shape.has(i)),
     texts: board.texts.filter((_, i) => !idx.text.has(i)),
-    footprints: board.footprints.filter((_, i) => !idx.footprint.has(i)),
+    footprints: board.footprints
+      // Remove individually-selected footprint texts first (on original indices,
+      // so the fptext map stays aligned), then drop whole selected footprints.
+      // This also hides the moving text from the move backdrop.
+      .map((f, i) => {
+        const ti = fpTexts.get(i);
+        return ti ? { ...f, texts: f.texts.filter((_, j) => !ti.has(j)) } : f;
+      })
+      .filter((_, i) => !idx.footprint.has(i)),
   };
 }
 
@@ -876,6 +975,26 @@ export function addBoardZone(
  */
 export function subsetBoardItems(board: Board, ids: ReadonlySet<string>): Board {
   const idx = indicesByKind(ids);
+  const fpTexts = fpTextsByFp(ids);
+  const footprints: PcbFootprint[] = [];
+  board.footprints.forEach((f, i) => {
+    if (idx.footprint.has(i)) {
+      footprints.push(f);
+    } else {
+      // A footprint with only individually-selected text: strip everything but
+      // those texts so the overlay highlights just the text.
+      const ti = fpTexts.get(i);
+      if (ti) {
+        footprints.push({
+          ...f,
+          pads: [],
+          shapes: [],
+          models: [],
+          texts: f.texts.filter((_, j) => ti.has(j)),
+        });
+      }
+    }
+  });
   return {
     ...board,
     tracks: board.tracks.filter((_, i) => idx.track.has(i)),
@@ -884,7 +1003,7 @@ export function subsetBoardItems(board: Board, ids: ReadonlySet<string>): Board 
     zones: board.zones.filter((_, i) => idx.zone.has(i)),
     shapes: board.shapes.filter((_, i) => idx.shape.has(i)),
     texts: board.texts.filter((_, i) => idx.text.has(i)),
-    footprints: board.footprints.filter((_, i) => idx.footprint.has(i)),
+    footprints,
   };
 }
 
