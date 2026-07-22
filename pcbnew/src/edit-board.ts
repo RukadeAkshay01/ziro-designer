@@ -475,7 +475,10 @@ export function boardHitCandidates(
   // picked. Footprints stay selectable (their bodies span several layers).
   const vis = opts.visibleLayers;
   const selectable = (layers: string[]): boolean =>
-    !vis || layers.some((l) => (l.startsWith('*.') ? [...vis].some((v) => v.endsWith(l.slice(1))) : vis.has(l)));
+    !vis ||
+    layers.some((l) =>
+      l.startsWith('*.') ? [...vis].some((v) => v.endsWith(l.slice(1))) : vis.has(l),
+    );
 
   board.vias.forEach((v, i) => {
     const d = Math.max(0, dist(pos, v.at) - v.size / 2);

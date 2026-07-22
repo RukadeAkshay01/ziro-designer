@@ -46,7 +46,10 @@ describe('project drawing-sheet reference', () => {
   });
 
   it('resolves the referenced sheet, and null when unset or missing', () => {
-    const unset = [{ name: 'p.kicad_pro', text: PRO }, { name: 'frame.kicad_wks', text: WKS }];
+    const unset = [
+      { name: 'p.kicad_pro', text: PRO },
+      { name: 'frame.kicad_wks', text: WKS },
+    ];
     expect(resolveActiveSheet(unset)).toBeNull();
 
     const set = [
