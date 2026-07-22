@@ -27,6 +27,13 @@ import {
   deleteBoardItems,
   rotateBoardItems,
   duplicateBoardItems,
+  mirrorBoardItems,
+  groupBoardItems,
+  ungroupBoardItems,
+  expandGroupIds,
+  groupContaining,
+  setBoardItemsLocked,
+  isBoardItemLocked,
   serializeBoard,
   buildRatsnest,
   addBoardShape,
@@ -48,6 +55,7 @@ import {
 } from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
+import { DialogPcbFind, DEFAULT_PCB_FIND, type PcbFindOptions } from './dialogs/dialog_find.js';
 import {
   buildScene,
   buildDrawSteps,
@@ -718,6 +726,15 @@ export function PcbEditor({
     dims: ClassDims;
   } | null>(null);
   // Pending "Add Text" dialog: where the text will be placed.
+  // Find dialog (DIALOG_FIND): query, options, hit cursor + status line.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findOpts, setFindOpts] = useState<PcbFindOptions>(DEFAULT_PCB_FIND);
+  const [findStatus, setFindStatus] = useState('');
+  const findHitsRef = useRef<{ id: string; pos: { x: number; y: number } }[]>([]);
+  const findCursorRef = useRef(-1);
+  // A query/options change restarts the search (DIALOG_FIND::search(true)).
+  const findDirtyRef = useRef(true);
   const [textDialog, setTextDialog] = useState<{ x: number; y: number } | null>(null);
   const [textDraft, setTextDraft] = useState('');
   // Pending "Copper Zone Properties" dialog: the zone's first corner.
@@ -1448,22 +1465,67 @@ export function PcbEditor({
 
   // Delete the selected items (EDIT_TOOL::Remove). Reads the live selection ref
   // so the keyboard shortcut and menu both act on the current selection.
+  // Deleting a group deletes its members too (the id set keeps the group id so
+  // the group node itself is dropped as well).
   const deleteSel = useCallback(() => {
     const brd = boardRef.current;
     const sel = selForDrawRef.current;
     if (!brd || sel.size === 0) return;
-    commitBoard(deleteBoardItems(brd, sel));
+    commitBoard(deleteBoardItems(brd, new Set([...sel, ...expandGroupIds(brd, sel)])));
     setSelection(new Set());
   }, [commitBoard]);
 
   // Rotate the selection ±90° about its centre (EDIT_TOOL::Rotate). Keeps the
-  // selection so it can be rotated repeatedly.
+  // selection so it can be rotated repeatedly. Groups rotate as their members.
   const rotateSel = useCallback(
     (ccw: boolean) => {
       const brd = boardRef.current;
       const sel = selForDrawRef.current;
       if (!brd || sel.size === 0) return;
-      commitBoard(rotateBoardItems(brd, sel, ccw));
+      commitBoard(rotateBoardItems(brd, expandGroupIds(brd, sel), ccw));
+    },
+    [commitBoard],
+  );
+
+  // Mirror the selection about its centre (EDIT_TOOL::Mirror; mirrorV = flip
+  // top/bottom, mirrorH = left/right). Footprints are skipped, like KiCad.
+  const mirrorSel = useCallback(
+    (direction: 'v' | 'h') => {
+      const brd = boardRef.current;
+      const sel = selForDrawRef.current;
+      if (!brd || sel.size === 0) return;
+      commitBoard(mirrorBoardItems(brd, expandGroupIds(brd, sel), direction));
+    },
+    [commitBoard],
+  );
+
+  // Group / ungroup the selection (ACTIONS::group / ungroup).
+  const groupSel = useCallback(() => {
+    const brd = boardRef.current;
+    const sel = selForDrawRef.current;
+    if (!brd || sel.size === 0) return;
+    const { board: next, id } = groupBoardItems(brd, sel);
+    if (!id) return;
+    commitBoard(next);
+    setSelection(new Set([id]));
+  }, [commitBoard]);
+  const ungroupSel = useCallback(() => {
+    const brd = boardRef.current;
+    const sel = selForDrawRef.current;
+    if (!brd || sel.size === 0) return;
+    // The members stay selected after dissolving their group, like KiCad.
+    const members = expandGroupIds(brd, sel);
+    commitBoard(ungroupBoardItems(brd, sel));
+    setSelection(members);
+  }, [commitBoard]);
+
+  // Lock / unlock the selection (PCB_ACTIONS::lock / unlock).
+  const lockSel = useCallback(
+    (locked: boolean) => {
+      const brd = boardRef.current;
+      const sel = selForDrawRef.current;
+      if (!brd || sel.size === 0) return;
+      commitBoard(setBoardItemsLocked(brd, sel, locked));
     },
     [commitBoard],
   );
@@ -1473,7 +1535,10 @@ export function PcbEditor({
     const brd = boardRef.current;
     const sel = selForDrawRef.current;
     if (!brd || sel.size === 0) return;
-    const { board: next, ids } = duplicateBoardItems(brd, sel, { x: MM, y: MM });
+    const { board: next, ids } = duplicateBoardItems(brd, expandGroupIds(brd, sel), {
+      x: MM,
+      y: MM,
+    });
     commitBoard(next);
     setSelection(new Set(ids));
   }, [commitBoard]);
@@ -1733,6 +1798,10 @@ export function PcbEditor({
   const passesFilter = (id: string): boolean => {
     const r = parseBoardItemId(id);
     if (!r) return false;
+    // Locked items are selectable only with the "Locked items" filter checked
+    // (PCB_SELECTION_FILTER_OPTIONS::lockedItems; KiCad defaults it off).
+    const brd = boardRef.current;
+    if (brd && !selFilter.has('lockedItems') && isBoardItemLocked(brd, id)) return false;
     const key = filterKeyOf(r.kind);
     return key ? selFilter.has(key) : true;
   };
@@ -1741,18 +1810,25 @@ export function PcbEditor({
   // with exact hit distances, Selection Filter, then GuessSelectionCandidates
   // (slop pruning, the 1.5× coverage-area heuristic, active-layer preference),
   // all transcribed in boardHitCandidates. One id = unambiguous click; several
-  // = KiCad would pop the disambiguation menu.
+  // = KiCad would pop the disambiguation menu. Finally, a hit on a group
+  // member resolves to its top-level group (PCB_GROUP::TopLevelGroup).
   const hitCandidates = (w: { x: number; y: number }): string[] => {
     const brd = boardRef.current;
     if (!brd) return [];
     const canvas = canvasRef.current;
     const v = viewRef.current;
-    return boardHitCandidates(brd, w, tolOf(), {
+    const cands = boardHitCandidates(brd, w, tolOf(), {
       filter: passesFilter,
       activeLayer,
       visibleLayers: visible,
       viewportIU: canvas ? { w: canvas.width / v.scale, h: canvas.height / v.scale } : undefined,
     });
+    const out: string[] = [];
+    for (const id of cands) {
+      const resolved = groupContaining(brd, id) ?? id;
+      if (!out.includes(resolved)) out.push(resolved);
+    }
+    return out;
   };
 
   const tolOf = (): number => (5 * dpr) / viewRef.current.scale; // ~5px, like COLLECTORS_GUIDE
@@ -2138,12 +2214,14 @@ export function PcbEditor({
   // routing behind; 'drag' stretches the traces attached to moving footprints.
   // Splits the scene into a backdrop (everything else) + a live moving overlay.
   const beginMove = (
-    sel: ReadonlySet<string>,
+    sel0: ReadonlySet<string>,
     kind: 'move' | 'drag',
     origin: { x: number; y: number },
   ): void => {
     const brd = boardRef.current;
-    if (!brd || sel.size === 0) return;
+    if (!brd || sel0.size === 0) return;
+    // A grabbed group moves as its members (the move commands know items only).
+    const sel = expandGroupIds(brd, sel0);
     movingSelRef.current = sel;
     moveKindRef.current = kind;
     moveOriginRef.current = origin;
@@ -3056,6 +3134,27 @@ export function PcbEditor({
         break;
       case 'rotateCW':
         rotateSel(false);
+        break;
+      case 'mirrorV':
+        mirrorSel('v');
+        break;
+      case 'mirrorH':
+        mirrorSel('h');
+        break;
+      case 'group':
+        groupSel();
+        break;
+      case 'ungroup':
+        ungroupSel();
+        break;
+      case 'lock':
+        lockSel(true);
+        break;
+      case 'unlock':
+        lockSel(false);
+        break;
+      case 'find':
+        setFindOpen(true);
         break;
       case 'zoomRedraw':
         sceneDirtyRef.current = true;

@@ -1219,6 +1219,7 @@ export function deleteBoardItems(board: Board, ids: ReadonlySet<string>): Board 
   const fpTexts = fpTextsByFp(ids);
   return {
     ...board,
+    groups: board.groups.filter((_, i) => !idx.group.has(i)),
     tracks: board.tracks.filter((_, i) => !idx.track.has(i)),
     arcs: board.arcs.filter((_, i) => !idx.arc.has(i)),
     vias: board.vias.filter((_, i) => !idx.via.has(i)),
