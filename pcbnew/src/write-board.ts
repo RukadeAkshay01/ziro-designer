@@ -9,7 +9,7 @@
  * (footprints, tracks/arcs, vias, zones, gr_* graphics, gr_text) the item's
  * `source` node — which board edits PATCH in place — is emitted. Everything the
  * typed model does not represent (general, paper, layers, setup, net decls,
- * groups, embedded files, …) passes straight through, byte-faithful.
+ * embedded files, …) passes straight through, byte-faithful.
  *
  * Items are matched to the model positionally by node head, exactly the reader's
  * order (mirroring write-footprint.ts). Deletions drop trailing source children
@@ -30,6 +30,7 @@ import type {
   PcbShape,
   PcbTextItem,
   PcbZone,
+  PcbGroup,
 } from './types.js';
 import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
@@ -191,6 +192,19 @@ const textNode = (t: PcbTextItem): SNode =>
   t.source.items.length > 0 ? t.source : buildBoardTextNode(t);
 const zoneNode = (z: PcbZone): SNode => (z.source.items.length > 0 ? z.source : buildZoneNode(z));
 
+/** `(group "name" (uuid …) [(locked yes)] (members …))` — PCB_IO_KICAD_SEXPR::
+ *  format(PCB_GROUP): members sorted alphabetically; empty groups not written
+ *  (the walk drops a group whose model entry has no members). */
+export function buildGroupNode(g: PcbGroup): SList {
+  const items: SNode[] = [atom('group'), str(g.name)];
+  if (g.uuid) items.push(list(atom('uuid'), str(g.uuid)));
+  if (g.locked) items.push(list(atom('locked'), atom('yes')));
+  items.push(list(atom('members'), ...[...g.members].sort().map((m) => str(m))));
+  return { kind: 'list', items };
+}
+const groupNode = (g: PcbGroup): SNode =>
+  g.source.items.length > 0 ? g.source : buildGroupNode(g);
+
 /** A source child the reader parsed by these top-level heads. */
 const GRAPHIC_HEADS = new Set(['gr_line', 'gr_arc', 'gr_circle', 'gr_rect', 'gr_poly', 'gr_curve']);
 
@@ -209,7 +223,8 @@ export function writeBoardNode(board: Board): SList {
     zi = 0,
     si = 0,
     xi = 0,
-    fi = 0;
+    fi = 0,
+    gi = 0;
 
   for (const it of src.items) {
     if (!isList(it)) {
@@ -238,6 +253,11 @@ export function writeBoardNode(board: Board): SList {
     } else if (h === 'gr_text') {
       if (xi < board.texts.length) out.push(textNode(board.texts[xi]!));
       xi++;
+    } else if (h === 'group') {
+      // Empty groups are never written (PCB_IO_KICAD_SEXPR::format(PCB_GROUP)).
+      if (gi < board.groups.length && board.groups[gi]!.members.length > 0)
+        out.push(groupNode(board.groups[gi]!));
+      gi++;
     } else out.push(it);
   }
 
@@ -249,6 +269,8 @@ export function writeBoardNode(board: Board): SList {
   for (; si < board.shapes.length; si++) out.push(shapeNode(board.shapes[si]!));
   for (; xi < board.texts.length; xi++) out.push(textNode(board.texts[xi]!));
   for (; zi < board.zones.length; zi++) out.push(zoneNode(board.zones[zi]!));
+  for (; gi < board.groups.length; gi++)
+    if (board.groups[gi]!.members.length > 0) out.push(groupNode(board.groups[gi]!));
 
   return { kind: 'list', items: out };
 }

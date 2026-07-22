@@ -4567,6 +4567,15 @@ function describeBoardItem(board: Board, id: string): string {
       if (!p) return 'Pad';
       return `Pad ${p.number}${f?.reference ? ` of ${f.reference}` : ''} · ${net(p.net ?? 0)}`;
     }
+    case 'group': {
+      const g = board.groups[r.index];
+      // EDA_GROUP::GetItemDescription: 'Group "<name>" with N members' /
+      // "Anonymous Group with N members".
+      if (!g) return 'Group';
+      return g.name
+        ? `Group "${g.name}" with ${g.members.length} members`
+        : `Anonymous Group with ${g.members.length} members`;
+    }
   }
 }
 

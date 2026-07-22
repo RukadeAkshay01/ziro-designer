@@ -60,6 +60,7 @@ export function footprintToBoard(fp: PcbFootprint | null): Board {
     zones: [],
     shapes: [],
     texts: [],
+    groups: [],
     source: EMPTY_SOURCE,
   };
 }

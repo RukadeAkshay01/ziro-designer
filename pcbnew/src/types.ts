@@ -72,6 +72,7 @@ export interface PcbShape {
   width: number;
   fill: boolean;
   layer: string;
+  locked?: boolean;
   uuid?: string;
   source: SList;
 }
@@ -98,6 +99,7 @@ export interface PcbTextItem {
   keepUpright?: boolean;
   hide?: boolean;
   knockout?: boolean;
+  locked?: boolean;
   uuid?: string;
   source: SList;
 }
@@ -146,6 +148,8 @@ export interface PcbTrack {
   width: number;
   layer: string;
   net: number;
+  /** `(locked yes)` on the track. */
+  locked?: boolean;
   uuid?: string;
   source: SList;
 }
@@ -157,6 +161,7 @@ export interface PcbArcTrack {
   width: number;
   layer: string;
   net: number;
+  locked?: boolean;
   uuid?: string;
   source: SList;
 }
@@ -168,6 +173,7 @@ export interface PcbVia {
   layers: [string, string];
   kind: 'through' | 'blind' | 'micro';
   net: number;
+  locked?: boolean;
   uuid?: string;
   source: SList;
 }
@@ -189,7 +195,20 @@ export interface PcbZone {
   hatchStyle?: 'none' | 'edge' | 'full';
   /** Border hatch pitch in IU (the `(hatch … <pitch>)` distance). */
   hatchPitch?: number;
+  locked?: boolean;
   uuid?: string;
+  source: SList;
+}
+
+/**
+ * A `(group "name" (uuid …) [(locked yes)] (members "uuid"…))` — PCB_GROUP.
+ * Members reference other board items by their uuid.
+ */
+export interface PcbGroup {
+  name: string;
+  uuid?: string;
+  locked?: boolean;
+  members: string[];
   source: SList;
 }
 
@@ -208,6 +227,7 @@ export interface Board {
   zones: PcbZone[];
   shapes: PcbShape[];
   texts: PcbTextItem[];
+  groups: PcbGroup[];
   fileName?: string;
   source: SList;
 }

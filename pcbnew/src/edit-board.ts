@@ -39,6 +39,7 @@ import type {
   PcbShape,
   PcbTextItem,
   PcbZone,
+  PcbGroup,
 } from './types.js';
 import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
@@ -53,7 +54,8 @@ export type BoardItemKind =
   | 'shape'
   | 'text'
   | 'fptext'
-  | 'pad';
+  | 'pad'
+  | 'group';
 export interface BoardItemRef {
   kind: BoardItemKind;
   index: number;
@@ -71,6 +73,7 @@ const KINDS: ReadonlySet<string> = new Set<BoardItemKind>([
   'text',
   'fptext',
   'pad',
+  'group',
 ]);
 
 // `fptext` and `pad` ids carry a second index (`<kind>:<footprint>:<sub>`), the
@@ -248,6 +251,19 @@ export function boardItemBBox(board: Board, id: string): BoardBBox | null {
       const f = board.footprints[ref.index];
       const p = f?.pads[ref.sub ?? 0];
       return p ? padBBox(p) : null;
+    }
+    case 'group': {
+      const g = board.groups[ref.index];
+      if (!g) return null;
+      const b = emptyBox();
+      for (const mid of groupMemberIds(board, g)) {
+        const ib = boardItemBBox(board, mid);
+        if (ib && !isEmpty(ib)) {
+          growBox(b, { x: ib.minX, y: ib.minY });
+          growBox(b, { x: ib.maxX, y: ib.maxY });
+        }
+      }
+      return isEmpty(b) ? null : b;
     }
   }
 }
@@ -1114,6 +1130,7 @@ function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<numb
     text: new Set(),
     fptext: new Set(),
     pad: new Set(),
+    group: new Set(),
   };
   for (const id of ids) {
     const r = parseBoardItemId(id);
@@ -1456,6 +1473,284 @@ export function rotateBoardItems(
     texts: board.texts.map((t, i) => (idx.text.has(i) ? rotText(t) : t)),
     shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? rotShape(s) : s)),
     footprints: board.footprints.map((f, i) => (idx.footprint.has(i) ? rotFootprint(f) : f)),
+  };
+}
+
+// ----- groups (PCB_GROUP; ACTIONS::group / ungroup) ---------------------------
+
+/** uuid -> board item id, for every item carrying a uuid (group membership). */
+export function boardUuidIndex(board: Board): Map<string, string> {
+  const m = new Map<string, string>();
+  const put = (uuid: string | undefined, id: string): void => {
+    if (uuid) m.set(uuid, id);
+  };
+  board.tracks.forEach((t, i) => put(t.uuid, boardItemId('track', i)));
+  board.arcs.forEach((a, i) => put(a.uuid, boardItemId('arc', i)));
+  board.vias.forEach((v, i) => put(v.uuid, boardItemId('via', i)));
+  board.zones.forEach((z, i) => put(z.uuid, boardItemId('zone', i)));
+  board.shapes.forEach((s, i) => put(s.uuid, boardItemId('shape', i)));
+  board.texts.forEach((t, i) => put(t.uuid, boardItemId('text', i)));
+  board.footprints.forEach((f, i) => put(f.uuid, boardItemId('footprint', i)));
+  board.groups.forEach((g, i) => put(g.uuid, boardItemId('group', i)));
+  return m;
+}
+
+/** Item ids of a group's members (unresolvable uuids are skipped, like the
+ *  writer validates member pointers against the board). */
+function groupMemberIds(board: Board, g: PcbGroup): string[] {
+  const idx = boardUuidIndex(board);
+  return g.members.map((u) => idx.get(u)).filter((id): id is string => !!id);
+}
+
+/** The uuid of the item behind a board item id, if it has one. */
+function uuidOfItemId(board: Board, id: string): string | undefined {
+  const r = parseBoardItemId(id);
+  if (!r) return undefined;
+  switch (r.kind) {
+    case 'track':
+      return board.tracks[r.index]?.uuid;
+    case 'arc':
+      return board.arcs[r.index]?.uuid;
+    case 'via':
+      return board.vias[r.index]?.uuid;
+    case 'zone':
+      return board.zones[r.index]?.uuid;
+    case 'shape':
+      return board.shapes[r.index]?.uuid;
+    case 'text':
+      return board.texts[r.index]?.uuid;
+    case 'footprint':
+      return board.footprints[r.index]?.uuid;
+    case 'group':
+      return board.groups[r.index]?.uuid;
+    default:
+      return undefined; // pads / fp texts can't be group members
+  }
+}
+
+/**
+ * The TOP-LEVEL group containing this item, or null (PCB_GROUP::TopLevelGroup:
+ * clicking a member selects the outermost containing group).
+ */
+export function groupContaining(board: Board, id: string): string | null {
+  const uuid0 = uuidOfItemId(board, id);
+  if (!uuid0) return null;
+  let uuid = uuid0;
+  let found: string | null = null;
+  // Walk up: a group's uuid may itself be a member of an outer group.
+  for (let hops = 0; hops < 16; hops++) {
+    const gi = board.groups.findIndex((g) => g.members.includes(uuid));
+    if (gi < 0) break;
+    found = boardItemId('group', gi);
+    const gUuid = board.groups[gi]!.uuid;
+    if (!gUuid) break;
+    uuid = gUuid;
+  }
+  return found;
+}
+
+/**
+ * Expand group ids to their member item ids (recursively for nested groups);
+ * other ids pass through. Editing commands operate on the expansion so moving/
+ * rotating/deleting a group carries all its members.
+ */
+export function expandGroupIds(board: Board, ids: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>();
+  const visit = (id: string, depth: number): void => {
+    const r = parseBoardItemId(id);
+    if (r?.kind === 'group' && depth < 16) {
+      const g = board.groups[r.index];
+      if (g) for (const mid of groupMemberIds(board, g)) visit(mid, depth + 1);
+    } else {
+      out.add(id);
+    }
+  };
+  for (const id of ids) visit(id, 0);
+  return out;
+}
+
+/**
+ * Group the selected items (ACTIONS::group): a new PCB_GROUP whose members are
+ * the items' uuids. Items without a uuid (freshly drawn, not yet saved) and
+ * pads/footprint-texts (children, not groupable) are skipped, and existing
+ * group ids join as nested member groups.
+ */
+export function groupBoardItems(
+  board: Board,
+  ids: ReadonlySet<string>,
+  name = '',
+): { board: Board; id: string | null } {
+  const members: string[] = [];
+  for (const id of ids) {
+    const uuid = uuidOfItemId(board, id);
+    if (uuid) members.push(uuid);
+  }
+  if (members.length < 1) return { board, id: null };
+  const g: PcbGroup = {
+    name,
+    uuid: genUuid(),
+    members,
+    source: { kind: 'list', items: [] },
+  };
+  return {
+    board: { ...board, groups: [...board.groups, g] },
+    id: boardItemId('group', board.groups.length),
+  };
+}
+
+/** Dissolve the selected groups (ACTIONS::ungroup): members stay on the board. */
+export function ungroupBoardItems(board: Board, ids: ReadonlySet<string>): Board {
+  const gidx = new Set<number>();
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r?.kind === 'group') gidx.add(r.index);
+  }
+  if (gidx.size === 0) return board;
+  return { ...board, groups: board.groups.filter((_, i) => !gidx.has(i)) };
+}
+
+// ----- lock / unlock (PCB_ACTIONS::lock / unlock) -----------------------------
+
+/** Is the item (or, for pads / footprint text, its parent footprint) locked? */
+export function isBoardItemLocked(board: Board, id: string): boolean {
+  const r = parseBoardItemId(id);
+  if (!r) return false;
+  switch (r.kind) {
+    case 'track':
+      return !!board.tracks[r.index]?.locked;
+    case 'arc':
+      return !!board.arcs[r.index]?.locked;
+    case 'via':
+      return !!board.vias[r.index]?.locked;
+    case 'zone':
+      return !!board.zones[r.index]?.locked;
+    case 'shape':
+      return !!board.shapes[r.index]?.locked;
+    case 'text':
+      return !!board.texts[r.index]?.locked;
+    case 'footprint':
+    case 'pad':
+    case 'fptext':
+      return !!board.footprints[r.index]?.locked;
+    case 'group':
+      return !!board.groups[r.index]?.locked;
+  }
+}
+
+/**
+ * Lock or unlock the selected items (`(locked yes)` per lockable formatter —
+ * tracks, arcs, vias, zones, graphics, text, footprints, groups). Pads /
+ * footprint texts lock their parent footprint, like KiCad.
+ */
+export function setBoardItemsLocked(
+  board: Board,
+  ids: ReadonlySet<string>,
+  locked: boolean,
+): Board {
+  const idx = indicesByKind(ids);
+  // Pads / fp texts resolve to their parent footprint.
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r && (r.kind === 'pad' || r.kind === 'fptext')) idx.footprint.add(r.index);
+  }
+  const patch = <T extends { locked?: boolean; source: SList }>(item: T): T => ({
+    ...item,
+    locked,
+    source: locked
+      ? patchChild(item.source, 'locked', list(atom('locked'), atom('yes')))
+      : removeChild(item.source, 'locked'),
+  });
+  return {
+    ...board,
+    tracks: board.tracks.map((t, i) => (idx.track.has(i) ? patch(t) : t)),
+    arcs: board.arcs.map((a, i) => (idx.arc.has(i) ? patch(a) : a)),
+    vias: board.vias.map((v, i) => (idx.via.has(i) ? patch(v) : v)),
+    zones: board.zones.map((z, i) => (idx.zone.has(i) ? patch(z) : z)),
+    shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? patch(s) : s)),
+    texts: board.texts.map((t, i) => (idx.text.has(i) ? patch(t) : t)),
+    footprints: board.footprints.map((f, i) => (idx.footprint.has(i) ? patch(f) : f)),
+    groups: board.groups.map((g, i) => (idx.group.has(i) ? patch(g) : g)),
+  };
+}
+
+// ----- mirror (EDIT_TOOL::Mirror) ---------------------------------------------
+
+/**
+ * Mirror the selected items about the selection centre (EDIT_TOOL::Mirror).
+ * `'v'` = mirrorV = FLIP_DIRECTION::TOP_BOTTOM (y flips), `'h'` = mirrorH =
+ * LEFT_RIGHT (x flips). Mirrorable kinds: tracks, arcs, vias, graphics, text
+ * (EDIT_TOOL::MirrorableItems). Footprints are skipped — KiCad: "Footprints
+ * cannot be mirrored. Use Flip to move them to the other side of the board."
+ * Zones are skipped like move/rotate (zone outline editing is staged).
+ */
+export function mirrorBoardItems(
+  board: Board,
+  ids: ReadonlySet<string>,
+  direction: 'v' | 'h',
+  center?: Vec2,
+): Board {
+  if (ids.size === 0) return board;
+  const c =
+    center ??
+    (() => {
+      const b = boardSelectionBBox(board, ids);
+      return b ? { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 } : { x: 0, y: 0 };
+    })();
+  const mir = (p: Vec2): Vec2 =>
+    direction === 'v' ? { x: p.x, y: 2 * c.y - p.y } : { x: 2 * c.x - p.x, y: p.y };
+  // Reflecting a rotation: across a horizontal axis θ→−θ, vertical θ→180−θ.
+  const mirAngle = (deg: number): number =>
+    norm360(direction === 'v' ? -deg : 180 - deg);
+  const idx = indicesByKind(ids);
+
+  const mirTrack = (t: PcbTrack): PcbTrack => {
+    const start = mir(t.start),
+      end = mir(t.end);
+    let src = patchChild(t.source, 'start', xyNode('start', start));
+    src = patchChild(src, 'end', xyNode('end', end));
+    return { ...t, start, end, source: src };
+  };
+  const mirArc = (a: PcbArcTrack): PcbArcTrack => {
+    const start = mir(a.start),
+      mid = mir(a.mid),
+      end = mir(a.end);
+    let src = patchChild(a.source, 'start', xyNode('start', start));
+    src = patchChild(src, 'mid', xyNode('mid', mid));
+    src = patchChild(src, 'end', xyNode('end', end));
+    return { ...a, start, mid, end, source: src };
+  };
+  const mirVia = (v: PcbVia): PcbVia => {
+    const at = mir(v.at);
+    return { ...v, at, source: patchChild(v.source, 'at', atNode(at)) };
+  };
+  const mirText = (t: PcbTextItem): PcbTextItem => {
+    const at = mir(t.at),
+      angle = mirAngle(t.angle);
+    return { ...t, at, angle, source: patchChild(t.source, 'at', atNode(at, angle)) };
+  };
+  const mirShape = (s: PcbShape): PcbShape => {
+    const next = { ...s };
+    if (s.center) next.center = mir(s.center);
+    if (s.start) next.start = mir(s.start);
+    if (s.end) next.end = mir(s.end);
+    if (s.mid) next.mid = mir(s.mid);
+    if (s.pts) next.pts = s.pts.map(mir);
+    let src = s.source;
+    if (next.center) src = patchChild(src, 'center', xyNode('center', next.center));
+    if (next.start) src = patchChild(src, 'start', xyNode('start', next.start));
+    if (next.end) src = patchChild(src, 'end', xyNode('end', next.end));
+    if (next.mid) src = patchChild(src, 'mid', xyNode('mid', next.mid));
+    if (next.pts) src = patchChild(src, 'pts', ptsNode(next.pts));
+    return { ...next, source: src };
+  };
+
+  return {
+    ...board,
+    tracks: board.tracks.map((t, i) => (idx.track.has(i) ? mirTrack(t) : t)),
+    arcs: board.arcs.map((a, i) => (idx.arc.has(i) ? mirArc(a) : a)),
+    vias: board.vias.map((v, i) => (idx.via.has(i) ? mirVia(v) : v)),
+    texts: board.texts.map((t, i) => (idx.text.has(i) ? mirText(t) : t)),
+    shapes: board.shapes.map((s, i) => (idx.shape.has(i) ? mirShape(s) : s)),
   };
 }
 

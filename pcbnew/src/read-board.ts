@@ -499,7 +499,14 @@ export function readBoard(root: SList): Board {
     zones: [],
     shapes: [],
     texts: [],
+    groups: [],
     source: root,
+  };
+  // `(locked yes)` child on tracks/vias/zones/graphics (PCB_IO writes it via
+  // KICAD_FORMAT::FormatBool for every lockable item).
+  const lockedOf = (item: SList): boolean | undefined => {
+    const n = childNamed(item, 'locked');
+    return n ? arg(n, 0) !== 'no' : undefined;
   };
   const general = childNamed(root, 'general');
   if (general) {
@@ -540,6 +547,7 @@ export function readBoard(root: SList): Board {
             width: mmToIU(numberField(item, 'width') ?? 0),
             layer: layerOf(item),
             net: numberField(item, 'net') ?? 0,
+            locked: lockedOf(item),
             uuid: uuidOf(item),
             source: item,
           });
@@ -558,6 +566,7 @@ export function readBoard(root: SList): Board {
             width: mmToIU(numberField(item, 'width') ?? 0),
             layer: layerOf(item),
             net: numberField(item, 'net') ?? 0,
+            locked: lockedOf(item),
             uuid: uuidOf(item),
             source: item,
           });
@@ -581,14 +590,27 @@ export function readBoard(root: SList): Board {
               ? 'blind'
               : 'through',
           net: numberField(item, 'net') ?? 0,
+          locked: lockedOf(item),
           uuid: uuidOf(item),
           source: item,
         });
         break;
       }
       case 'zone':
-        board.zones.push(readZone(item));
+        board.zones.push({ ...readZone(item), locked: lockedOf(item) });
         break;
+      case 'group': {
+        // `(group "name" (uuid …) [(locked yes)] (members "uuid"…))` — PCB_GROUP.
+        const membersNode = childNamed(item, 'members');
+        board.groups.push({
+          name: arg(item, 0) ?? '',
+          uuid: uuidOf(item),
+          locked: lockedOf(item),
+          members: membersNode ? args(membersNode) : [],
+          source: item,
+        });
+        break;
+      }
       case 'gr_line':
       case 'gr_arc':
       case 'gr_circle':
@@ -596,12 +618,12 @@ export function readBoard(root: SList): Board {
       case 'gr_poly':
       case 'gr_curve': {
         const s = readShape(item, null);
-        if (s) board.shapes.push(s);
+        if (s) board.shapes.push({ ...s, locked: lockedOf(item) });
         break;
       }
       case 'gr_text': {
         const tx = readPcbText(item, 'user', arg(item, 0) ?? '', null);
-        if (tx) board.texts.push(tx);
+        if (tx) board.texts.push({ ...tx, locked: lockedOf(item) });
         break;
       }
       default:

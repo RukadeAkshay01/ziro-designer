@@ -75,6 +75,7 @@ const board = (over: Partial<Board>): Board => ({
   zones: [],
   shapes: [],
   texts: [],
+  groups: [],
   source: EMPTY,
   ...over,
 });
