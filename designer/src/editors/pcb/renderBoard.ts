@@ -519,7 +519,14 @@ const MAX_PAD_FONT = 10 * MM;
  */
 function addPadLabels(scene: BoardScene, pad: PcbPad, netName: string): void {
   const padNumber = pad.number ?? '';
-  const showNet = netName !== '' && (pad.net ?? 0) > 0;
+  // Net label per PCB_PAINTER::draw(PAD): the display netname is the SHORT net
+  // name (NETINFO's part after the last '/'); a no-connect pad overrides it
+  // with a big "x" and a "free" pad on an unconnected net with "*"
+  // (IsNoConnectPad / IsFreePad).
+  let netLabel = (pad.net ?? 0) > 0 ? netName.slice(netName.lastIndexOf('/') + 1) : '';
+  if (pad.pinType?.includes('no_connect')) netLabel = 'x';
+  else if (pad.pinType === 'free' && netLabel.startsWith('unconnected-(')) netLabel = '*';
+  const showNet = netLabel !== '';
   if (padNumber === '' && !showNet) return;
 
   const round = pad.shape === 'circle' || pad.shape === 'oval';
@@ -577,11 +584,11 @@ function addPadLabels(scene: BoardScene, pad: PcbPad, netName: string): void {
   };
 
   if (showNet) {
-    let tsize = Math.min((1.5 * along) / Math.max(netName.length + 1, 5), size);
+    let tsize = Math.min((1.5 * along) / Math.max(netLabel.length + 1, 5), size);
     tsize *= 0.85;
     if (round) tsize *= 0.9;
     const ty = Math.min(tsize * 1.4, yOffNet);
-    label(netName, anchor(ty), tsize);
+    label(netLabel, anchor(ty), tsize);
   }
   if (padNumber !== '') {
     let tsize = Math.min((1.5 * along) / Math.max(padNumber.length, 3), size);
