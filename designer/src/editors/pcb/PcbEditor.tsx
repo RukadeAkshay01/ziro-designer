@@ -553,9 +553,10 @@ export function PcbEditor({
   const [propWidth, setPropWidth] = useState(300);
   const [objects, setObjects] = useState<ObjectState>(DEFAULT_OBJECTS);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
-  // Appearance pane width: KiCad's LayersManager AUI pane (BestSize 220,
-  // user-resizable).
-  const [appWidth, setAppWidth] = useState(220);
+  // Appearance pane width: KiCad's LayersManager AUI pane (BestSize ~220, but
+  // our rows carry a swatch + eye + label + slider, so start a little wider so
+  // the opacity sliders and the net-display radios fit on one line).
+  const [appWidth, setAppWidth] = useState(255);
   // High-contrast (inactive layer) mode: HIGH_CONTRAST_MODE Normal/Dim/Hide.
   const [contrast, setContrast] = useState<'normal' | 'dim' | 'hide'>('normal');
   // "Flip board view" (PCB_ACTIONS::flipBoard): mirror the view horizontally.
@@ -2036,7 +2037,8 @@ export function PcbEditor({
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
       const v = viewRef.current;
-      const wx = ((e.clientX - rect.left) * dpr - v.tx) / v.scale;
+      // Signed X so the crosshair tracks the physical cursor under a flipped view.
+      const wx = ((e.clientX - rect.left) * dpr - v.tx) / (v.flipX ? -v.scale : v.scale);
       const wy = ((e.clientY - rect.top) * dpr - v.ty) / v.scale;
       setCursor({ x: wx, y: wy });
       cursorRef.current = { x: wx, y: wy };
@@ -3062,118 +3064,140 @@ export function PcbEditor({
                             up (KiCad's label->SetMinSize(labelWidth)); other
                             rows let the label fill the row. */}
                         <span className={`ze-obj-label${slider ? ' fixed' : ''}`}>{label}</span>
-                        {slider && key in opacity && (
-                          <input
-                            type="range"
-                            className="ze-opacity"
-                            min={0}
-                            max={100}
-                            value={Math.round(opacity[key as keyof typeof opacity] * 100)}
-                            title={`Set opacity of ${label.toLowerCase()}`}
-                            disabled={disabled}
-                            onChange={(e) =>
-                              setOpacity((p) => ({ ...p, [key]: Number(e.target.value) / 100 }))
-                            }
-                          />
-                        )}
+                        {slider &&
+                          key in opacity &&
+                          (() => {
+                            const pct = Math.round(opacity[key as keyof typeof opacity] * 100);
+                            return (
+                              <input
+                                type="range"
+                                className="ze-opacity"
+                                min={0}
+                                max={100}
+                                value={pct}
+                                // Fill the track left of the thumb (KiCad's slider
+                                // shows the set portion), the rest neutral grey.
+                                style={{
+                                  background: `linear-gradient(to right, var(--slider-fill) 0 ${pct}%, #55585d ${pct}% 100%)`,
+                                }}
+                                title={`Set opacity of ${label.toLowerCase()}`}
+                                disabled={disabled}
+                                onChange={(e) =>
+                                  setOpacity((p) => ({
+                                    ...p,
+                                    [key]: Number(e.target.value) / 100,
+                                  }))
+                                }
+                              />
+                            );
+                          })()}
                       </div>
                     );
                   })}
 
                 {tab === 'Nets' && (
                   <>
-                    {/* Nets header row: label + filter box (appearance_controls_base). */}
-                    <div className="ze-nets-header">
-                      <span>Nets</span>
-                      <input
-                        type="search"
-                        placeholder="Filter nets"
-                        value={netQuery}
-                        onChange={(e) => setNetQuery(e.target.value)}
-                      />
+                    {/* Nets box: header + filter + the scrollable net list, its
+                        own panel like KiCad's nets/netclasses splitter. */}
+                    <div className="ze-nets-box">
+                      <div className="ze-nets-header">
+                        <span>Nets</span>
+                        <input
+                          type="search"
+                          placeholder="Filter nets"
+                          value={netQuery}
+                          onChange={(e) => setNetQuery(e.target.value)}
+                        />
+                      </div>
+                      <div className="ze-nets-list">
+                        {/* Net rows: [color swatch][visibility][name]; the swatch
+                            opens a color picker, the eye hides the net's ratsnest. */}
+                        {nets.slice(0, 400).map(([code, name]) => {
+                          const color = netColors.get(code);
+                          const on = !hiddenNets.has(code);
+                          return (
+                            <div key={code} className="ze-object-row" title={`Net ${code}`}>
+                              <label
+                                className={`ze-layer-swatch picker${color ? '' : ' unset'}`}
+                                style={color ? { background: color } : undefined}
+                                title="Set net color"
+                              >
+                                <input
+                                  type="color"
+                                  value={color ?? '#000000'}
+                                  onChange={(e) =>
+                                    setNetColors((p) => new Map(p).set(code, e.target.value))
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="ze-eye-btn"
+                                title={`Show or hide ratsnest for ${name}`}
+                                onClick={() =>
+                                  setHiddenNets((p) => {
+                                    const next = new Set(p);
+                                    if (next.has(code)) next.delete(code);
+                                    else next.add(code);
+                                    return next;
+                                  })
+                                }
+                              >
+                                <EyeIcon on={on} />
+                              </button>
+                              <span className="ze-ellipsis">{name || `(unnamed ${code})`}</span>
+                            </div>
+                          );
+                        })}
+                        {nets.length > 400 && (
+                          <div className="ze-muted">…{nets.length - 400} more</div>
+                        )}
+                      </div>
                     </div>
-                    {/* Net rows: [color swatch][visibility][name]; the swatch
-                        opens a color picker, the eye hides the net's ratsnest. */}
-                    {nets.slice(0, 400).map(([code, name]) => {
-                      const color = netColors.get(code);
-                      const on = !hiddenNets.has(code);
-                      return (
-                        <div key={code} className="ze-object-row" title={`Net ${code}`}>
-                          <label
-                            className={`ze-layer-swatch picker${color ? '' : ' unset'}`}
-                            style={color ? { background: color } : undefined}
-                            title="Set net color"
-                          >
-                            <input
-                              type="color"
-                              value={color ?? '#000000'}
-                              onChange={(e) =>
-                                setNetColors((p) => new Map(p).set(code, e.target.value))
-                              }
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="ze-eye-btn"
-                            title={`Show or hide ratsnest for ${name}`}
-                            onClick={() =>
-                              setHiddenNets((p) => {
-                                const next = new Set(p);
-                                if (next.has(code)) next.delete(code);
-                                else next.add(code);
-                                return next;
-                              })
-                            }
-                          >
-                            <EyeIcon on={on} />
-                          </button>
-                          <span className="ze-ellipsis">{name || `(unnamed ${code})`}</span>
-                        </div>
-                      );
-                    })}
-                    {nets.length > 400 && <div className="ze-muted">…{nets.length - 400} more</div>}
 
-                    {/* Net Classes (the lower half of the nets splitter). */}
-                    <div className="ze-nets-header" style={{ marginTop: 8 }}>
-                      <span>Net Classes</span>
-                    </div>
-                    {netclassInfo.classes.map((cls) => {
-                      const color = classColorOf(cls);
-                      const on = !hiddenClasses.has(cls);
-                      return (
-                        <div key={cls} className="ze-object-row">
-                          <label
-                            className={`ze-layer-swatch picker${color ? '' : ' unset'}`}
-                            style={color ? { background: color } : undefined}
-                            title="Set netclass color"
-                          >
-                            <input
-                              type="color"
-                              value={color?.startsWith('#') ? color : '#000000'}
-                              onChange={(e) =>
-                                setClassColors((p) => new Map(p).set(cls, e.target.value))
+                    {/* Net Classes box: the lower panel of KiCad's nets splitter. */}
+                    <div className="ze-nets-box">
+                      <div className="ze-nets-header">
+                        <span>Net Classes</span>
+                      </div>
+                      {netclassInfo.classes.map((cls) => {
+                        const color = classColorOf(cls);
+                        const on = !hiddenClasses.has(cls);
+                        return (
+                          <div key={cls} className="ze-object-row">
+                            <label
+                              className={`ze-layer-swatch picker${color ? '' : ' unset'}`}
+                              style={color ? { background: color } : undefined}
+                              title="Set netclass color"
+                            >
+                              <input
+                                type="color"
+                                value={color?.startsWith('#') ? color : '#000000'}
+                                onChange={(e) =>
+                                  setClassColors((p) => new Map(p).set(cls, e.target.value))
+                                }
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="ze-eye-btn"
+                              title={`Show or hide ratsnest for the ${cls} class`}
+                              onClick={() =>
+                                setHiddenClasses((p) => {
+                                  const next = new Set(p);
+                                  if (next.has(cls)) next.delete(cls);
+                                  else next.add(cls);
+                                  return next;
+                                })
                               }
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            className="ze-eye-btn"
-                            title={`Show or hide ratsnest for the ${cls} class`}
-                            onClick={() =>
-                              setHiddenClasses((p) => {
-                                const next = new Set(p);
-                                if (next.has(cls)) next.delete(cls);
-                                else next.add(cls);
-                                return next;
-                              })
-                            }
-                          >
-                            <EyeIcon on={on} />
-                          </button>
-                          <span className="ze-ellipsis">{cls}</span>
-                        </div>
-                      );
-                    })}
+                            >
+                              <EyeIcon on={on} />
+                            </button>
+                            <span className="ze-ellipsis">{cls}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </>
                 )}
               </div>

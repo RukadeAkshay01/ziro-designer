@@ -13,6 +13,8 @@
   /* KiCad's Appearance list background (m_layerPanelColour): a mid grey,
      lighter than the chrome so the layer/object rows read as a list. */
   --panel-list-bg: #3a3d42;
+  /* Filled portion of an opacity slider, left of the thumb. */
+  --slider-fill: #e8912b;
 }
 
 html,
@@ -769,15 +771,16 @@ body {
 }
 .ze-obj-label.fixed {
   flex: 0 0 auto;
-  width: 92px;
+  width: 80px;
 }
-/* Opacity slider: KiCad's compact wxSlider — a thin track (min 80px) with a
-   small round thumb, not the browser's tall default control. */
+/* Opacity slider: KiCad's compact wxSlider — a thin track with a small round
+   thumb, not the browser's tall default control. The filled left portion is
+   set inline as a gradient so it shows the current value. */
 .ze-opacity {
   flex: 0 0 auto;
-  width: 84px;
+  width: 76px;
   height: 4px;
-  margin: 0 5px;
+  margin: 0 4px;
   -webkit-appearance: none;
   appearance: none;
   background: #55585d;
@@ -820,9 +823,30 @@ body {
   padding: 0;
   border: none;
 }
+/* A net/netclass with no custom color: a plain empty swatch (dark with a
+   border), like KiCad's uncolored COLOR_SWATCH — click it to assign a color. */
 .ze-layer-swatch.unset {
-  background: linear-gradient(to top right, transparent 46%, #888 47%, #888 53%, transparent 54%)
-    #2a2a2a;
+  background: #2b2d31;
+  border-color: #565961;
+}
+
+/* Nets tab: the Nets grid and the Net Classes list each sit in their own
+   boxed section (KiCad splits them into two panels of the notebook). */
+.ze-nets-box {
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  background: #313438;
+  padding: 4px;
+  margin-bottom: 6px;
+}
+.ze-nets-box + .ze-nets-box {
+  margin-bottom: 0;
+}
+/* The net list scrolls inside its box so a long net list doesn't push the
+   Net Classes box off-screen (KiCad's splitter caps the nets panel). */
+.ze-nets-list {
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 /* Nets tab headers ("Nets" / "Net Classes") with the filter box. */
