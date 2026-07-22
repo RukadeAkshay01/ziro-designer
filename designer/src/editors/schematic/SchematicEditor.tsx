@@ -395,6 +395,13 @@ export function SchematicEditor({
     if (es.annotation.automatic) t.add('annotateAuto');
     return t;
   }, [localToggles, es]);
+  // Ctrl+U (ACTIONS::toggleUnits) returns to the last imperial unit, like
+  // COMMON_TOOLS::m_imperialUnit (initially inches).
+  const lastImperialRef = useRef<'unitsInches' | 'unitsMils'>('unitsInches');
+  useEffect(() => {
+    if (toggles.has('unitsInches')) lastImperialRef.current = 'unitsInches';
+    else if (toggles.has('unitsMils')) lastImperialRef.current = 'unitsMils';
+  }, [toggles]);
   // Selection Filter (SCH_SELECTION_FILTER_OPTIONS): gates which item types —
   // and locked items — the selection accepts.
   const [selFilter, setSelFilter] = useState<SelectionFilterOptions>(defaultSelectionFilter);
@@ -2165,6 +2172,24 @@ export function SchematicEditor({
         // ACTIONS::zoomTool (Ctrl+F5): drag a rectangle to zoom to it.
         e.preventDefault();
         setActiveTool('zoomTool');
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'u' && !e.shiftKey) {
+        // ACTIONS::toggleUnits (Ctrl+U): imperial <-> metric, remembering the
+        // last imperial unit (COMMON_TOOLS m_imperialUnit, initially inches).
+        e.preventDefault();
+        const imperial = toggles.has('unitsInches') || toggles.has('unitsMils');
+        onLeftToggle(imperial ? 'unitsMm' : lastImperialRef.current);
+      } else if (e.key === 'F5' && !e.altKey && !e.shiftKey) {
+        // ACTIONS::zoomRedraw default hotkey (F5).
+        e.preventDefault();
+        controller.current?.redraw();
+      } else if (e.key === 'F1' && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        // ACTIONS::zoomInCenter default hotkey (F1).
+        e.preventDefault();
+        controller.current?.zoomIn();
+      } else if (e.key === 'F2' && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        // ACTIONS::zoomOutCenter default hotkey (F2).
+        e.preventDefault();
+        controller.current?.zoomOut();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'h' && !e.shiftKey) {
         // SCH_ACTIONS::showHierarchy (Ctrl+H): toggle the navigator panel.
         e.preventDefault();
@@ -2266,6 +2291,15 @@ export function SchematicEditor({
           setHighlightItem(null);
           return;
         }
+        // Shift+Space — cycle the wire/bus line mode free → 90° → 45°
+        // (SCH_ACTIONS::lineModeNext; SCH_EDITOR_CONTROL::NextLineMode).
+        if (e.key === ' ' && e.shiftKey) {
+          e.preventDefault();
+          settings.updateEeschema((s) => {
+            s.drawing.line_mode = s.drawing.line_mode === 0 ? 1 : s.drawing.line_mode === 1 ? 2 : 0;
+          });
+          return;
+        }
         // N / Shift+N — next/previous grid (ACTIONS::gridNext/gridPrev).
         if (e.key.toLowerCase() === 'n') {
           e.preventDefault();
@@ -2314,6 +2348,7 @@ export function SchematicEditor({
     doFind,
     openFindDialog,
     openProperties,
+    toggles,
   ]);
 
   const units = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';

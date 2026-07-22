@@ -1599,7 +1599,15 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         draw();
         return;
       }
-      if (e.key === 'Enter' && drawStateRef.current?.tool === 'lines') {
+      // ACTIONS::finishInteractive (End): commit the in-progress wire/bus
+      // chain; Enter/End both close a polyline.
+      if (e.key === 'End' && wiresRef.current.length) {
+        e.preventDefault();
+        finishWireChain();
+        draw();
+        return;
+      }
+      if ((e.key === 'Enter' || e.key === 'End') && drawStateRef.current?.tool === 'lines') {
         finishPoly();
         return;
       }
@@ -1652,7 +1660,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draw, activeTool, placeLib, finishPoly]);
+  }, [draw, activeTool, placeLib, finishPoly, finishWireChain]);
 
   const cursor = activeTool === 'select' ? 'default' : 'crosshair';
 
