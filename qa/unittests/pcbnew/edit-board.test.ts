@@ -238,15 +238,35 @@ describe('footprint hit-test + selection priority', () => {
   // Footprint whose pad bbox spans 4800..5200; a track crosses the same region.
   const fp = footprint([pad({ x: 5000, y: 5000 }, 400, 400)]);
   const t = track({ x: 4000, y: 5000 }, { x: 6000, y: 5000 }, 100);
-  it('selects the footprint when clicking its body (no smaller item)', () => {
-    const b = board({ footprints: [fp] });
-    expect(hitTestBoard(b, { x: 5000, y: 5100 }, 10)).toBe('footprint:0');
+  it('clicking a pad selects the pad — the larger footprint is rejected (area heuristic)', () => {
+    // Two pads make the footprint's hull much larger than one pad, so
+    // GuessSelectionCandidates rejects it at the 1.5× area jump and the pad is
+    // the sole survivor — no disambiguation, no unchecking "Footprints".
+    const fp2 = footprint([
+      pad({ x: 5000, y: 5000 }, 400, 400),
+      pad({ x: 9000, y: 5000 }, 400, 400),
+    ]);
+    const b = board({ footprints: [fp2] });
+    expect(boardHitCandidates(b, { x: 5000, y: 5100 }, 10)).toEqual(['pad:0:0']);
   });
-  it('a track over a footprint wins the click (smaller item first)', () => {
+  it('clicking the trace centerline over a pad prefers the trace (smallest coverage area)', () => {
+    // Track coverage area is width² — far below the pad's face — so the pad is
+    // rejected ("clicked on a small item within a larger one"). This footprint
+    // is 100% covered by its single pad, so the >70% coverage exception keeps
+    // it for the disambiguation menu, exactly like GuessSelectionCandidates.
     const b = board({ footprints: [fp], tracks: [t] });
-    const cands = boardHitCandidates(b, { x: 5000, y: 5000 }, 10);
-    expect(cands[0]).toBe('track:0');
-    expect(cands).toContain('footprint:0');
+    expect(boardHitCandidates(b, { x: 5000, y: 5000 }, 10)).toEqual(['track:0', 'footprint:0']);
+  });
+  it('a sloppy track hit loses to an exact pad hit (prefer exact hits)', () => {
+    // Click inside the pad but ~50 IU off the trace edge: the pad hit is exact
+    // (slop 0) while the track hit is sloppy, so the track is pruned first.
+    const fp2 = footprint([
+      pad({ x: 5000, y: 5000 }, 400, 400),
+      pad({ x: 9000, y: 5000 }, 400, 400),
+    ]);
+    const b = board({ footprints: [fp2], tracks: [t] });
+    const cands = boardHitCandidates(b, { x: 5000, y: 5100 }, 60);
+    expect(cands).toEqual(['pad:0:0']);
   });
 });
 

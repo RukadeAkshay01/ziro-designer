@@ -192,12 +192,15 @@ const distToSeg = (p: Vec2, a: Vec2, b: Vec2): number => {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 };
 
-const padHit = (pad: PcbPad, pos: Vec2, tol: number): boolean => {
+export const padHit = (pad: PcbPad, pos: Vec2, tol: number): boolean => {
   // Transform into pad-local frame (undo translate + rotation).
   const d = { x: pos.x - pad.at.x, y: pos.y - pad.at.y };
   const l = pad.angle ? rotatePcb(d, pad.angle) : d;
   return Math.abs(l.x) <= pad.size.x / 2 + tol && Math.abs(l.y) <= pad.size.y / 2 + tol;
 };
+
+/** Board-absolute bounding box of a single pad (for board-level selection). */
+export const padBBox = (pad: PcbPad): FpBBox | null => bboxOf(padPoints(pad));
 
 const shapeHit = (s: PcbShape, pos: Vec2, tol: number): boolean => {
   const t = tol + s.width / 2;

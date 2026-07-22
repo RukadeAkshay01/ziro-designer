@@ -52,6 +52,10 @@ export interface PcbPad {
   chamfer?: string[];
   delta?: Vec2;
   net?: number;
+  /** `(pinfunction …)`: the schematic pin name (PAD::GetPinFunction). */
+  pinFunction?: string;
+  /** `(pintype …)`: the schematic electrical type (PAD::GetPinType). */
+  pinType?: string;
   primitives?: PadPrimitive[];
   uuid?: string;
   source: SList;

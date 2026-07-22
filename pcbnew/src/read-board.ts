@@ -308,6 +308,10 @@ function readPad(item: SList, t: FpTransform | null): PcbPad | null {
     chamfer: chamferNode ? args(chamferNode) : undefined,
     delta: ptAt(childNamed(item, 'rect_delta')),
     net: childNamed(item, 'net') ? numArg(childNamed(item, 'net')!, 0) : undefined,
+    pinFunction: childNamed(item, 'pinfunction')
+      ? arg(childNamed(item, 'pinfunction')!, 0)
+      : undefined,
+    pinType: childNamed(item, 'pintype') ? arg(childNamed(item, 'pintype')!, 0) : undefined,
     primitives: primitives.length > 0 ? primitives : undefined,
     uuid: uuidOf(item),
     source: item,

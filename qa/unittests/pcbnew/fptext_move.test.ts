@@ -35,11 +35,11 @@ describe('footprint text as an individually movable item', () => {
 
   it('hit-tests the reference text as its own fptext item, over the footprint', () => {
     const board = readBoard(parse(BOARD));
-    // The reference sits at board (100, 98). A hit there should offer the fptext
-    // ahead of the footprint body.
+    // The reference sits at board (100, 98). A click there selects the text
+    // outright: GuessSelectionCandidates rejects the much larger footprint at
+    // the 1.5× coverage-area jump, so no disambiguation is offered.
     const ids = boardHitCandidates(board, { x: mmToIU(100), y: mmToIU(98) }, mmToIU(0.3));
     expect(ids[0]).toBe('fptext:0:0');
-    expect(ids).toContain('footprint:0');
   });
 
   it('moves only the reference text, and serializes the new local position', () => {

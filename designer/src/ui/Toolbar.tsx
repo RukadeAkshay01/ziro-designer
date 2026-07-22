@@ -21,6 +21,8 @@ export interface ToolButton {
 export interface ToolGroup {
   group: string;
   actions: ToolButton[];
+  /** Open the palette on a normal click instead of activating the shown action. */
+  paletteOnClick?: boolean;
 }
 
 export type ToolEntry = ToolButton | ToolGroup | 'sep';
@@ -101,6 +103,8 @@ export function Toolbar({
   const displayedAction = (g: ToolGroup): ToolButton => {
     const active = g.actions.find((a) => a.id === activeTool);
     if (active) return active;
+    const toggledAction = toggled ? g.actions.find((a) => toggled.has(a.id)) : undefined;
+    if (toggledAction) return toggledAction;
     const sel = g.actions.find((a) => a.id === groupSel[g.group]);
     return sel ?? g.actions[0]!;
   };
@@ -141,10 +145,14 @@ export function Toolbar({
           else cancelTimer();
         }}
         onPointerUp={cancelTimer}
-        onClick={() => {
+        onClick={(e) => {
           if (disabled) return;
           if (suppressClick.current) {
             suppressClick.current = false;
+            return;
+          }
+          if (g?.paletteOnClick && !opts.inPalette) {
+            openPalette(g, e.currentTarget);
             return;
           }
           if (opts.inPalette && g) {

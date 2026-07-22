@@ -28,10 +28,11 @@ import { childNamed } from '@ziroeda/sexpr/src/query.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { arcCenter, rotatePcb } from './read-board.js';
 import { connectedTrackEnds } from './connectivity.js';
-import { footprintBBox } from './edit-footprint.js';
+import { footprintBBox, padBBox } from './edit-footprint.js';
 import type {
   Board,
   PcbFootprint,
+  PcbPad,
   PcbTrack,
   PcbArcTrack,
   PcbVia,
@@ -51,11 +52,12 @@ export type BoardItemKind =
   | 'zone'
   | 'shape'
   | 'text'
-  | 'fptext';
+  | 'fptext'
+  | 'pad';
 export interface BoardItemRef {
   kind: BoardItemKind;
   index: number;
-  /** For 'fptext': the text's index within footprint `index`. */
+  /** For 'fptext'/'pad': the text/pad index within footprint `index`. */
   sub?: number;
 }
 
@@ -68,11 +70,17 @@ const KINDS: ReadonlySet<string> = new Set<BoardItemKind>([
   'shape',
   'text',
   'fptext',
+  'pad',
 ]);
 
-/** `fptext` ids carry a second index: `fptext:<footprint>:<text>`. */
+// `fptext` and `pad` ids carry a second index (`<kind>:<footprint>:<sub>`), the
+// text/pad within the footprint — pcbnew selects the child, not the footprint,
+// when the Selection Filter allows it.
+const SUB_KINDS: ReadonlySet<string> = new Set(['fptext', 'pad']);
+
+/** `fptext`/`pad` ids carry a second index: `<kind>:<footprint>:<sub>`. */
 export const boardItemId = (kind: BoardItemKind, index: number, sub?: number): string =>
-  kind === 'fptext' ? `fptext:${index}:${sub ?? 0}` : `${kind}:${index}`;
+  SUB_KINDS.has(kind) ? `${kind}:${index}:${sub ?? 0}` : `${kind}:${index}`;
 
 export function parseBoardItemId(id: string): BoardItemRef | null {
   const parts = id.split(':');
@@ -80,10 +88,10 @@ export function parseBoardItemId(id: string): BoardItemRef | null {
   if (!kind || !KINDS.has(kind)) return null;
   const index = Number(parts[1]);
   if (!Number.isInteger(index) || index < 0) return null;
-  if (kind === 'fptext') {
+  if (SUB_KINDS.has(kind)) {
     const sub = Number(parts[2]);
     if (!Number.isInteger(sub) || sub < 0) return null;
-    return { kind: 'fptext', index, sub };
+    return { kind: kind as BoardItemKind, index, sub };
   }
   return { kind: kind as BoardItemKind, index };
 }
@@ -236,6 +244,11 @@ export function boardItemBBox(board: Board, id: string): BoardBBox | null {
       const t = f?.texts[ref.sub ?? 0];
       return t ? textBBox(t) : null;
     }
+    case 'pad': {
+      const f = board.footprints[ref.index];
+      const p = f?.pads[ref.sub ?? 0];
+      return p ? padBBox(p) : null;
+    }
   }
 }
 
@@ -324,62 +337,352 @@ const zoneHit = (z: PcbZone, pos: Vec2, tol: number): boolean => {
 };
 
 // ----- collection & priority --------------------------------------------------
+//
+// Transcribed from PCB_SELECTION_TOOL::selectPoint / GuessSelectionCandidates /
+// hitTestDistance and FOOTPRINT::GetCoverageArea (pcb_selection_tool.cpp,
+// footprint.cpp). The collector gathers every item within the slop radius with
+// its exact hit distance and coverage area; the heuristics then prune sloppy
+// hits, drop items much larger than the smallest, and prefer the active layer.
 
-/** Ordering weight for disambiguation — small items beat large containers, so a
- *  track over a footprint/zone wins (approximates GENERAL_COLLECTOR's preference
- *  for connected/smaller items in PCB_SELECTION_TOOL::guessSelectionCandidates). */
-const typeRank = (kind: BoardItemKind): number =>
-  kind === 'zone' ? 2 : kind === 'footprint' ? 1 : 0;
-// fptext ranks as a small item (0) so a footprint's reference/value text can be
-// grabbed over the footprint body.
+/** Shoelace area of a polygon. */
+const polyArea = (pts: Vec2[]): number => {
+  let a = 0;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++)
+    a += (pts[j]!.x + pts[i]!.x) * (pts[j]!.y - pts[i]!.y);
+  return Math.abs(a / 2);
+};
+
+/** Distance from a point to a bbox (0 inside). */
+const bboxDist = (b: BoardBBox, p: Vec2): number => {
+  const dx = Math.max(b.minX - p.x, 0, p.x - b.maxX);
+  const dy = Math.max(b.minY - p.y, 0, p.y - b.maxY);
+  return Math.hypot(dx, dy);
+};
+
+/** Overlap area of two bboxes. */
+const bboxIntersectArea = (a: BoardBBox, b: BoardBBox): number => {
+  const w = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const h = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY);
+  return w > 0 && h > 0 ? w * h : 0;
+};
+
+/** Distance from a point to a pad's face (0 inside), in the pad's local frame. */
+const padDist = (pad: PcbPad, pos: Vec2): number => {
+  const d = { x: pos.x - pad.at.x, y: pos.y - pad.at.y };
+  const l = pad.angle ? rotatePcb(d, pad.angle) : d;
+  if (pad.shape === 'circle') return Math.max(0, Math.hypot(l.x, l.y) - pad.size.x / 2);
+  const dx = Math.max(0, Math.abs(l.x) - pad.size.x / 2);
+  const dy = Math.max(0, Math.abs(l.y) - pad.size.y / 2);
+  return Math.hypot(dx, dy);
+};
+
+/** Distance from a point to an arc track's stroke (0 on it). */
+const arcDist = (a: PcbArcTrack, pos: Vec2): number => {
+  const c = arcCenter(a.start, a.mid, a.end);
+  if (!c) return Math.max(0, distToSeg(pos, a.start, a.end) - a.width / 2);
+  const radius = dist(c, a.start);
+  const a0 = Math.atan2(a.start.y - c.y, a.start.x - c.x);
+  const am = Math.atan2(a.mid.y - c.y, a.mid.x - c.x);
+  const a1 = Math.atan2(a.end.y - c.y, a.end.x - c.x);
+  const ap = Math.atan2(pos.y - c.y, pos.x - c.x);
+  const sweepCCW = ccwSpan(a0, a1);
+  const inSweep =
+    ccwSpan(a0, am) <= sweepCCW ? ccwSpan(a0, ap) <= sweepCCW : ccwSpan(ap, a0) <= ccwSpan(a1, a0);
+  if (inSweep) return Math.max(0, Math.abs(dist(c, pos) - radius) - a.width / 2);
+  return Math.max(0, Math.min(dist(pos, a.start), dist(pos, a.end)) - a.width / 2);
+};
+
+/** Distance from a point to a graphic shape (0 inside a filled shape). */
+const shapeDist = (s: PcbShape, pos: Vec2): number => {
+  const half = s.width / 2;
+  if (s.kind === 'line' && s.start && s.end)
+    return Math.max(0, distToSeg(pos, s.start, s.end) - half);
+  if (s.kind === 'circle' && s.center && s.end) {
+    const r = dist(s.center, s.end);
+    const d = dist(s.center, pos);
+    return s.fill ? Math.max(0, d - r - half) : Math.max(0, Math.abs(d - r) - half);
+  }
+  if (s.kind === 'rect' && s.start && s.end) {
+    const b: BoardBBox = {
+      minX: Math.min(s.start.x, s.end.x),
+      minY: Math.min(s.start.y, s.end.y),
+      maxX: Math.max(s.start.x, s.end.x),
+      maxY: Math.max(s.start.y, s.end.y),
+    };
+    if (s.fill) return bboxDist(b, pos);
+    const corners: Vec2[] = [
+      { x: b.minX, y: b.minY },
+      { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY },
+      { x: b.minX, y: b.maxY },
+    ];
+    let d = Infinity;
+    for (let i = 0; i < 4; i++) d = Math.min(d, distToSeg(pos, corners[i]!, corners[(i + 1) % 4]!));
+    return Math.max(0, d - half);
+  }
+  const pts = s.pts ?? shapePoints(s);
+  if (s.fill && pts.length >= 3 && pointInPolygon(pos, pts)) return 0;
+  let d = Infinity;
+  for (let i = 1; i < pts.length; i++) d = Math.min(d, distToSeg(pos, pts[i - 1]!, pts[i]!));
+  if (pts.length >= 3) d = Math.min(d, distToSeg(pos, pts[pts.length - 1]!, pts[0]!));
+  return Math.max(0, d - half);
+};
+
+interface HitEntry {
+  id: string;
+  kind: BoardItemKind;
+  /** Exact hit distance (hitTestDistance): 0 = exact hit, grows with slop. */
+  dist: number;
+  /** Coverage area (FOOTPRINT::GetCoverageArea + caller special cases). */
+  area: number;
+  /** The layer(s) the item lives on, for the active-layer disambiguation. */
+  layers: string[];
+}
+
+/** Does an item whose layer list is `layers` live on `layer`? ('*.Cu' etc.) */
+const onLayer = (layers: string[], layer: string): boolean =>
+  layers.some((l) => l === layer || (l.startsWith('*.') && layer.endsWith(l.slice(1))));
+
+export interface BoardHitOpts {
+  /** Stateful Selection Filter predicate — runs before the heuristics, like
+   *  FilterCollectedItems runs before GuessSelectionCandidates. */
+  filter?: (id: string) => boolean;
+  /** Active layer: enables the silk preference and the final layer filter. */
+  activeLayer?: string;
+  /** Visible layers (PCB_SELECTION_TOOL::Selectable): items living only on
+   *  hidden layers are not selectable and never enter the candidate list. */
+  visibleLayers?: ReadonlySet<string>;
+  /** Viewport size in IU: footprints larger than it are last-resort picks. */
+  viewportIU?: { w: number; h: number };
+}
 
 /**
- * Every board item hit at `pos` within `tol`, best candidate first (smallest,
- * most-specific item wins). `tol` is in internal units — the editor derives it
- * from a few screen pixels at the current zoom (KiCad's COLLECTORS_GUIDE
- * accuracy). Used both for click-select (take [0]) and disambiguation menus.
+ * Every board item hit at `pos` within `tol`, pruned by KiCad's selection
+ * heuristics, most-specific first. `tol` is the max slop in IU (the editor
+ * derives it from MAX_SLOP=5 pixels at the current zoom). More than one
+ * returned id means KiCad would pop the disambiguation menu.
  */
-export function boardHitCandidates(board: Board, pos: Vec2, tol: number): string[] {
-  const hits: { id: string; kind: BoardItemKind; area: number }[] = [];
-  const add = (kind: BoardItemKind, index: number): void => {
-    const id = boardItemId(kind, index);
-    const b = boardItemBBox(board, id);
-    hits.push({ id, kind, area: b ? bboxArea(b) : Infinity });
-  };
+export function boardHitCandidates(
+  board: Board,
+  pos: Vec2,
+  tol: number,
+  opts: BoardHitOpts = {},
+): string[] {
+  let hits: HitEntry[] = [];
+  const singlePixel = tol / 5; // MAX_SLOP is 5 pixels (GuessSelectionCandidates)
+
+  // PCB_SELECTION_TOOL::Selectable — an item on only-hidden layers can't be
+  // picked. Footprints stay selectable (their bodies span several layers).
+  const vis = opts.visibleLayers;
+  const selectable = (layers: string[]): boolean =>
+    !vis || layers.some((l) => (l.startsWith('*.') ? [...vis].some((v) => v.endsWith(l.slice(1))) : vis.has(l)));
 
   board.vias.forEach((v, i) => {
-    if (dist(pos, v.at) <= tol + v.size / 2) add('via', i);
+    const d = Math.max(0, dist(pos, v.at) - v.size / 2);
+    if (d <= tol)
+      hits.push({
+        id: boardItemId('via', i),
+        kind: 'via',
+        dist: d,
+        // "Vias rarely hide other things" — area is r² of the DRILL, not πr².
+        area: (v.drill / 2) ** 2,
+        layers: ['*.Cu'],
+      });
   });
   board.tracks.forEach((t, i) => {
-    if (distToSeg(pos, t.start, t.end) <= tol + t.width / 2) add('track', i);
+    const d = Math.max(0, distToSeg(pos, t.start, t.end) - t.width / 2);
+    if (d <= tol)
+      hits.push({
+        id: boardItemId('track', i),
+        kind: 'track',
+        dist: d,
+        // "Approximate linear shapes with just their width squared."
+        area: t.width * t.width,
+        layers: [t.layer],
+      });
   });
   board.arcs.forEach((a, i) => {
-    if (arcHit(a.start, a.mid, a.end, a.width, pos, tol)) add('arc', i);
+    const d = arcDist(a, pos);
+    if (d <= tol)
+      hits.push({
+        id: boardItemId('arc', i),
+        kind: 'arc',
+        dist: d,
+        area: a.width * a.width,
+        layers: [a.layer],
+      });
   });
   board.texts.forEach((t, i) => {
-    if (boxContainsPt(inflate(textBBox(t), tol), pos)) add('text', i);
+    const b = textBBox(t);
+    const d0 = bboxDist(b, pos);
+    // "Add a bit of slop to text-shapes": distance is credited by maxSlop/2.
+    if (d0 <= tol)
+      hits.push({
+        id: boardItemId('text', i),
+        kind: 'text',
+        dist: Math.max(0, d0 - tol / 2),
+        area: bboxArea(b),
+        layers: [t.layer],
+      });
   });
   board.shapes.forEach((s, i) => {
-    if (shapeHit(s, pos, tol)) add('shape', i);
+    const d = shapeDist(s, pos);
+    if (d <= tol) {
+      // Unfilled / linear shapes count width²; filled shapes their real area.
+      let area = s.width * s.width;
+      if (s.fill) {
+        if (s.kind === 'circle' && s.center && s.end) {
+          const r = dist(s.center, s.end);
+          area = Math.PI * r * r;
+        } else if (s.kind === 'rect' && s.start && s.end) {
+          area = Math.abs(s.end.x - s.start.x) * Math.abs(s.end.y - s.start.y);
+        } else if (s.pts && s.pts.length >= 3) {
+          area = polyArea(s.pts);
+        }
+      }
+      hits.push({ id: boardItemId('shape', i), kind: 'shape', dist: d, area, layers: [s.layer] });
+    }
   });
   board.zones.forEach((z, i) => {
-    if (zoneHit(z, pos, tol)) add('zone', i);
+    // Zone edges are very specific; the filled interior is an exact hit too.
+    let edge = Infinity;
+    let inside = false;
+    for (const f of z.fills)
+      for (const poly of f.polys) {
+        if (!inside && poly.length >= 3 && pointInPolygon(pos, poly)) inside = true;
+        for (let j = 1; j < poly.length; j++)
+          edge = Math.min(edge, distToSeg(pos, poly[j - 1]!, poly[j]!));
+      }
+    const d = edge <= tol / 2 ? 0 : edge <= tol ? tol / 2 : inside ? 0 : Infinity;
+    if (d <= tol) {
+      const filled = z.fills.reduce((s, f) => s + f.polys.reduce((q, p) => q + polyArea(p), 0), 0);
+      hits.push({
+        id: boardItemId('zone', i),
+        kind: 'zone',
+        dist: d,
+        // A border hit makes the zone "small"; otherwise its filled area.
+        area:
+          edge <= tol / 2
+            ? singlePixel * singlePixel * 5
+            : filled > 0
+              ? filled
+              : z.outline
+                ? polyArea(z.outline)
+                : Infinity,
+        layers: z.layers,
+      });
+    }
   });
   board.footprints.forEach((f, i) => {
-    // A footprint's visible reference/value/text is individually selectable
-    // (PCB_SELECTION_TOOL selects the FP_TEXT, not the footprint, when the hit
-    // is on the text). Test these first so they rank as small items.
     f.texts.forEach((t, ti) => {
-      if (!t.hide && boxContainsPt(inflate(textBBox(t), tol), pos)) {
-        const id = boardItemId('fptext', i, ti);
-        hits.push({ id, kind: 'fptext', area: bboxArea(textBBox(t)) });
-      }
+      if (t.hide) return;
+      const b = textBBox(t);
+      const d0 = bboxDist(b, pos);
+      if (d0 <= tol)
+        hits.push({
+          id: boardItemId('fptext', i, ti),
+          kind: 'fptext',
+          dist: Math.max(0, d0 - tol / 2),
+          area: bboxArea(b),
+          layers: [t.layer],
+        });
+    });
+    f.pads.forEach((p, pi) => {
+      const d = padDist(p, pos);
+      if (d <= tol)
+        hits.push({
+          id: boardItemId('pad', i, pi),
+          kind: 'pad',
+          dist: d,
+          area:
+            p.shape === 'circle' ? Math.PI * (p.size.x / 2) ** 2 : Math.abs(p.size.x * p.size.y),
+          layers: p.layers,
+        });
     });
     const b = footprintBBox(f);
-    if (b && boxContainsPt(inflate(b, tol), pos)) add('footprint', i);
+    if (b) {
+      let d = bboxDist(b, pos);
+      // "Consider footprints larger than the viewport only as a last resort."
+      if (
+        opts.viewportIU &&
+        (b.maxX - b.minX > opts.viewportIU.w || b.maxY - b.minY > opts.viewportIU.h)
+      )
+        d = Number.MAX_SAFE_INTEGER / 2;
+      if (d <= tol)
+        hits.push({
+          id: boardItemId('footprint', i),
+          kind: 'footprint',
+          dist: d,
+          area: bboxArea(b),
+          layers: [f.layer],
+        });
+    }
   });
 
-  hits.sort((a, b) => typeRank(a.kind) - typeRank(b.kind) || a.area - b.area);
+  // Selectable(): drop items living only on hidden layers, then the stateful
+  // Selection Filter (FilterCollectedItems) — both run before the guesses.
+  hits = hits.filter((h) => h.kind === 'footprint' || selectable(h.layers));
+  if (opts.filter) hits = hits.filter((h) => opts.filter!(h.id));
+  if (hits.length <= 1) return hits.map((h) => h.id);
+
+  // --- GuessSelectionCandidates ---
+
+  // Silk preference: with a silk layer in front, single-layer items on either
+  // silk layer take priority.
+  const silk = ['F.SilkS', 'B.SilkS'];
+  if (opts.activeLayer && silk.includes(opts.activeLayer)) {
+    const preferred = hits.filter(
+      (h) =>
+        (h.kind === 'text' || h.kind === 'fptext' || h.kind === 'shape') &&
+        silk.includes(h.layers[0]!),
+    );
+    if (preferred.length > 0) hits = preferred;
+    if (hits.length === 1) return hits.map((h) => h.id);
+  }
+
+  // Prefer exact hits to sloppy ones: prune items more than one pixel sloppier
+  // than the closest hit.
+  const minSlop = Math.min(...hits.map((h) => h.dist));
+  hits = hits.filter((h) => h.dist <= minSlop + singlePixel);
+
+  // "If the user clicked on a small item within a much larger one then it's
+  // pretty clear they're trying to select the smaller one" — sort by coverage
+  // area and start rejecting at the first 1.5× jump.
+  const sizeRatio = 1.5;
+  const byArea = [...hits].sort((a, b) => a.area - b.area);
+  const rejected = new Set<HitEntry>();
+  let rejecting = false;
+  for (let i = 1; i < byArea.length; i++) {
+    if (byArea[i]!.area > byArea[i - 1]!.area * sizeRatio) rejecting = true;
+    if (rejecting) rejected.add(byArea[i]!);
+  }
+
+  // Special case: a footprint completely covered by other features would be
+  // unselectable — keep it for the disambiguation menu (CoverageRatio > 0.70).
+  const maxCoverRatio = 0.7;
+  for (const h of byArea) {
+    if (h.kind !== 'footprint' || !rejected.has(h)) continue;
+    const fb = boardItemBBox(board, h.id);
+    if (!fb) continue;
+    let covered = 0;
+    for (const other of byArea) {
+      if (other === h) continue;
+      const ob = boardItemBBox(board, other.id);
+      if (ob) covered += bboxIntersectArea(fb, ob);
+    }
+    if (covered / Math.max(1, bboxArea(fb)) > maxCoverRatio) rejected.delete(h);
+  }
+
+  if (hits.length > rejected.size) hits = byArea.filter((h) => !rejected.has(h));
+  else hits = byArea;
+
+  // Finally, reject items not on the active layer (when something is on it),
+  // to reduce the number of disambiguation menus shown.
+  if (hits.length > 1 && opts.activeLayer) {
+    const onActive = hits.filter((h) => onLayer(h.layers, opts.activeLayer!));
+    if (onActive.length > 0) hits = onActive;
+  }
+
   return hits.map((h) => h.id);
 }
 
@@ -810,12 +1113,30 @@ function indicesByKind(ids: ReadonlySet<string>): Record<BoardItemKind, Set<numb
     shape: new Set(),
     text: new Set(),
     fptext: new Set(),
+    pad: new Set(),
   };
   for (const id of ids) {
     const r = parseBoardItemId(id);
     if (r) idx[r.kind].add(r.index);
   }
   return idx;
+}
+
+/** Map footprint index -> set of its selected pad indices (from pad ids). */
+function fpPadsByFp(ids: ReadonlySet<string>): Map<number, Set<number>> {
+  const m = new Map<number, Set<number>>();
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r?.kind === 'pad') {
+      let s = m.get(r.index);
+      if (!s) {
+        s = new Set();
+        m.set(r.index, s);
+      }
+      s.add(r.sub ?? 0);
+    }
+  }
+  return m;
 }
 
 /** Map footprint index -> set of its selected text indices (from fptext ids). */
@@ -976,21 +1297,23 @@ export function addBoardZone(
 export function subsetBoardItems(board: Board, ids: ReadonlySet<string>): Board {
   const idx = indicesByKind(ids);
   const fpTexts = fpTextsByFp(ids);
+  const fpPads = fpPadsByFp(ids);
   const footprints: PcbFootprint[] = [];
   board.footprints.forEach((f, i) => {
     if (idx.footprint.has(i)) {
       footprints.push(f);
     } else {
-      // A footprint with only individually-selected text: strip everything but
-      // those texts so the overlay highlights just the text.
+      // A footprint with only individually-selected pads/text: strip everything
+      // but those children so the overlay highlights just the pad(s)/text.
       const ti = fpTexts.get(i);
-      if (ti) {
+      const pi = fpPads.get(i);
+      if (ti || pi) {
         footprints.push({
           ...f,
-          pads: [],
+          pads: pi ? f.pads.filter((_, j) => pi.has(j)) : [],
           shapes: [],
           models: [],
-          texts: f.texts.filter((_, j) => ti.has(j)),
+          texts: ti ? f.texts.filter((_, j) => ti.has(j)) : [],
         });
       }
     }

@@ -36,10 +36,15 @@ import {
   addBoardZone,
   type RatsnestEdge,
   type Board,
+  type BoardBBox,
   type BoardItemKind,
   type PcbFootprint,
   type PcbShape,
   type PcbPad,
+  type PcbTrack,
+  type PcbArcTrack,
+  type PcbVia,
+  type PcbZone,
 } from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
@@ -55,13 +60,7 @@ import {
   type PcbDrawOptions,
 } from './renderBoard.js';
 import type { Viewer3D } from './pcb3d.js';
-import {
-  layerColor,
-  PCB_PAINT_ORDER,
-  PCB_CURSOR,
-  PCB_OBJECT_COLORS,
-  PCB_SPECIAL,
-} from './pcbTheme.js';
+import { layerColor, PCB_CURSOR, PCB_OBJECT_COLORS, PCB_SPECIAL } from './pcbTheme.js';
 import {
   PCB_TOP_TOOLBAR,
   PCB_LEFT_TOOLBAR,
@@ -124,6 +123,27 @@ const DRAW_SHAPE_TOOLS: Record<string, PcbShape['kind']> = {
   drawPolygon: 'poly',
 };
 
+// Friendly names for the "Current Tool" status-bar field (field 6), shown while
+// a right-toolbar tool is active (EDA_DRAW_FRAME::DisplayToolMsg). The selection
+// tool leaves the field blank, exactly like KiCad.
+const PCB_TOOL_MSGS: Record<string, string> = {
+  // The selection tool shows "Select item(s)" (PCB_SELECTION_TOOL's tool message).
+  selectSetRect: 'Select item(s)',
+  selectSetLasso: 'Select item(s)',
+  routeSingleTrack: 'Route Single Track',
+  drawVia: 'Add Via',
+  drawZone: 'Add Filled Zone',
+  drawLine: 'Draw Line',
+  drawArc: 'Draw Arc',
+  drawRectangle: 'Draw Rectangle',
+  drawCircle: 'Draw Circle',
+  drawPolygon: 'Draw Polygon',
+  placeText: 'Add Text',
+  measureTool: 'Measure Tool',
+  deleteTool: 'Delete Items',
+  localRatsnestTool: 'Local Ratsnest',
+};
+
 // Tools that act on plain clicks and take no drag/box-select gestures.
 const isClickTool = (t: string): boolean =>
   t === 'deleteTool' ||
@@ -143,6 +163,17 @@ const defaultShapeWidth = (layer: string): number => {
   if (layer === 'Edge.Cuts' || /\.CrtYd$/.test(layer)) return 0.05 * MM;
   return 0.1 * MM;
 };
+
+type AlignAction = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+type MsgPanelItem = { upper: string; lower: string };
+
+const bboxCenter = (b: BoardBBox): { x: number; y: number } => ({
+  x: (b.minX + b.maxX) / 2,
+  y: (b.minY + b.maxY) / 2,
+});
+
+const bboxContainsPoint = (b: BoardBBox, p: { x: number; y: number }): boolean =>
+  p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY;
 
 // Circumcenter of three points, or null when they are (nearly) collinear.
 const circumcenter = (
@@ -597,6 +628,17 @@ export function PcbEditor({
     label: string;
   } | null>(null);
   const [netQuery, setNetQuery] = useState('');
+  // Net highlight (BOARD_INSPECTION_TOOL): the set of net codes currently
+  // highlighted. When non-empty the whole board dims and these nets' copper
+  // pops (pcb_painter.cpp getColor: highlighted → Brightened, else Darkened).
+  // Picked with the backtick hotkey / cleared with '~'; the left-toolbar
+  // "Toggle Net Highlight" button shows/hides the last highlight set.
+  const [highlightNets, setHighlightNets] = useState<ReadonlySet<number>>(new Set());
+  const highlightNetsRef = useRef<ReadonlySet<number>>(highlightNets);
+  highlightNetsRef.current = highlightNets;
+  // The previously-shown highlight set, restored by the toggle button/Alt+`
+  // (BOARD_INSPECTION_TOOL::m_lastHighlighted).
+  const lastHighlightRef = useRef<ReadonlySet<number>>(new Set());
   const [activeTool, setActiveTool] = useState('selectSetRect');
   // Selected board items (PCB_SELECTION_TOOL's selection), by `${kind}:${index}` id.
   const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
@@ -740,8 +782,12 @@ export function PcbEditor({
     else s.delete('highContrast');
     if (objects.ratsnest) s.add('showRatsnest');
     else s.delete('showRatsnest');
+    // The button is checked whenever a net highlight is active (netHighlightCond
+    // = IsNetHighlightSet()).
+    if (highlightNets.size > 0) s.add('toggleNetHighlight');
+    else s.delete('toggleNetHighlight');
     return s;
-  }, [toggles, contrast, objects.ratsnest]);
+  }, [toggles, contrast, objects.ratsnest, highlightNets]);
 
   // Parse after the first paint so "Loading…" is visible for big boards.
   useEffect(() => {
@@ -962,9 +1008,12 @@ export function PcbEditor({
         }
       }
     }
-    // Field leader line: a selected footprint text draws a thin line back to its
-    // parent footprint's origin, so you can see which part a stray reference/
-    // value belongs to (KiCad's FP_TEXT parent indicator). Follows the drag.
+    // Umbilical lines (pcb_painter.cpp draw(PCB_TEXT): "Draw the umbilical
+    // line for texts in footprints"): every SELECTED footprint text draws a
+    // solid line in the LAYER_ANCHOR color (the theme's pink) back to its
+    // parent footprint's position. Selecting a footprint selects its child
+    // texts too, so clicking a footprint shows the umbilicals to its
+    // reference/value/other texts. Follows an in-flight drag.
     {
       const sel = selForDrawRef.current;
       const brd = boardRef.current;
@@ -972,25 +1021,31 @@ export function PcbEditor({
         const md = moveDeltaRef.current;
         const off = !dragModeRef.current && md ? md : { x: 0, y: 0 };
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.strokeStyle = 'rgba(180,180,180,0.7)';
+        ctx.strokeStyle = PCB_SPECIAL.anchor;
         ctx.lineWidth = Math.max(1, dpr);
-        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        ctx.beginPath();
+        const umbilical = (fp: PcbFootprint, t: PcbFootprint['texts'][number]): void => {
+          if (t.hide) return;
+          ctx.moveTo((t.at.x + off.x) * sx + v.tx, (t.at.y + off.y) * v.scale + v.ty);
+          ctx.lineTo((fp.at.x + off.x) * sx + v.tx, (fp.at.y + off.y) * v.scale + v.ty);
+        };
         for (const id of sel) {
           const r = parseBoardItemId(id);
-          if (r?.kind !== 'fptext') continue;
-          const fp = brd.footprints[r.index];
-          const t = fp?.texts[r.sub ?? 0];
-          if (!fp || !t) continue;
-          const tx = (t.at.x + off.x) * sx + v.tx;
-          const ty = (t.at.y + off.y) * v.scale + v.ty;
-          const ax = fp.at.x * sx + v.tx;
-          const ay = fp.at.y * v.scale + v.ty;
-          ctx.beginPath();
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(ax, ay);
-          ctx.stroke();
+          if (r?.kind === 'fptext') {
+            const fp = brd.footprints[r.index];
+            const t = fp?.texts[r.sub ?? 0];
+            // An individually selected text keeps its own anchor: only the text
+            // end follows the drag, not the footprint position.
+            if (fp && t && !t.hide) {
+              ctx.moveTo((t.at.x + off.x) * sx + v.tx, (t.at.y + off.y) * v.scale + v.ty);
+              ctx.lineTo(fp.at.x * sx + v.tx, fp.at.y * v.scale + v.ty);
+            }
+          } else if (r?.kind === 'footprint') {
+            const fp = brd.footprints[r.index];
+            if (fp) for (const t of fp.texts) umbilical(fp, t);
+          }
         }
-        ctx.setLineDash([]);
+        ctx.stroke();
       }
     }
     // Selection / move overlay: the selected items repainted brightened over the
@@ -999,25 +1054,21 @@ export function PcbEditor({
     // moving items are excluded from the raster and this overlay follows the
     // cursor at the drag offset (EDIT_TOOL::Move's GAL overlay); otherwise it
     // sits exactly over the raster so the selection just lights up in place.
-    // Net highlight: the selected nets' copper, lit up over the raster (a
-    // gentler brighten than the selection itself), so a clicked part's whole
-    // net is visible. Skipped while dragging (the overlay covers it).
+    // Net highlight (BOARD_INSPECTION_TOOL::HighlightNet): the whole board dims
+    // and the highlighted net's copper pops. pcb_painter.cpp getColor darkens
+    // every non-highlighted item by (1−highlightFactor)=0.5 and brightens the
+    // highlighted ones by highlightFactor=0.5. We reproduce the darken with a
+    // 50%-black wash over the raster (source-over: dst·0.5, exactly Darkened
+    // (0.5)), then repaint the highlighted net Brightened(0.5) on top. Skipped
+    // while dragging (the move overlay owns the frame).
     {
       const hs = highlightSceneRef.current;
       if (hs && !moveDeltaRef.current) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.save();
-        drawBoard(
-          ctx,
-          hs,
-          v,
-          visible,
-          canvas.width,
-          canvas.height,
-          drawOpts,
-          undefined,
-          true,
-          0.45,
-        );
+        drawBoard(ctx, hs, v, visible, canvas.width, canvas.height, drawOpts, undefined, true, 0.5);
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
@@ -1427,6 +1478,84 @@ export function PcbEditor({
     setSelection(new Set(ids));
   }, [commitBoard]);
 
+  // Align selected items like ALIGN_DISTRIBUTE_TOOL: choose the target item
+  // under the cursor when there is one, otherwise the first selected item in
+  // KiCad's sorted order, then move each item's own bounding box to that target.
+  const alignSelection = useCallback(
+    (action: AlignAction) => {
+      const brd = boardRef.current;
+      const sel = [...selForDrawRef.current];
+      if (!brd || sel.length < 2) return;
+
+      const entries = sel
+        .map((id) => {
+          const bbox = boardItemBBox(brd, id);
+          return bbox ? { id, bbox } : null;
+        })
+        .filter((entry): entry is { id: string; bbox: BoardBBox } => !!entry);
+      if (entries.length < 2) return;
+
+      const effective =
+        flipView && action === 'left' ? 'right' : flipView && action === 'right' ? 'left' : action;
+      const sorted = [...entries].sort((a, b) => {
+        switch (effective) {
+          case 'left':
+            return a.bbox.minX - b.bbox.minX;
+          case 'right':
+            return b.bbox.maxX - a.bbox.maxX;
+          case 'top':
+            return a.bbox.minY - b.bbox.minY;
+          case 'bottom':
+            return b.bbox.maxY - a.bbox.maxY;
+          case 'centerX':
+            return bboxCenter(a.bbox).x - bboxCenter(b.bbox).x;
+          case 'centerY':
+            return bboxCenter(a.bbox).y - bboxCenter(b.bbox).y;
+        }
+        return 0;
+      });
+      const cursorHit = cursorRef.current
+        ? sorted.find((entry) => bboxContainsPoint(entry.bbox, cursorRef.current!))
+        : undefined;
+      const target = cursorHit ?? sorted[0];
+      if (!target) return;
+
+      const targetCenter = bboxCenter(target.bbox);
+      let next = brd;
+      let changed = false;
+      for (const entry of entries) {
+        const center = bboxCenter(entry.bbox);
+        let delta = { x: 0, y: 0 };
+        switch (effective) {
+          case 'left':
+            delta = { x: target.bbox.minX - entry.bbox.minX, y: 0 };
+            break;
+          case 'right':
+            delta = { x: target.bbox.maxX - entry.bbox.maxX, y: 0 };
+            break;
+          case 'top':
+            delta = { x: 0, y: target.bbox.minY - entry.bbox.minY };
+            break;
+          case 'bottom':
+            delta = { x: 0, y: target.bbox.maxY - entry.bbox.maxY };
+            break;
+          case 'centerX':
+            delta = { x: targetCenter.x - center.x, y: 0 };
+            break;
+          case 'centerY':
+            delta = { x: 0, y: targetCenter.y - center.y };
+            break;
+        }
+        if (delta.x !== 0 || delta.y !== 0) {
+          next = moveBoardItems(next, new Set([entry.id]), delta);
+          changed = true;
+        }
+      }
+      if (changed) commitBoard(next);
+    },
+    [commitBoard, flipView],
+  );
+
   const zoomToFit = useCallback(() => {
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
@@ -1490,14 +1619,24 @@ export function PcbEditor({
     if (!wrap || !canvas) return;
     const ro = new ResizeObserver(() => {
       const r = wrap.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(r.width * dpr));
-      canvas.height = Math.max(1, Math.round(r.height * dpr));
-      canvas.style.width = `${r.width}px`;
-      canvas.style.height = `${r.height}px`;
+      const w = Math.max(1, Math.round(r.width * dpr));
+      const h = Math.max(1, Math.round(r.height * dpr));
+      // Assigning canvas.width clears the canvas even when the value is
+      // unchanged, blanking the board for a frame. This effect re-runs (and
+      // re-observes, firing an initial callback) whenever the draw options
+      // change, so only touch the canvas on a REAL size change — otherwise a
+      // left-toolbar toggle flickers the whole view.
+      const changed = canvas.width !== w || canvas.height !== h;
+      if (changed) {
+        canvas.width = w;
+        canvas.height = h;
+        canvas.style.width = `${r.width}px`;
+        canvas.style.height = `${r.height}px`;
+      }
       if (!fittedRef.current && sceneRef.current) {
         fittedRef.current = true;
         zoomToFit();
-      } else {
+      } else if (changed) {
         sceneDirtyRef.current = true;
         requestDraw();
       }
@@ -1582,19 +1721,40 @@ export function PcbEditor({
         ? 'vias'
         : kind === 'footprint'
           ? 'footprints'
-          : kind === 'zone'
-            ? 'zones'
-            : kind === 'shape'
-              ? 'graphics'
-              : kind === 'text' || kind === 'fptext'
-                ? 'text'
-                : null;
+          : kind === 'pad'
+            ? 'pads'
+            : kind === 'zone'
+              ? 'zones'
+              : kind === 'shape'
+                ? 'graphics'
+                : kind === 'text' || kind === 'fptext'
+                  ? 'text'
+                  : null;
   const passesFilter = (id: string): boolean => {
     const r = parseBoardItemId(id);
     if (!r) return false;
     const key = filterKeyOf(r.kind);
     return key ? selFilter.has(key) : true;
   };
+
+  // Hit candidates at a board point — KiCad's selectPoint pipeline: collect
+  // with exact hit distances, Selection Filter, then GuessSelectionCandidates
+  // (slop pruning, the 1.5× coverage-area heuristic, active-layer preference),
+  // all transcribed in boardHitCandidates. One id = unambiguous click; several
+  // = KiCad would pop the disambiguation menu.
+  const hitCandidates = (w: { x: number; y: number }): string[] => {
+    const brd = boardRef.current;
+    if (!brd) return [];
+    const canvas = canvasRef.current;
+    const v = viewRef.current;
+    return boardHitCandidates(brd, w, tolOf(), {
+      filter: passesFilter,
+      activeLayer,
+      visibleLayers: visible,
+      viewportIU: canvas ? { w: canvas.width / v.scale, h: canvas.height / v.scale } : undefined,
+    });
+  };
+
   const tolOf = (): number => (5 * dpr) / viewRef.current.scale; // ~5px, like COLLECTORS_GUIDE
 
   // Set the selection to (or toggle) a single item id (null clears).
@@ -1617,19 +1777,15 @@ export function PcbEditor({
     const w = worldAt(clientX, clientY);
     const brd = boardRef.current;
     if (!w || !brd) return;
-    const cands = boardHitCandidates(brd, w, tolOf()).filter(passesFilter);
+    const cands = hitCandidates(w);
     if (cands.length === 0) {
       applySelect(null, additive);
       return;
     }
-    // guessSelectionCandidates: keep only the top-priority tier (a track over a
-    // footprint resolves to the track, no menu); ambiguous only within a tier.
-    const rankOf = (id: string): number => {
-      const k = parseBoardItemId(id)?.kind;
-      return k === 'zone' ? 2 : k === 'footprint' ? 1 : 0;
-    };
-    const tier = cands.filter((c) => rankOf(c) === rankOf(cands[0]!));
-    if (tier.length <= 1) {
+    // GuessSelectionCandidates already pruned the list; a single survivor is
+    // selected outright, several raise the disambiguation menu (selectPoint:
+    // "If still more than one item we're going to have to ask the user").
+    if (cands.length === 1) {
       applySelect(cands[0]!, additive);
       return;
     }
@@ -2095,6 +2251,50 @@ export function PcbEditor({
     requestDraw();
   };
 
+  // Net highlight actions (BOARD_INSPECTION_TOOL). Held in refs so the global
+  // keydown handler stays subscribed without re-binding every render.
+  // `highlightNet` (backtick): highlight the net of the copper item under the
+  // cursor; re-invoking on the same (sole) net toggles it off, like KiCad.
+  const highlightNetRef = useRef<() => void>(() => {});
+  highlightNetRef.current = () => {
+    const cur = cursorRef.current;
+    if (!cur) return;
+    const net = copperAt(cur)?.net ?? 0;
+    setHighlightNets((prev) => {
+      if (prev.size > 0) lastHighlightRef.current = prev;
+      // Empty spot, or clicking the already-highlighted sole net: clear.
+      if (net <= 0 || (prev.size === 1 && prev.has(net))) return new Set();
+      return new Set([net]);
+    });
+  };
+  // `~` (Clear Net Highlighting).
+  const clearHighlightRef = useRef<() => void>(() => {});
+  clearHighlightRef.current = () => {
+    setHighlightNets((prev) => {
+      if (prev.size === 0) return prev;
+      lastHighlightRef.current = prev;
+      return new Set();
+    });
+  };
+  // Toggle Net Highlight (the left-toolbar button / Alt+`). If a highlight is
+  // showing, hide it (KiCad's `turnOn = highlighted.empty() && …`). Otherwise
+  // highlight the net(s) of the current selection — PCB_ACTIONS::
+  // highlightNetSelection, "highlight all copper items on the selected net(s)"
+  // — falling back to the last highlighted set when nothing carries a net.
+  const toggleHighlightRef = useRef<() => void>(() => {});
+  toggleHighlightRef.current = () => {
+    setHighlightNets((prev) => {
+      if (prev.size > 0) {
+        lastHighlightRef.current = prev;
+        return new Set();
+      }
+      const sel = selectedNetsRef.current;
+      const next = sel.size > 0 ? new Set(sel) : new Set(lastHighlightRef.current);
+      if (next.size > 0) lastHighlightRef.current = next;
+      return next;
+    });
+  };
+
   const onPointerDown = (e: React.PointerEvent): void => {
     if (e.button === 1) {
       panRef.current = { x: e.clientX, y: e.clientY };
@@ -2111,8 +2311,7 @@ export function PcbEditor({
       }
       const w = worldAt(e.clientX, e.clientY);
       const brd = boardRef.current;
-      const hitId =
-        w && brd ? (boardHitCandidates(brd, w, tolOf()).filter(passesFilter)[0] ?? null) : null;
+      const hitId = w && brd ? (hitCandidates(w)[0] ?? null) : null;
       downRef.current = {
         x: e.clientX,
         y: e.clientY,
@@ -2201,7 +2400,7 @@ export function PcbEditor({
           const w = worldAt(e.clientX, e.clientY);
           const brd = boardRef.current;
           if (w && brd) {
-            const hit = boardHitCandidates(brd, w, tolOf()).filter(passesFilter)[0];
+            const hit = hitCandidates(w)[0];
             if (hit) {
               commitBoard(deleteBoardItems(brd, new Set([hit])));
               setSelection(new Set());
@@ -2213,9 +2412,11 @@ export function PcbEditor({
           const w = worldAt(e.clientX, e.clientY);
           const brd = boardRef.current;
           if (w && brd) {
+            // A footprint hit, or any of its children (pad / text) — the
+            // heuristics prefer the pad, but the tool acts on the footprint.
             const fpHit = boardHitCandidates(brd, w, tolOf())
               .map((id) => parseBoardItemId(id))
-              .find((r) => r?.kind === 'footprint');
+              .find((r) => r?.kind === 'footprint' || r?.kind === 'pad' || r?.kind === 'fptext');
             if (fpHit) {
               setLocalRats((prev) => {
                 const next = new Set(prev);
@@ -2332,6 +2533,19 @@ export function PcbEditor({
         return;
       }
       if (!mod && (e.key === 'f' || e.key === 'F')) zoomToFit();
+      // Net highlight (BOARD_INSPECTION_TOOL). `~` clears; Alt+` toggles the last
+      // highlight on/off; a bare ` highlights the net under the cursor.
+      if (!mod && e.key === '~') {
+        e.preventDefault();
+        clearHighlightRef.current();
+        return;
+      }
+      if (e.key === '`') {
+        e.preventDefault();
+        if (e.altKey) toggleHighlightRef.current();
+        else highlightNetRef.current();
+        return;
+      }
       if (e.key === 'Escape') {
         // Escape cancels an in-flight grab first, then the disambiguation menu,
         // then clears the selection.
@@ -2591,6 +2805,9 @@ export function PcbEditor({
       if (r.kind === 'footprint' || r.kind === 'fptext') {
         const fp = board.footprints[r.index];
         if (fp) for (const p of fp.pads) if (p.net && p.net > 0) nets.add(p.net);
+      } else if (r.kind === 'pad') {
+        const p = board.footprints[r.index]?.pads[r.sub ?? 0];
+        if (p?.net && p.net > 0) nets.add(p.net);
       } else if (r.kind === 'track') {
         const t = board.tracks[r.index];
         if (t && t.net > 0) nets.add(t.net);
@@ -2607,33 +2824,43 @@ export function PcbEditor({
   const selectedNetsRef = useRef<ReadonlySet<number>>(selectedNets);
   selectedNetsRef.current = selectedNets;
 
-  // Highlight scene: all copper (tracks/arcs/vias/zones) on the selected nets,
-  // painted brightened over the raster so clicking a pad/part lights up the
-  // whole net it belongs to (KiCad's selection/cross-probe net highlight).
+  // "Toggle Net Highlight" is greyed unless a net is designated for highlight
+  // (KiCad's enableNetHighlightCond = IsNetHighlightSet). We enable it whenever
+  // the selection carries a net (so a click highlights that net) or a highlight
+  // is already active (so a click can toggle it off).
+  const leftDisabled = useMemo(() => {
+    const s = new Set<string>();
+    if (selectedNets.size === 0 && highlightNets.size === 0) s.add('toggleNetHighlight');
+    return s;
+  }, [selectedNets, highlightNets]);
+
+  // Highlight scene: all copper (tracks/arcs/vias/zones) on the highlighted
+  // nets, painted Brightened(0.5) over the dimmed board — BOARD_INSPECTION_TOOL
+  // net highlight (pcb_painter.cpp: highlighted items brighten, the rest darken).
   const highlightSceneRef = useRef<BoardScene | null>(null);
   useEffect(() => {
     const brd = boardRef.current;
-    if (!brd || selectedNets.size === 0) {
+    if (!brd || highlightNets.size === 0) {
       highlightSceneRef.current = null;
       requestDraw();
       return;
     }
     const ids = new Set<string>();
     brd.tracks.forEach((t, i) => {
-      if (selectedNets.has(t.net)) ids.add(boardItemId('track', i));
+      if (highlightNets.has(t.net)) ids.add(boardItemId('track', i));
     });
     brd.arcs.forEach((a, i) => {
-      if (selectedNets.has(a.net)) ids.add(boardItemId('arc', i));
+      if (highlightNets.has(a.net)) ids.add(boardItemId('arc', i));
     });
     brd.vias.forEach((vv, i) => {
-      if (selectedNets.has(vv.net)) ids.add(boardItemId('via', i));
+      if (highlightNets.has(vv.net)) ids.add(boardItemId('via', i));
     });
     brd.zones.forEach((z, i) => {
-      if (selectedNets.has(z.net)) ids.add(boardItemId('zone', i));
+      if (highlightNets.has(z.net)) ids.add(boardItemId('zone', i));
     });
     highlightSceneRef.current = ids.size > 0 ? buildScene(subsetBoardItems(brd, ids)) : null;
     requestDraw();
-  }, [selectedNets, requestDraw]);
+  }, [highlightNets, requestDraw]);
 
   // Only recompute the ratsnest live during a drag on boards small enough that
   // a per-frame buildRatsnest stays smooth (bigger boards update on drop).
@@ -2778,6 +3005,11 @@ export function PcbEditor({
       setObjects((p) => ({ ...p, ratsnest: !p.ratsnest }));
       return;
     }
+    // Toggle Net Highlight: show/hide the last-highlighted net set.
+    if (id === 'toggleNetHighlight') {
+      toggleHighlightRef.current();
+      return;
+    }
     setToggles((prev) => {
       const next = new Set(prev);
       const group = RADIO_GROUPS.find((g) => g.includes(id));
@@ -2850,6 +3082,7 @@ export function PcbEditor({
   // ----- menus (menubar_pcb_editor.cpp structure, working subset active) ------
 
   const dis = true;
+  const alignDisabled = selection.size < 2;
   const menus: Menu[] = [
     {
       label: 'File',
@@ -2875,6 +3108,43 @@ export function PcbEditor({
         { sep: true },
         { label: 'Duplicate', action: duplicateSel, shortcut: 'Ctrl+D' },
         { label: 'Delete', action: deleteSel, shortcut: 'Del' },
+        { sep: true },
+        {
+          label: 'Align/Distribute',
+          submenu: [
+            {
+              label: 'Align to Left',
+              action: () => alignSelection('left'),
+              disabled: alignDisabled,
+            },
+            {
+              label: 'Align to Horizontal Center',
+              action: () => alignSelection('centerX'),
+              disabled: alignDisabled,
+            },
+            {
+              label: 'Align to Right',
+              action: () => alignSelection('right'),
+              disabled: alignDisabled,
+            },
+            { sep: true },
+            {
+              label: 'Align to Top',
+              action: () => alignSelection('top'),
+              disabled: alignDisabled,
+            },
+            {
+              label: 'Align to Vertical Center',
+              action: () => alignSelection('centerY'),
+              disabled: alignDisabled,
+            },
+            {
+              label: 'Align to Bottom',
+              action: () => alignSelection('bottom'),
+              disabled: alignDisabled,
+            },
+          ],
+        },
         { sep: true },
         { label: 'Find', disabled: dis, shortcut: 'Ctrl+F' },
         { sep: true },
@@ -2962,7 +3232,244 @@ export function PcbEditor({
     if (toggles.has('unitsMils')) return ((mm / 25.4) * 1000).toFixed(2);
     return mm.toFixed(4);
   };
+  const fmtAngle = (rad: number): string => `${((rad * 180) / Math.PI).toFixed(3)}`;
   const unitLabel = toggles.has('unitsInches') ? 'in' : toggles.has('unitsMils') ? 'mils' : 'mm';
+  const statusCoordText = cursor ? `X ${fmtCoord(cursor.x)}  Y ${fmtCoord(cursor.y)}` : 'X —  Y —';
+  const statusDeltaText = cursor
+    ? toggles.has('togglePolarCoords')
+      ? `r ${fmtCoord(Math.hypot(cursor.x, cursor.y))}  theta ${fmtAngle(Math.atan2(-cursor.y, cursor.x))}`
+      : `dx ${fmtCoord(cursor.x)}  dy ${fmtCoord(cursor.y)}  dist ${fmtCoord(Math.hypot(cursor.x, cursor.y))}`
+    : toggles.has('togglePolarCoords')
+      ? 'r —  theta —'
+      : 'dx —  dy —  dist —';
+  const gridText = `grid ${fmtCoord(DEFAULT_GRID_OPTIONS.size)}`;
+  // Field 6 (EDA_DRAW_FRAME::DisplayToolMsg, the "Current Tool" panel): the
+  // friendly name of the active right-toolbar tool, blank in the selection tool.
+  const toolMsg = PCB_TOOL_MSGS[activeTool] ?? '';
+  // Field 7 (DisplayConstraintsMsg): the line-constraint hint shown while a
+  // line/track drawing tool is active (COMMON_TOOLS line mode).
+  const constraintMsg =
+    routeRef.current || DRAW_SHAPE_TOOLS[activeTool]
+      ? toggles.has('lineMode45')
+        ? 'Constrain to H, V, 45'
+        : toggles.has('lineMode90')
+          ? 'Constrain to H, V'
+          : ''
+      : '';
+  const messagePanelItems: MsgPanelItem[] = useMemo(() => {
+    if (!board)
+      return [
+        { upper: 'Pads', lower: '0' },
+        { upper: 'Vias', lower: '0' },
+        { upper: 'Track Segments', lower: '0' },
+        { upper: 'Nets', lower: '0' },
+        { upper: 'Unrouted', lower: '0' },
+      ];
+
+    const net = (code: number): string =>
+      board.nets.get(code) || (code === 0 ? '<no net>' : `net ${code}`);
+    const itemPos = (bbox: BoardBBox | null): string =>
+      bbox ? `X ${fmtCoord(bboxCenter(bbox).x)}  Y ${fmtCoord(bboxCenter(bbox).y)}` : '';
+    const selectedIds = [...selection];
+
+    if (selectedIds.length === 0) {
+      const padCount = board.footprints.reduce((sum, fp) => sum + fp.pads.length, 0);
+      return [
+        { upper: 'Pads', lower: String(padCount) },
+        { upper: 'Vias', lower: String(board.vias.length) },
+        { upper: 'Track Segments', lower: String(board.tracks.length + board.arcs.length) },
+        { upper: 'Nets', lower: String(Math.max(0, board.nets.size - 1)) },
+        { upper: 'Unrouted', lower: String(ratsnestEdges.length) },
+      ];
+    }
+
+    if (selectedIds.length === 1) {
+      const id = selectedIds[0]!;
+      const r = parseBoardItemId(id);
+      const bbox = boardItemBBox(board, id);
+      const common = [
+        { upper: 'Item', lower: describeBoardItem(board, id) },
+        { upper: 'Position', lower: itemPos(bbox) },
+      ];
+      if (!r) return common;
+
+      switch (r.kind) {
+        case 'footprint': {
+          const fp = board.footprints[r.index];
+          if (!fp) return common;
+          // FOOTPRINT::GetMsgPanelInfo (board editor): reference→value, board
+          // side, rotation, then status/attributes — matching pcbnew exactly.
+          const attrLabel: Record<string, string> = {
+            board_only: 'not in schematic',
+            exclude_from_pos_files: 'exclude from pos files',
+            exclude_from_bom: 'exclude from BOM',
+            dnp: 'DNP',
+          };
+          const attrs = (fp.attributes ?? []).map((a) => attrLabel[a] ?? a).join(', ');
+          const status = fp.locked ? 'Locked' : '';
+          return [
+            { upper: fp.reference || '', lower: fp.value || '' },
+            { upper: 'Board Side', lower: fp.layer === 'B.Cu' ? 'Back (Flipped)' : 'Front' },
+            { upper: 'Rotation', lower: String(Number(fp.angle.toPrecision(4))) },
+            { upper: `Status: ${status}`, lower: `Attributes: ${attrs}` },
+          ];
+        }
+        case 'track': {
+          const t = board.tracks[r.index];
+          return t
+            ? [
+                { upper: 'Track', lower: t.layer },
+                { upper: 'Net', lower: net(t.net) },
+                { upper: 'Width', lower: fmtCoord(t.width) },
+                ...common.slice(1),
+              ]
+            : common;
+        }
+        case 'arc': {
+          const a = board.arcs[r.index];
+          return a
+            ? [
+                { upper: 'Arc', lower: a.layer },
+                { upper: 'Net', lower: net(a.net) },
+                { upper: 'Width', lower: fmtCoord(a.width) },
+                ...common.slice(1),
+              ]
+            : common;
+        }
+        case 'via': {
+          const v = board.vias[r.index];
+          return v
+            ? [
+                { upper: 'Via', lower: v.kind },
+                { upper: 'Net', lower: net(v.net) },
+                { upper: 'Size', lower: fmtCoord(v.size) },
+                { upper: 'Drill', lower: fmtCoord(v.drill) },
+                { upper: 'Position', lower: `X ${fmtCoord(v.at.x)}  Y ${fmtCoord(v.at.y)}` },
+              ]
+            : common;
+        }
+        case 'zone': {
+          const z = board.zones[r.index];
+          return z
+            ? [
+                { upper: 'Zone', lower: z.netName ?? net(z.net) },
+                { upper: 'Layers', lower: z.layers.join(', ') },
+                ...common.slice(1),
+              ]
+            : common;
+        }
+        case 'shape': {
+          const s = board.shapes[r.index];
+          return s
+            ? [
+                { upper: 'Graphic', lower: s.kind },
+                { upper: 'Layer', lower: s.layer },
+                { upper: 'Width', lower: fmtCoord(s.width) },
+                ...common.slice(1),
+              ]
+            : common;
+        }
+        case 'text': {
+          const t = board.texts[r.index];
+          return t
+            ? [
+                { upper: 'Text', lower: t.text },
+                { upper: 'Layer', lower: t.layer },
+                { upper: 'Position', lower: `X ${fmtCoord(t.at.x)}  Y ${fmtCoord(t.at.y)}` },
+              ]
+            : common;
+        }
+        case 'fptext': {
+          const fp = board.footprints[r.index];
+          const t = fp?.texts[r.sub ?? 0];
+          return t
+            ? [
+                { upper: 'Footprint Text', lower: t.text },
+                { upper: 'Footprint', lower: fp?.reference || fp?.lib || '' },
+                { upper: 'Layer', lower: t.layer },
+                { upper: 'Position', lower: `X ${fmtCoord(t.at.x)}  Y ${fmtCoord(t.at.y)}` },
+              ]
+            : common;
+        }
+        case 'pad': {
+          const fp = board.footprints[r.index];
+          const p = fp?.pads[r.sub ?? 0];
+          if (!p) return common;
+          // PAD::GetMsgPanelInfo (board editor): Footprint, Pad, Net, Layer,
+          // shape/type, size + rotation, then hole — matching pcbnew's order.
+          const dim = (iu: number): string => `${fmtCoord(iu)} ${unitLabel}`;
+          const shapeLabel = p.shape.charAt(0).toUpperCase() + p.shape.slice(1);
+          // Pad type abbreviations (ShowPadAttr): plated/non-plated through hole,
+          // SMD, connector.
+          const padType =
+            p.type === 'thru_hole'
+              ? 'PTH'
+              : p.type === 'np_thru_hole'
+                ? 'NPTH'
+                : p.type === 'smd'
+                  ? 'SMD'
+                  : p.type === 'connect'
+                    ? 'Connector'
+                    : p.type;
+          const sizeItems =
+            p.shape === 'circle'
+              ? [{ upper: 'Diameter', lower: dim(p.size.x) }]
+              : [
+                  { upper: 'Width', lower: dim(p.size.x) },
+                  { upper: 'Height', lower: dim(p.size.y) },
+                ];
+          const holeItems = p.drill
+            ? [
+                {
+                  upper: p.drill.oblong ? 'Hole X / Y' : 'Hole',
+                  lower: p.drill.oblong
+                    ? `${fmtCoord(p.drill.w)} / ${fmtCoord(p.drill.h)} ${unitLabel}`
+                    : dim(p.drill.w),
+                },
+              ]
+            : [];
+          const pinItems = [
+            ...(p.pinFunction ? [{ upper: 'Pin Name', lower: p.pinFunction }] : []),
+            ...(p.pinType ? [{ upper: 'Pin Type', lower: p.pinType }] : []),
+          ];
+          return [
+            { upper: 'Footprint', lower: fp?.reference || fp?.lib || '' },
+            { upper: 'Pad', lower: p.number },
+            ...pinItems,
+            { upper: 'Net', lower: net(p.net ?? 0) },
+            { upper: 'Resolved Netclass', lower: netClassOf.get(p.net ?? 0) ?? 'Default' },
+            { upper: 'Layer', lower: p.layers.join(', ') },
+            { upper: shapeLabel, lower: padType },
+            ...sizeItems,
+            { upper: 'Rotation', lower: String(Number((p.angle ?? 0).toPrecision(4))) },
+            ...holeItems,
+          ];
+        }
+      }
+    }
+
+    const labels: Partial<Record<BoardItemKind, string>> = {
+      footprint: 'Footprints',
+      fptext: 'Footprint Text',
+      pad: 'Pads',
+      track: 'Tracks',
+      arc: 'Arcs',
+      via: 'Vias',
+      zone: 'Zones',
+      shape: 'Graphics',
+      text: 'Text',
+    };
+    const counts = new Map<string, number>();
+    for (const id of selectedIds) {
+      const r = parseBoardItemId(id);
+      const label = r ? (labels[r.kind] ?? r.kind) : 'Items';
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    return [
+      { upper: 'Selection', lower: `${selectedIds.length} items` },
+      ...[...counts.entries()].map(([upper, count]) => ({ upper, lower: String(count) })),
+    ];
+  }, [board, fmtCoord, ratsnestEdges.length, selection, netClassOf, unitLabel]);
 
   return (
     <div className="ze-app">
@@ -3075,6 +3582,7 @@ export function PcbEditor({
           orientation="vertical"
           side="left"
           toggled={leftToggles}
+          disabledIds={leftDisabled}
           onActivate={onLeftToggle}
         />
 
@@ -3973,35 +4481,36 @@ export function PcbEditor({
         </>
       )}
 
-      {/* pcbnew's two-part status bar: item counts row, then position row. */}
-      <div className="ze-statusbar" style={{ gap: 18 }}>
-        <span className="cell">
-          <b>Pads</b> {board?.footprints.reduce((n, f) => n + f.pads.length, 0) ?? 0}
-        </span>
-        <span className="cell">
-          <b>Vias</b> {board?.vias.length ?? 0}
-        </span>
-        <span className="cell">
-          <b>Track Segments</b> {board ? board.tracks.length + board.arcs.length : 0}
-        </span>
-        <span className="cell">
-          <b>Nets</b> {board ? Math.max(0, board.nets.size - 1) : 0}
-        </span>
-        <span className="cell grow">
-          <b>Unrouted</b> {ratsnestEdges.length}
-        </span>
-        <span className="cell">{fileName}</span>
+      {/* EDA_DRAW_FRAME hosts a message panel above pcbnew's 8-field status bar. */}
+      <div className="ze-msgpanel" data-testid="pcb-message-panel">
+        {messagePanelItems.map((item) => (
+          <div className="ze-msgpanel-item" key={`${item.upper}:${item.lower}`}>
+            <div className="ze-msgpanel-upper">{item.upper}</div>
+            <div className="ze-msgpanel-lower">{item.lower || '\u00a0'}</div>
+          </div>
+        ))}
       </div>
+
+      {/* pcbnew's 8-field KISTATUSBAR (eda_draw_frame.cpp updateStatusBarWidths):
+          message (grows) | Z zoom | absolute X/Y | relative dx/dy/dist or polar
+          r/theta | grid | units | current-tool (grows) | constraint mode. */}
       <div className="ze-statusbar">
+        <span className="cell msg" data-testid="pcb-status-msg" />
         <span className="cell">Z {scale > 0 ? (scale * 1000).toFixed(2) : '—'}</span>
-        <span className="cell">
-          {cursor ? `X ${fmtCoord(cursor.x)} Y ${fmtCoord(cursor.y)}` : 'X — Y —'}
+        <span className="cell" data-testid="pcb-absolute-coords">
+          {statusCoordText}
         </span>
-        <span className="cell">
-          {cursor ? `dx ${fmtCoord(cursor.x)}  dy ${fmtCoord(cursor.y)}` : 'dx — dy —'}
+        <span className="cell" data-testid="pcb-relative-coords">
+          {statusDeltaText}
         </span>
-        <span className="cell grow">{activeLayer}</span>
-        <span className="cell">{unitLabel}</span>
+        <span className="cell">{gridText}</span>
+        <span className="cell">{unitLabel === 'in' ? 'inches' : unitLabel}</span>
+        <span className="cell tool" data-testid="pcb-tool-msg">
+          {toolMsg}
+        </span>
+        <span className="cell constraint" data-testid="pcb-constraint-msg">
+          {constraintMsg}
+        </span>
       </div>
     </div>
   );
@@ -4048,6 +4557,12 @@ function describeBoardItem(board: Board, id: string): string {
       if (!t) return 'Text';
       const label = t.kind === 'reference' ? 'Reference' : t.kind === 'value' ? 'Value' : 'Text';
       return `${label} "${t.text}"${f?.reference ? ` of ${f.reference}` : ''}`;
+    }
+    case 'pad': {
+      const f = board.footprints[r.index];
+      const p = f?.pads[r.sub ?? 0];
+      if (!p) return 'Pad';
+      return `Pad ${p.number}${f?.reference ? ` of ${f.reference}` : ''} · ${net(p.net ?? 0)}`;
     }
   }
 }
@@ -4308,6 +4823,189 @@ function FootprintProps({
 
 /** Read-only summary of the current selection for the Properties panel — the
  *  first slice of pcbnew's PCB_PROPERTIES_PANEL (editable fields come later). */
+// Property-grid mm formatter (KiCad's PCB_PROPERTIES_PANEL shows 2 decimals).
+const pgMM = (iu: number): string => `${iuToMM(iu).toFixed(2)} mm`;
+
+/** The PAD property grid (PCB_PROPERTIES_PANEL: PAD reflected properties). */
+function PadProps({ pad, netName }: { pad: PcbPad; netName: (c: number) => string }): JSX.Element {
+  const [open, setOpen] = useState<Record<string, boolean>>({
+    Basic: true,
+    Pad: true,
+    Overrides: true,
+  });
+  const toggle = (g: string): void => setOpen((o) => ({ ...o, [g]: !o[g] }));
+  const padType =
+    {
+      thru_hole: 'Through-hole',
+      np_thru_hole: 'NPTH, mechanical',
+      smd: 'SMD',
+      connect: 'Edge connector',
+    }[pad.type] ?? pad.type;
+  const padShape =
+    {
+      circle: 'Circle',
+      rect: 'Rectangle',
+      roundrect: 'Rounded rectangle',
+      oval: 'Oval',
+      trapezoid: 'Trapezoidal',
+      custom: 'Custom',
+    }[pad.shape] ?? pad.shape;
+  // Copper layers: a through pad spans all copper (KiCad "All copper layers");
+  // an SMD pad names its single copper layer.
+  const copperLayers = pad.layers.some((l) => l === '*.Cu')
+    ? 'All copper layers'
+    : pad.layers.filter((l) => /\.Cu$/.test(l)).join(', ') || pad.layers.join(', ');
+  const holeRound = !pad.drill?.oblong;
+  return (
+    <div className="ze-pg">
+      <div className="ze-pg-title">Pad</div>
+      <PgCat label="Basic Properties" open={open.Basic ?? true} onToggle={() => toggle('Basic')} />
+      {(open.Basic ?? true) && (
+        <>
+          <PgRO label="Position X" value={pgMM(pad.at.x)} />
+          <PgRO label="Position Y" value={pgMM(pad.at.y)} />
+          <PgRO label="Net" value={netName(pad.net ?? 0)} />
+          <PgRO label="Orientation" value={`${fmtOrient(pad.angle ?? 0)}°`} />
+        </>
+      )}
+      <PgCat label="Pad Properties" open={open.Pad ?? true} onToggle={() => toggle('Pad')} />
+      {(open.Pad ?? true) && (
+        <>
+          <PgRO label="Pad Type" value={padType} />
+          <PgRO label="Pad Shape" value={padShape} />
+          <PgRO label="Pad Number" value={pad.number} />
+          <PgRO label="Pin Name" value={pad.pinFunction ?? ''} />
+          <PgRO label="Pin Type" value={pad.pinType ?? ''} />
+          <PgRO label="Size X" value={pgMM(pad.size.x)} />
+          {pad.shape !== 'circle' && <PgRO label="Size Y" value={pgMM(pad.size.y)} />}
+          {pad.drill && <PgRO label="Hole Shape" value={holeRound ? 'Round' : 'Oval'} />}
+          {pad.drill && <PgRO label="Hole Size X" value={pgMM(pad.drill.w)} />}
+          {pad.drill && !holeRound && <PgRO label="Hole Size Y" value={pgMM(pad.drill.h)} />}
+          <PgRO label="Fabrication Property" value="None" />
+          <PgRO label="Copper Layers" value={copperLayers} />
+          <PgRO label="Pad To Die Length" value="0 mm" />
+        </>
+      )}
+      <PgCat label="Overrides" open={open.Overrides ?? true} onToggle={() => toggle('Overrides')} />
+      {(open.Overrides ?? true) && (
+        <>
+          <PgRO label="Clearance Override" value="" />
+          <PgRO label="Soldermask Margin Override" value="" />
+          <PgRO label="Solderpaste Margin Override" value="" />
+          <PgRO label="Solderpaste Margin Ratio Override" value="" />
+          <PgRO label="Zone Connection Style" value="Inherited" />
+          <PgRO label="Thermal Relief Spoke Angle" value="45°" />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The TRACK / ARC property grid (PCB_TRACK reflected properties). */
+function TrackProps({
+  track,
+  arc,
+  netName,
+}: {
+  track?: PcbTrack;
+  arc?: PcbArcTrack;
+  netName: (c: number) => string;
+}): JSX.Element {
+  const t = track ?? arc!;
+  const [open, setOpen] = useState<Record<string, boolean>>({ Basic: true, Track: true });
+  const toggle = (g: string): void => setOpen((o) => ({ ...o, [g]: !o[g] }));
+  return (
+    <div className="ze-pg">
+      <div className="ze-pg-title">{arc ? 'Track (Arc)' : 'Track'}</div>
+      <PgCat label="Basic Properties" open={open.Basic ?? true} onToggle={() => toggle('Basic')} />
+      {(open.Basic ?? true) && (
+        <>
+          <PgRO label="Start X" value={pgMM(t.start.x)} />
+          <PgRO label="Start Y" value={pgMM(t.start.y)} />
+          <PgRO label="End X" value={pgMM(t.end.x)} />
+          <PgRO label="End Y" value={pgMM(t.end.y)} />
+          <PgRO label="Net" value={netName(t.net)} />
+        </>
+      )}
+      <PgCat label="Track Properties" open={open.Track ?? true} onToggle={() => toggle('Track')} />
+      {(open.Track ?? true) && (
+        <>
+          <PgLayer label="Layer" layer={t.layer} color={layerColor(t.layer)} />
+          <PgRO label="Width" value={pgMM(t.width)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The VIA property grid (PCB_VIA reflected properties). */
+function ViaProps({ via, netName }: { via: PcbVia; netName: (c: number) => string }): JSX.Element {
+  const [open, setOpen] = useState<Record<string, boolean>>({ Basic: true, Via: true });
+  const toggle = (g: string): void => setOpen((o) => ({ ...o, [g]: !o[g] }));
+  const viaType =
+    { through: 'Through', blind: 'Blind/buried', micro: 'Microvia' }[via.kind] ?? via.kind;
+  return (
+    <div className="ze-pg">
+      <div className="ze-pg-title">Via</div>
+      <PgCat label="Basic Properties" open={open.Basic ?? true} onToggle={() => toggle('Basic')} />
+      {(open.Basic ?? true) && (
+        <>
+          <PgRO label="Position X" value={pgMM(via.at.x)} />
+          <PgRO label="Position Y" value={pgMM(via.at.y)} />
+          <PgRO label="Net" value={netName(via.net)} />
+        </>
+      )}
+      <PgCat label="Via Properties" open={open.Via ?? true} onToggle={() => toggle('Via')} />
+      {(open.Via ?? true) && (
+        <>
+          <PgRO label="Via Type" value={viaType} />
+          <PgRO label="Diameter" value={pgMM(via.size)} />
+          <PgRO label="Hole" value={pgMM(via.drill)} />
+          <PgLayer label="Layer Top" layer={via.layers[0]} color={layerColor(via.layers[0])} />
+          <PgLayer label="Layer Bottom" layer={via.layers[1]} color={layerColor(via.layers[1])} />
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The ZONE property grid (ZONE reflected properties; from parsed fields). */
+function ZoneProps({
+  zone,
+  netName,
+}: {
+  zone: PcbZone;
+  netName: (c: number) => string;
+}): JSX.Element {
+  const [open, setOpen] = useState<Record<string, boolean>>({ Basic: true, Fill: true });
+  const toggle = (g: string): void => setOpen((o) => ({ ...o, [g]: !o[g] }));
+  const border =
+    zone.hatchStyle === 'full'
+      ? 'Hatched'
+      : zone.hatchStyle === 'edge'
+        ? 'Hatched border'
+        : 'Solid';
+  return (
+    <div className="ze-pg">
+      <div className="ze-pg-title">Copper Zone</div>
+      <PgCat label="Basic Properties" open={open.Basic ?? true} onToggle={() => toggle('Basic')} />
+      {(open.Basic ?? true) && (
+        <>
+          <PgRO label="Net" value={zone.netName ?? netName(zone.net)} />
+          <PgRO label="Layers" value={zone.layers.join(', ')} />
+        </>
+      )}
+      <PgCat label="Fill Style" open={open.Fill ?? true} onToggle={() => toggle('Fill')} />
+      {(open.Fill ?? true) && (
+        <>
+          <PgRO label="Border Display" value={border} />
+          <PgRO label="Filled" value={zone.fills.length > 0 ? 'Yes' : 'No'} />
+        </>
+      )}
+    </div>
+  );
+}
+
 function PcbSelectionInfo({
   board,
   selection,
@@ -4345,41 +5043,22 @@ function PcbSelectionInfo({
       switch (ref.kind) {
         case 'track': {
           const t = board.tracks[ref.index];
-          if (t)
-            return (
-              <div>
-                <b>Track</b>
-                {row('Layer', t.layer)}
-                {row('Net', netName(t.net))}
-                {row('Width', `${mm(t.width)} mm`)}
-              </div>
-            );
+          if (t) return <TrackProps track={t} netName={netName} />;
           break;
         }
         case 'arc': {
           const a = board.arcs[ref.index];
-          if (a)
-            return (
-              <div>
-                <b>Arc (track)</b>
-                {row('Layer', a.layer)}
-                {row('Net', netName(a.net))}
-                {row('Width', `${mm(a.width)} mm`)}
-              </div>
-            );
+          if (a) return <TrackProps arc={a} netName={netName} />;
           break;
         }
         case 'via': {
           const v = board.vias[ref.index];
-          if (v)
-            return (
-              <div>
-                <b>Via</b>
-                {row('Net', netName(v.net))}
-                {row('Size', `${mm(v.size)} mm`)}
-                {row('Drill', `${mm(v.drill)} mm`)}
-              </div>
-            );
+          if (v) return <ViaProps via={v} netName={netName} />;
+          break;
+        }
+        case 'pad': {
+          const p = board.footprints[ref.index]?.pads[ref.sub ?? 0];
+          if (p) return <PadProps pad={p} netName={netName} />;
           break;
         }
         case 'footprint': {
@@ -4389,14 +5068,7 @@ function PcbSelectionInfo({
         }
         case 'zone': {
           const z = board.zones[ref.index];
-          if (z)
-            return (
-              <div>
-                <b>Zone</b>
-                {row('Net', z.netName ?? netName(z.net))}
-                {row('Layers', z.layers.join(', '))}
-              </div>
-            );
+          if (z) return <ZoneProps zone={z} netName={netName} />;
           break;
         }
         case 'shape': {

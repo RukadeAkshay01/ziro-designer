@@ -404,7 +404,38 @@ body {
   flex: 0 0 auto;
 }
 
-/* Status bar */
+/* Message panel + status bar */
+/* EDA_MSG_PANEL: two rows (upper label / lower value), each one control-font
+   line high. Items are packed left-to-right — no fixed columns, no separators
+   — offset from the left by ~one character and spaced by ~one character plus
+   the item padding (updateItemPos: m_last_x += textExtent + m_fontSize.x). */
+.ze-msgpanel {
+  display: flex;
+  align-items: stretch;
+  min-height: 32px;
+  overflow: hidden;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+  color: #f0f2f4;
+  font-size: 12px;
+  padding-left: 9px;
+  gap: 22px;
+}
+.ze-msgpanel-item {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  align-content: center;
+}
+.ze-msgpanel-upper,
+.ze-msgpanel-lower {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 15px;
+}
+.ze-msgpanel-lower {
+  color: #f0f2f4;
+}
 .ze-statusbar {
   display: flex;
   align-items: center;
@@ -416,12 +447,25 @@ body {
 }
 .ze-statusbar .cell {
   padding: 0 10px;
-  border-right: 1px solid var(--chrome-border);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* KiCad's KISTATUSBAR has two stretching fields: field 0 (the message area,
+   weight -2) on the far left and field 6 (the "current tool" panel, weight -1)
+   before the constraint field. In the dark theme the field separators are
+   invisible, so we draw none — the two stretch fields position the cluster. */
+.ze-statusbar .cell.msg {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.ze-statusbar .cell.tool {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* Legacy single-grow class kept for the schematic/other editors. */
 .ze-statusbar .cell.grow {
   flex: 1;
-  border-right: none;
 }
 
 /* Non-fatal open-error banner (dismiss on click). */
