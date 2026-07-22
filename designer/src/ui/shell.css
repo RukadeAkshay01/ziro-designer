@@ -638,6 +638,137 @@ body {
   width: 240px;
   border-right: 1px solid var(--chrome-border);
 }
+
+/* Right dock (LayersManager + SelectionFilter panes): at the window edge,
+   outside the right toolbar, like pcbnew's AUI Right().Layer(4). */
+.ze-rightdock {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--chrome-border);
+  min-width: 0;
+}
+
+/* APPEARANCE_CONTROLS layer row: [indicator][swatch][eye][name] */
+.ze-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px 1px 1px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ze-layer-row:hover {
+  background: var(--chrome-hover);
+}
+.ze-layer-row.active {
+  background: var(--chrome-active);
+}
+/* INDICATOR_ICON: small right-pointing marker on the active layer row. */
+.ze-layer-indicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+}
+.ze-layer-indicator.on {
+  background: #4d7fc4;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+/* COLOR_SWATCH (SWATCH_SMALL) */
+.ze-layer-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  border: 1px solid #444;
+}
+.ze-layer-swatch.blank {
+  background: transparent;
+  border-color: transparent;
+}
+/* BITMAP_TOGGLE visibility eye */
+.ze-layer-eye {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+/* Objects tab row: [swatch|spacer][eye|spacer][label][opacity slider] */
+.ze-object-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px 1px 1px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.ze-object-row input[type="range"] {
+  height: 14px;
+}
+
+/* WX_COLLAPSIBLE_PANE ("Layer Display Options" / "Net Display Options") */
+.ze-collapsepane {
+  border-top: 1px solid var(--chrome-border);
+  padding: 4px 6px;
+}
+.ze-collapse-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.ze-collapse-arrow {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  transition: transform 0.1s;
+}
+.ze-collapse-arrow.open {
+  transform: rotate(90deg);
+}
+.ze-collapse-body {
+  padding: 2px 2px 4px 14px;
+  font-size: 12px;
+}
+.ze-collapse-body label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.ze-info {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-bottom: 2px;
+}
+.ze-hr {
+  border: none;
+  border-top: 1px solid var(--chrome-border);
+  margin: 6px 0 4px;
+}
+.ze-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Presets / Viewports row under the Appearance notebook */
+.ze-appearance-bottom {
+  border-top: 1px solid var(--chrome-border);
+  padding: 6px;
+  font-size: 12px;
+}
+.ze-appearance-bottom select {
+  width: 100%;
+  font-size: 12px;
+}
 .ze-leftdock .ze-panel {
   width: auto;
   border-right: none;

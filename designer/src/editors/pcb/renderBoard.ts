@@ -76,6 +76,14 @@ export interface PcbDrawOptions {
   trackFill: boolean;
   viaFill: boolean;
   padFill: boolean;
+  /** Opacity of filled graphic shapes (s_objectSettings "Filled Shapes"). */
+  filledShapeOpacity: number;
+  /** High-contrast mode for inactive layers (HIGH_CONTRAST_MODE): 'dim' fades
+   *  them by m_hiContrastFactor (0.2), 'hide' drops them entirely; Edge.Cuts is
+   *  clamped at 0.3 and stays visible even in hide mode (pcb_painter.cpp). */
+  contrastMode: 'normal' | 'dim' | 'hide';
+  /** The active layer, exempt from contrast dimming. */
+  activeLayer?: string;
 }
 
 /** KiCad defaults (project_local_settings.cpp + s_objectSettings). */
@@ -97,6 +105,8 @@ export const DEFAULT_DRAW_OPTIONS: PcbDrawOptions = {
   trackFill: true,
   viaFill: true,
   padFill: true,
+  filledShapeOpacity: 1.0,
+  contrastMode: 'normal',
 };
 
 interface LayerBuckets {
@@ -1081,12 +1091,21 @@ export function buildDrawSteps(
 
   const minPen = view.scale > 0 ? 1 / view.scale : 0; // 1 device px in IU
 
-  const paintZones = (layer: string) => (): void => {
+  // High-contrast alpha for a whole layer (pcb_painter.cpp getColor): inactive
+  // layers fade by m_hiContrastFactor (0.2) in dim mode and disappear in hide
+  // mode; Edge.Cuts is clamped at 0.3 and survives even hide mode.
+  const layerAlpha = (layer: string): number => {
+    if (opts.contrastMode === 'normal' || layer === opts.activeLayer) return 1;
+    if (layer === 'Edge.Cuts') return 0.3;
+    return opts.contrastMode === 'dim' ? 0.2 : 0;
+  };
+
+  const paintZones = (layer: string, la: number) => (): void => {
     const b = scene.layers.get(layer);
     if (!b || !opts.zones || (!b.hasZones && !b.hasZoneOutlines)) return;
     const color = col(layer);
     if (b.hasZones) {
-      ctx.globalAlpha = opts.zoneOpacity;
+      ctx.globalAlpha = opts.zoneOpacity * la;
       if (opts.zoneOutline) {
         // PCB_ACTIONS::zoneDisplayOutline — sketch the fill outlines.
         ctx.strokeStyle = color;
@@ -1096,30 +1115,32 @@ export function buildDrawSteps(
         ctx.fillStyle = color;
         ctx.fill(b.zones, 'nonzero');
       }
-      ctx.globalAlpha = 1;
     }
     // Zone boundary border: full opacity (color.WithAlpha(1.0)), min-pen width
     // (m_outlineWidth = 1 IU), drawn over the fill — the outline KiCad always
     // shows around a filled zone.
     if (b.hasZoneOutlines) {
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = la;
       ctx.strokeStyle = color;
       ctx.lineWidth = minPen;
       ctx.stroke(b.zoneOutlines);
     }
+    ctx.globalAlpha = 1;
   };
-  const paintCopper = (layer: string) => (): void => {
+  const paintCopper = (layer: string, la: number) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
     const color = col(layer);
     if (b.hasGfxFill) {
+      ctx.globalAlpha = opts.filledShapeOpacity * la;
       ctx.fillStyle = color;
       ctx.fill(b.gfxFill, 'nonzero');
     }
+    ctx.globalAlpha = la;
     ctx.strokeStyle = color;
     strokeAll(ctx, b.gfxStrokes, minPen);
     if (opts.tracks && b.tracks.size > 0) {
-      ctx.globalAlpha = opts.trackOpacity;
+      ctx.globalAlpha = opts.trackOpacity * la;
       if (opts.trackFill) {
         strokeAll(ctx, b.tracks, minPen);
       } else if (b.hasTrackOutlines) {
@@ -1127,10 +1148,9 @@ export function buildDrawSteps(
         ctx.lineWidth = minPen;
         ctx.stroke(b.trackOutlines);
       }
-      ctx.globalAlpha = 1;
     }
     if (opts.pads && b.hasPads) {
-      ctx.globalAlpha = opts.padOpacity;
+      ctx.globalAlpha = opts.padOpacity * la;
       if (opts.padFill) {
         ctx.fillStyle = color;
         ctx.fill(b.pads, 'nonzero');
@@ -1138,10 +1158,9 @@ export function buildDrawSteps(
         ctx.lineWidth = minPen;
         ctx.stroke(b.pads);
       }
-      ctx.globalAlpha = 1;
     }
     if (opts.vias && b.hasVias) {
-      ctx.globalAlpha = opts.viaOpacity;
+      ctx.globalAlpha = opts.viaOpacity * la;
       if (opts.viaFill) {
         ctx.fillStyle = color;
         ctx.fill(b.vias, 'nonzero');
@@ -1149,32 +1168,35 @@ export function buildDrawSteps(
         ctx.lineWidth = minPen;
         ctx.stroke(b.vias);
       }
-      ctx.globalAlpha = 1;
     }
     // Pad clearance outlines: thin (min-pen) stroke in the copper color, the
     // ring KiCad shows around every pad by default (m_Display.m_PadClearance).
     // Drawn translucent so it reads as the light "glass" ring GAL's anti-aliased
     // sub-pixel line gives, rather than a hard solid circle.
     if (opts.padClearance && b.hasClearance) {
-      ctx.globalAlpha = 0.55;
+      ctx.globalAlpha = 0.55 * la;
       ctx.strokeStyle = color;
       ctx.lineWidth = minPen;
       ctx.stroke(b.clearance);
-      ctx.globalAlpha = 1;
     }
+    ctx.globalAlpha = 1;
   };
-  const paintText = (layer: string) => (): void => {
+  const paintText = (layer: string, la: number) => (): void => {
     const b = scene.layers.get(layer);
     if (!b) return;
+    ctx.globalAlpha = la;
     ctx.strokeStyle = col(layer);
     if (opts.fpReferences) strokeAll(ctx, b.textRef);
     if (opts.fpValues) strokeAll(ctx, b.textVal);
     if (opts.fpText) strokeAll(ctx, b.textFp);
     strokeAll(ctx, b.textBoard);
+    ctx.globalAlpha = 1;
   };
   const pushLayer = (layer: string): void => {
     if (!visible.has(layer) || !scene.layers.has(layer)) return;
-    steps.push(paintZones(layer), paintCopper(layer), paintText(layer));
+    const la = layerAlpha(layer);
+    if (la <= 0) return;
+    steps.push(paintZones(layer, la), paintCopper(layer, la), paintText(layer, la));
   };
 
   const fCuIndex = PCB_PAINT_ORDER.indexOf('F.Cu');

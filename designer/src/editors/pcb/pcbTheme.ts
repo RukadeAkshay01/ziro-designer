@@ -98,6 +98,26 @@ export const PCB_SPECIAL = {
   drawingSheet: rgba(200, 114, 171),
 };
 
+/**
+ * Objects-tab swatch colors, keyed by the Objects row key, from KiCad's
+ * builtin dark theme (common/settings/builtin_color_themes.h). Rows without
+ * an entry have no theme color and show a blank spacer, like upstream.
+ */
+export const PCB_OBJECT_COLORS: Record<string, string> = {
+  ratsnest: rgba(0, 248, 255, 0.35),
+  drcWarnings: rgba(255, 208, 66, 0.8),
+  drcErrors: rgba(215, 91, 107, 0.8),
+  drcExclusions: rgba(255, 255, 255, 0.8),
+  anchors: rgba(255, 38, 226),
+  points: rgba(255, 38, 226),
+  lockedShadow: rgba(255, 38, 226, 0.5),
+  collidingCourtyards: rgba(255, 0, 5, 0.5),
+  constrainedShadow: rgba(80, 160, 240, 0.5),
+  boardAreaShadow: rgba(100, 100, 100, 0.35),
+  drawingSheet: rgba(200, 114, 171),
+  grid: rgba(132, 132, 132),
+};
+
 const INNER = Array.from({ length: 30 }, (_, i) => `In${30 - i}.Cu`);
 
 /**

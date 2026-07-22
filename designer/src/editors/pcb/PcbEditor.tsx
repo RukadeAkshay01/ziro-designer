@@ -46,7 +46,7 @@ import {
   type SheetInfo,
 } from './renderBoard.js';
 import type { Viewer3D } from './pcb3d.js';
-import { layerColor, PCB_PAINT_ORDER, PCB_CURSOR } from './pcbTheme.js';
+import { layerColor, PCB_PAINT_ORDER, PCB_CURSOR, PCB_OBJECT_COLORS } from './pcbTheme.js';
 import {
   PCB_TOP_TOOLBAR,
   PCB_LEFT_TOOLBAR,
@@ -101,26 +101,114 @@ const DEFAULT_TOGGLES = new Set([
   'showProperties',
 ]);
 
-// Objects tab rows, exactly appearance_controls.cpp s_objectSettings.
-// [key, label, hasOpacitySlider]
-const OBJECT_ROWS: [keyof ObjectState | string, string, boolean][] = [
-  ['tracks', 'Tracks', true],
-  ['vias', 'Vias', true],
-  ['pads', 'Pads', true],
-  ['zones', 'Zones', true],
-  ['images', 'Images', true],
-  ['footprintsFront', 'Footprints Front', false],
-  ['footprintsBack', 'Footprints Back', false],
-  ['fpValues', 'Values', false],
-  ['fpReferences', 'References', false],
-  ['fpText', 'Footprint Text', false],
-  ['ratsnest', 'Ratsnest', false],
-  ['drcWarnings', 'DRC Warnings', false],
-  ['drcErrors', 'DRC Errors', false],
-  ['drcExclusions', 'DRC Exclusions', false],
-  ['anchors', 'Anchors', false],
-  ['drawingSheet', 'Drawing Sheet', false],
-  ['grid', 'Grid', false],
+// Objects tab rows, exactly appearance_controls.cpp s_objectSettings
+// (label / tooltip / opacity slider / visibility checkbox). Rows whose
+// rendering isn't ported yet are greyed in their upstream position.
+type ObjectRow =
+  | 'sep'
+  | {
+      key: keyof ObjectState;
+      label: string;
+      tooltip: string;
+      slider?: boolean;
+      noVisibility?: boolean;
+      disabled?: boolean;
+    };
+const OBJECT_ROWS: ObjectRow[] = [
+  { key: 'tracks', label: 'Tracks', tooltip: 'Show tracks', slider: true },
+  { key: 'vias', label: 'Vias', tooltip: 'Show all vias', slider: true },
+  { key: 'pads', label: 'Pads', tooltip: 'Show all pads', slider: true },
+  { key: 'zones', label: 'Zones', tooltip: 'Show copper zones', slider: true },
+  {
+    key: 'filledShapes',
+    label: 'Filled Shapes',
+    tooltip: 'Opacity of filled shapes',
+    slider: true,
+    noVisibility: true,
+  },
+  { key: 'images', label: 'Images', tooltip: 'Show user images', slider: true, disabled: true },
+  'sep',
+  {
+    key: 'footprintsFront',
+    label: 'Footprints Front',
+    tooltip: "Show footprints that are on board's front",
+  },
+  {
+    key: 'footprintsBack',
+    label: 'Footprints Back',
+    tooltip: "Show footprints that are on board's back",
+  },
+  { key: 'fpValues', label: 'Values', tooltip: 'Show footprint values' },
+  { key: 'fpReferences', label: 'References', tooltip: 'Show footprint references' },
+  { key: 'fpText', label: 'Footprint Text', tooltip: 'Show all footprint text' },
+  'sep',
+  'sep',
+  {
+    key: 'ratsnest',
+    label: 'Ratsnest',
+    tooltip: 'Show unconnected nets as a ratsnest',
+    disabled: true,
+  },
+  {
+    key: 'drcWarnings',
+    label: 'DRC Warnings',
+    tooltip: 'DRC violations with a Warning severity',
+    disabled: true,
+  },
+  {
+    key: 'drcErrors',
+    label: 'DRC Errors',
+    tooltip: 'DRC violations with an Error severity',
+    disabled: true,
+  },
+  {
+    key: 'drcExclusions',
+    label: 'DRC Exclusions',
+    tooltip: 'DRC violations which have been individually excluded',
+    disabled: true,
+  },
+  {
+    key: 'anchors',
+    label: 'Anchors',
+    tooltip: 'Show footprint and text origins as a cross',
+    disabled: true,
+  },
+  {
+    key: 'points',
+    label: 'Points',
+    tooltip: 'Show explicit snap points as crosses',
+    disabled: true,
+  },
+  {
+    key: 'lockedShadow',
+    label: 'Locked Item Shadow',
+    tooltip: 'Show a shadow on locked items',
+    disabled: true,
+  },
+  {
+    key: 'collidingCourtyards',
+    label: 'Colliding Courtyards',
+    tooltip: 'Show colliding footprint courtyards',
+    disabled: true,
+  },
+  {
+    key: 'constrainedShadow',
+    label: 'Constrained Item Shadow',
+    tooltip: 'Show a shadow on constrained items',
+    disabled: true,
+  },
+  {
+    key: 'boardAreaShadow',
+    label: 'Board Area Shadow',
+    tooltip: 'Show board area shadow',
+    disabled: true,
+  },
+  {
+    key: 'drawingSheet',
+    label: 'Drawing Sheet',
+    tooltip: 'Show drawing sheet borders and title block',
+  },
+  { key: 'grid', label: 'Grid', tooltip: 'Show the (x,y) grid dots' },
 ];
 
 interface ObjectState {
@@ -128,6 +216,7 @@ interface ObjectState {
   vias: boolean;
   pads: boolean;
   zones: boolean;
+  filledShapes: boolean;
   images: boolean;
   footprintsFront: boolean;
   footprintsBack: boolean;
@@ -139,6 +228,11 @@ interface ObjectState {
   drcErrors: boolean;
   drcExclusions: boolean;
   anchors: boolean;
+  points: boolean;
+  lockedShadow: boolean;
+  collidingCourtyards: boolean;
+  constrainedShadow: boolean;
+  boardAreaShadow: boolean;
   drawingSheet: boolean;
   grid: boolean;
 }
@@ -147,6 +241,7 @@ const DEFAULT_OBJECTS: ObjectState = {
   vias: true,
   pads: true,
   zones: true,
+  filledShapes: true,
   images: true,
   footprintsFront: true,
   footprintsBack: true,
@@ -158,11 +253,55 @@ const DEFAULT_OBJECTS: ObjectState = {
   drcErrors: true,
   drcExclusions: true,
   anchors: true,
+  points: true,
+  lockedShadow: true,
+  collidingCourtyards: true,
+  constrainedShadow: true,
+  boardAreaShadow: true,
   drawingSheet: true,
   grid: true,
 };
 // project_local_settings.cpp defaults.
-const DEFAULT_OPACITY = { tracks: 1.0, vias: 1.0, pads: 1.0, zones: 0.6, images: 0.6 };
+const DEFAULT_OPACITY = {
+  tracks: 1.0,
+  vias: 1.0,
+  pads: 1.0,
+  zones: 0.6,
+  filledShapes: 1.0,
+  images: 0.6,
+};
+
+// Technical layers in the Layers tab, exactly rebuildLayers()'s non_cu_seq
+// order with its tooltips (appearance_controls.cpp).
+const NON_CU_SEQ: [string, string][] = [
+  ['F.Adhes', "Adhesive on board's front"],
+  ['B.Adhes', "Adhesive on board's back"],
+  ['F.Paste', "Solder paste on board's front"],
+  ['B.Paste', "Solder paste on board's back"],
+  ['F.SilkS', "Silkscreen on board's front"],
+  ['B.SilkS', "Silkscreen on board's back"],
+  ['F.Mask', "Solder mask on board's front"],
+  ['B.Mask', "Solder mask on board's back"],
+  ['Dwgs.User', 'Explanatory drawings'],
+  ['Cmts.User', 'Explanatory comments'],
+  ['Eco1.User', 'User defined meaning'],
+  ['Eco2.User', 'User defined meaning'],
+  ['Edge.Cuts', "Board's perimeter definition"],
+  ['Margin', "Board's edge setback outline"],
+  ['F.CrtYd', "Footprint courtyards on board's front"],
+  ['B.CrtYd', "Footprint courtyards on board's back"],
+  ['F.Fab', "Footprint assembly on board's front"],
+  ['B.Fab', "Footprint assembly on board's back"],
+];
+const layerTooltip = (name: string): string => {
+  const t = NON_CU_SEQ.find(([n]) => n === name);
+  if (t) return t[1];
+  if (name === 'F.Cu') return 'Front copper layer';
+  if (name === 'B.Cu') return 'Back copper layer';
+  if (/\.Cu$/.test(name)) return 'Inner copper layer';
+  if (/^User\.(\d+)$/.test(name)) return `User defined layer ${name.slice(5)}`;
+  return '';
+};
 
 // Builtin layer presets (appearance_controls.cpp preset* + common/lset.cpp masks).
 const FRONT_TECH = ['F.SilkS', 'F.Mask', 'F.Adhes', 'F.Paste', 'F.CrtYd', 'F.Fab'];
@@ -217,6 +356,24 @@ export function PcbEditor({
   const [propWidth, setPropWidth] = useState(300);
   const [objects, setObjects] = useState<ObjectState>(DEFAULT_OBJECTS);
   const [opacity, setOpacity] = useState(DEFAULT_OPACITY);
+  // Appearance pane width: KiCad's LayersManager AUI pane (BestSize 220,
+  // user-resizable).
+  const [appWidth, setAppWidth] = useState(220);
+  // High-contrast (inactive layer) mode: HIGH_CONTRAST_MODE Normal/Dim/Hide.
+  const [contrast, setContrast] = useState<'normal' | 'dim' | 'hide'>('normal');
+  // "Layer Display Options" collapsible pane state (collapsed by default).
+  const [layerOptsOpen, setLayerOptsOpen] = useState(false);
+  // Layer right-click context menu position (rightClickHandler).
+  const [layerMenu, setLayerMenu] = useState<{ x: number; y: number } | null>(null);
+  // User layer presets (saved from "Save preset...").
+  const [userPresets, setUserPresets] = useState<{ name: string; layers: string[] }[]>([]);
+  // Viewports (APPEARANCE_CONTROLS::m_viewports): named view transforms.
+  const [viewports, setViewports] = useState<
+    { name: string; view: { tx: number; ty: number; scale: number } }[]
+  >([]);
+  const [viewportSel, setViewportSel] = useState('---');
+  // "Delete preset/viewport..." chooser popup.
+  const [deleteChooser, setDeleteChooser] = useState<'presets' | 'viewports' | null>(null);
   const [selFilter, setSelFilter] = useState<Set<string>>(
     new Set(PCB_FILTER_CATS.map((c) => c.key)),
   );
@@ -321,9 +478,20 @@ export function PcbEditor({
       trackFill: !toggles.has('trackDisplayMode'),
       viaFill: !toggles.has('viaDisplayMode'),
       padFill: !toggles.has('padDisplayMode'),
+      filledShapeOpacity: opacity.filledShapes,
+      contrastMode: contrast,
+      activeLayer,
     }),
-    [objects, opacity, toggles],
+    [objects, opacity, toggles, contrast, activeLayer],
   );
+
+  // The left-toolbar high-contrast button reflects the Layer Display mode.
+  const leftToggles = useMemo(() => {
+    const s = new Set(toggles);
+    if (contrast !== 'normal') s.add('highContrast');
+    else s.delete('highContrast');
+    return s;
+  }, [toggles, contrast]);
 
   // Parse after the first paint so "Loading…" is visible for big boards.
   useEffect(() => {
@@ -1172,7 +1340,16 @@ export function PcbEditor({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Don't steal keys from text fields (net filter, property editors…).
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'))
+        return;
       const mod = e.ctrlKey || e.metaKey;
+      // ACTIONS::highContrastModeCycle (H): Normal -> Dim -> Hide -> Normal.
+      if (!mod && (e.key === 'h' || e.key === 'H')) {
+        setContrast((c) => (c === 'normal' ? 'dim' : c === 'dim' ? 'hide' : 'normal'));
+        return;
+      }
       if (mod && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -1265,11 +1442,15 @@ export function PcbEditor({
     () => (board ? board.layers.filter((l) => /\.Cu$/.test(l.name)).map((l) => l.name) : []),
     [board],
   );
+  // Copper layers first, then the technical layers in rebuildLayers()'s
+  // non_cu_seq order (appearance_controls.cpp), then any remaining (User.*).
   const layerRows = useMemo(() => {
     if (!board) return [];
     const known = new Set(board.layers.map((l) => l.name));
-    const tech = PCB_PAINT_ORDER.filter((n) => known.has(n) && !/\.Cu$/.test(n)).reverse();
-    return [...copperLayers, ...tech];
+    const seq = NON_CU_SEQ.map(([n]) => n).filter((n) => known.has(n));
+    const seen = new Set([...copperLayers, ...seq]);
+    const rest = board.layers.map((l) => l.name).filter((n) => !seen.has(n));
+    return [...copperLayers, ...seq, ...rest];
   }, [board, copperLayers]);
 
   const toggleLayer = (name: string): void => {
@@ -1283,11 +1464,129 @@ export function PcbEditor({
   };
 
   const applyPreset = (name: string): void => {
+    const user = userPresets.find((x) => x.name === name);
+    if (user) {
+      setPreset(name);
+      setVisible(new Set(user.layers));
+      return;
+    }
     setPreset(name);
     const p = PRESETS.find((x) => x.name === name);
     if (!p || !board) return;
     const all = board.layers.map((l) => l.name);
     setVisible(new Set(p.layers(all, copperLayers).filter((l) => all.includes(l))));
+  };
+
+  // Layer right-click context menu ops (APPEARANCE_CONTROLS::onLayerContextMenu).
+  const nonCopperLayers = useMemo(
+    () => (board ? board.layers.map((l) => l.name).filter((n) => !/\.Cu$/.test(n)) : []),
+    [board],
+  );
+  const setVisibleUnsaved = (names: Iterable<string>): void => {
+    setPreset('(unsaved)');
+    setVisible(new Set(names));
+  };
+  const layerMenuItems = (): { label: string; run: () => void }[][] => {
+    if (!board) return [];
+    const all = board.layers.map((l) => l.name);
+    const has = (n: string): boolean => all.includes(n);
+    const applyNamed = (name: string, active?: string): void => {
+      const p = PRESETS.find((x) => x.name === name);
+      if (!p) return;
+      setVisibleUnsaved(p.layers(all, copperLayers).filter(has));
+      if (active && has(active)) setActiveLayer(active);
+    };
+    const groups: { label: string; run: () => void }[][] = [
+      [
+        {
+          label: 'Show All Copper Layers',
+          run: () => setVisibleUnsaved([...visible, ...copperLayers]),
+        },
+        {
+          label: 'Hide All Copper Layers',
+          run: () => setVisibleUnsaved([...visible].filter((n) => !/\.Cu$/.test(n))),
+        },
+      ],
+      [{ label: 'Hide All Layers But Active', run: () => setVisibleUnsaved([activeLayer]) }],
+      [
+        {
+          label: 'Show All Non Copper Layers',
+          run: () => setVisibleUnsaved([...visible, ...nonCopperLayers]),
+        },
+        {
+          label: 'Hide All Non Copper Layers',
+          run: () => setVisibleUnsaved([...visible].filter((n) => /\.Cu$/.test(n))),
+        },
+      ],
+      [
+        { label: 'Show All Layers', run: () => setVisibleUnsaved(all) },
+        { label: 'Hide All Layers', run: () => setVisibleUnsaved([]) },
+      ],
+      [
+        {
+          label: 'Show Only Front Assembly Layers',
+          run: () => applyNamed('Front Assembly View', 'F.SilkS'),
+        },
+        { label: 'Show Only Front Layers', run: () => applyNamed('Front Layers', 'F.Cu') },
+        ...(copperLayers.length > 2
+          ? [
+              {
+                label: 'Show Only Inner Layers',
+                run: () => applyNamed('Inner Copper Layers', copperLayers[1]),
+              },
+            ]
+          : []),
+        { label: 'Show Only Back Layers', run: () => applyNamed('Back Layers', 'B.Cu') },
+        {
+          label: 'Show Only Back Assembly Layers',
+          run: () => applyNamed('Back Assembly View', 'B.SilkS'),
+        },
+      ],
+    ];
+    return groups;
+  };
+
+  // Presets combo (rebuildLayerPresetsWidget): builtins, user presets,
+  // "(unsaved)", then --- / Save preset... / Delete preset...
+  const onPresetChoice = (value: string): void => {
+    if (value === '---') return;
+    if (value === 'Save preset...') {
+      const name = window.prompt('Layer preset name:')?.trim();
+      if (!name) return;
+      setUserPresets((p) => [...p.filter((x) => x.name !== name), { name, layers: [...visible] }]);
+      setPreset(name);
+      return;
+    }
+    if (value === 'Delete preset...') {
+      setDeleteChooser('presets');
+      return;
+    }
+    applyPreset(value);
+  };
+
+  // Viewports combo (rebuildViewportsWidget): saved viewports, then
+  // --- / Save viewport... / Delete viewport...
+  const onViewportChoice = (value: string): void => {
+    if (value === '---') return;
+    if (value === 'Save viewport...') {
+      const name = window.prompt('Viewport name:')?.trim();
+      if (!name) return;
+      const v = { ...viewRef.current };
+      setViewports((p) => [...p.filter((x) => x.name !== name), { name, view: v }]);
+      setViewportSel(name);
+      return;
+    }
+    if (value === 'Delete viewport...') {
+      setDeleteChooser('viewports');
+      return;
+    }
+    const vp = viewports.find((x) => x.name === value);
+    if (!vp) return;
+    viewRef.current.tx = vp.view.tx;
+    viewRef.current.ty = vp.view.ty;
+    viewRef.current.scale = vp.view.scale;
+    setViewportSel(value);
+    requestDraw();
   };
 
   const nets = useMemo(() => {
@@ -1316,7 +1615,29 @@ export function PcbEditor({
     window.addEventListener('pointerup', onUp);
   };
 
+  // Drag the Appearance pane's left edge (the AUI dock splitter). KiCad's
+  // pane MinSize is the panel min width; clamp like the Properties pane.
+  const startAppResize = (e: React.PointerEvent): void => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = appWidth;
+    const onMove = (ev: PointerEvent): void =>
+      setAppWidth(Math.max(200, Math.min(500, startW - (ev.clientX - startX))));
+    const onUp = (): void => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
   const onLeftToggle = (id: string): void => {
+    // The high-contrast button maps onto the Layer Display Options mode
+    // (ACTIONS::highContrastMode toggles Normal <-> Dim).
+    if (id === 'highContrast') {
+      setContrast((c) => (c === 'normal' ? 'dim' : 'normal'));
+      return;
+    }
     setToggles((prev) => {
       const next = new Set(prev);
       const group = RADIO_GROUPS.find((g) => g.includes(id));
@@ -1613,7 +1934,7 @@ export function PcbEditor({
           entries={PCB_LEFT_TOOLBAR}
           orientation="vertical"
           side="left"
-          toggled={toggles}
+          toggled={leftToggles}
           onActivate={onLeftToggle}
         />
 
@@ -1648,8 +1969,32 @@ export function PcbEditor({
           )}
         </div>
 
+        <Toolbar
+          entries={PCB_RIGHT_TOOLBAR}
+          orientation="vertical"
+          side="right"
+          activeTool={activeTool}
+          onActivate={setActiveTool}
+        />
+
+        {/* LayersManager + SelectionFilter dock: Right().Layer(4), outside the
+            Right().Layer(3) toolbar (pcb_edit_frame.cpp AUI setup), i.e. at the
+            window edge with the toolbar between it and the canvas. */}
         {showAppearance && (
-          <div className="ze-leftdock" style={{ width: 250 }}>
+          <div className="ze-rightdock" style={{ width: appWidth, position: 'relative' }}>
+            <div
+              onPointerDown={startAppResize}
+              title="Resize"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: 5,
+                height: '100%',
+                cursor: 'col-resize',
+                zIndex: 2,
+              }}
+            />
             <div className="ze-panel grow">
               <div className="ze-panel-header">Appearance</div>
               {/* tabs, like APPEARANCE_CONTROLS' notebook */}
@@ -1675,109 +2020,96 @@ export function PcbEditor({
               </div>
 
               <div className="ze-panel-body" style={{ overflow: 'auto' }}>
-                {tab === 'Layers' && (
-                  <>
-                    {layerRows.map((name) => {
-                      const on = visible.has(name);
-                      return (
-                        <div
-                          key={name}
-                          className={`ze-tree-item ${name === activeLayer ? 'active' : ''}`}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 7,
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => setActiveLayer(name)}
-                          title="Click to make active; click the eye to show/hide"
-                        >
-                          {/* eye toggle, KiCad's APPEARANCE_CONTROLS visibility column */}
-                          <img
-                            src={eyeUrl(on)}
-                            alt={on ? 'visible' : 'hidden'}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleLayer(name);
-                            }}
-                            style={{
-                              width: 16,
-                              height: 16,
-                              opacity: on ? 0.9 : 0.35,
-                              cursor: 'pointer',
-                            }}
-                            title={on ? 'Hide layer' : 'Show layer'}
-                          />
-                          <span
-                            style={{
-                              width: 14,
-                              height: 14,
-                              borderRadius: 2,
-                              flex: '0 0 auto',
-                              background: layerColor(name),
-                              border: '1px solid #444',
-                            }}
-                          />
-                          <span style={{ opacity: on ? 1 : 0.5 }}>{name}</span>
-                        </div>
-                      );
-                    })}
-                    <div
-                      style={{
-                        marginTop: 8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        fontSize: 12,
-                      }}
-                    >
-                      <span>Presets (Ctrl+Tab):</span>
-                      <select
-                        value={preset}
-                        onChange={(e) => applyPreset(e.target.value)}
-                        style={{ flex: 1 }}
+                {tab === 'Layers' &&
+                  layerRows.map((name) => {
+                    const on = visible.has(name);
+                    return (
+                      // appendLayer row: [indicator][color swatch][eye][name]
+                      <div
+                        key={name}
+                        className={`ze-layer-row${name === activeLayer ? ' active' : ''}`}
+                        onClick={() => setActiveLayer(name)}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          setLayerMenu({ x: e.clientX, y: e.clientY });
+                        }}
+                        title={layerTooltip(name)}
                       >
-                        {preset === '(unsaved)' && <option value="(unsaved)">(unsaved)</option>}
-                        {PRESETS.map((p) => (
-                          <option key={p.name} value={p.name}>
-                            {p.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </>
-                )}
+                        <span
+                          className={`ze-layer-indicator${name === activeLayer ? ' on' : ''}`}
+                        />
+                        <span
+                          className="ze-layer-swatch"
+                          style={{ background: layerColor(name) }}
+                        />
+                        <img
+                          className="ze-layer-eye"
+                          src={eyeUrl(on)}
+                          alt={on ? 'visible' : 'hidden'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleLayer(name);
+                          }}
+                          style={{ opacity: on ? 0.9 : 0.35 }}
+                          title="Show or hide this layer"
+                        />
+                        <span style={{ opacity: on ? 1 : 0.5 }}>{name}</span>
+                      </div>
+                    );
+                  })}
 
                 {tab === 'Objects' &&
-                  OBJECT_ROWS.map(([key, label, slider]) => (
-                    <div
-                      key={key}
-                      className="ze-tree-item"
-                      style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={objects[key as keyof ObjectState]}
-                        onChange={() =>
-                          setObjects((p) => ({ ...p, [key]: !p[key as keyof ObjectState] }))
-                        }
-                      />
-                      <span style={{ flex: 1 }}>{label}</span>
-                      {slider && key in opacity && (
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={Math.round(opacity[key as keyof typeof opacity] * 100)}
-                          style={{ width: 70 }}
-                          title={`${label} opacity`}
-                          onChange={(e) =>
-                            setOpacity((p) => ({ ...p, [key]: Number(e.target.value) / 100 }))
-                          }
+                  OBJECT_ROWS.map((row, i) => {
+                    if (row === 'sep') return <div key={`sep${i}`} style={{ height: 8 }} />;
+                    const { key, label, tooltip, slider, noVisibility, disabled } = row;
+                    const on = objects[key];
+                    const swatchColor = PCB_OBJECT_COLORS[key];
+                    return (
+                      // appendObject row: [swatch|spacer][eye|spacer][label][slider]
+                      <div
+                        key={key}
+                        className="ze-object-row"
+                        title={tooltip}
+                        style={disabled ? { opacity: 0.4 } : undefined}
+                      >
+                        <span
+                          className={`ze-layer-swatch${swatchColor ? '' : ' blank'}`}
+                          style={swatchColor ? { background: swatchColor } : undefined}
                         />
-                      )}
-                    </div>
-                  ))}
+                        {noVisibility ? (
+                          <span style={{ width: 16, flex: '0 0 auto' }} />
+                        ) : (
+                          <img
+                            className="ze-layer-eye"
+                            src={eyeUrl(on)}
+                            alt={on ? 'visible' : 'hidden'}
+                            onClick={() => {
+                              if (!disabled) setObjects((p) => ({ ...p, [key]: !p[key] }));
+                            }}
+                            style={{ opacity: on ? 0.9 : 0.35 }}
+                            title={`Show or hide ${label.toLowerCase()}`}
+                          />
+                        )}
+                        <span style={{ flex: slider ? '0 0 auto' : 1, minWidth: slider ? 88 : 0 }}>
+                          {label}
+                        </span>
+                        {slider && key in opacity && (
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            value={Math.round(opacity[key as keyof typeof opacity] * 100)}
+                            style={{ flex: 1, minWidth: 60 }}
+                            title={`Set opacity of ${label.toLowerCase()}`}
+                            disabled={disabled}
+                            onChange={(e) =>
+                              setOpacity((p) => ({ ...p, [key]: Number(e.target.value) / 100 }))
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
 
                 {tab === 'Nets' && (
                   <>
@@ -1796,6 +2128,94 @@ export function PcbEditor({
                     {nets.length > 400 && <div className="ze-muted">…{nets.length - 400} more</div>}
                   </>
                 )}
+              </div>
+
+              {/* "Layer Display Options" collapsible pane at the bottom of the
+                  Layers tab (createControls). */}
+              {tab === 'Layers' && (
+                <div className="ze-collapsepane">
+                  <button
+                    className="ze-collapse-toggle"
+                    onClick={() => setLayerOptsOpen((o) => !o)}
+                  >
+                    <span className={`ze-collapse-arrow${layerOptsOpen ? ' open' : ''}`} />
+                    Layer Display Options
+                  </button>
+                  {layerOptsOpen && (
+                    <div className="ze-collapse-body">
+                      <div className="ze-info">Inactive layers (H):</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <label title="Inactive layers will be shown in full color">
+                          <input
+                            type="radio"
+                            name="ze-hc"
+                            checked={contrast === 'normal'}
+                            onChange={() => setContrast('normal')}
+                          />
+                          Normal
+                        </label>
+                        <label title="Inactive layers will be dimmed">
+                          <input
+                            type="radio"
+                            name="ze-hc"
+                            checked={contrast === 'dim'}
+                            onChange={() => setContrast('dim')}
+                          />
+                          Dim
+                        </label>
+                        <label title="Inactive layers will be hidden">
+                          <input
+                            type="radio"
+                            name="ze-hc"
+                            checked={contrast === 'hide'}
+                            onChange={() => setContrast('hide')}
+                          />
+                          Hide
+                        </label>
+                      </div>
+                      <hr className="ze-hr" />
+                      {/* Not ported yet — greyed in its upstream position. */}
+                      <label className="ze-disabled">
+                        <input type="checkbox" disabled />
+                        Flip board view
+                      </label>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Presets / Viewports below the notebook (appearance_controls_base). */}
+              <div className="ze-appearance-bottom">
+                <div className="ze-info">Presets (Ctrl+Tab):</div>
+                <select value={preset} onChange={(e) => onPresetChoice(e.target.value)}>
+                  {preset === '(unsaved)' && <option value="(unsaved)">(unsaved)</option>}
+                  {PRESETS.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                  {userPresets.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}
+                    </option>
+                  ))}
+                  <option disabled>---</option>
+                  <option>Save preset...</option>
+                  <option disabled={userPresets.length === 0}>Delete preset...</option>
+                </select>
+                <div className="ze-info" style={{ marginTop: 4 }}>
+                  Viewports (Alt+Tab):
+                </div>
+                <select value={viewportSel} onChange={(e) => onViewportChoice(e.target.value)}>
+                  {viewports.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name}
+                    </option>
+                  ))}
+                  <option value="---">---</option>
+                  <option>Save viewport...</option>
+                  <option disabled={viewports.length === 0}>Delete viewport...</option>
+                </select>
               </div>
             </div>
 
@@ -1851,14 +2271,6 @@ export function PcbEditor({
             </div>
           </div>
         )}
-
-        <Toolbar
-          entries={PCB_RIGHT_TOOLBAR}
-          orientation="vertical"
-          side="right"
-          activeTool={activeTool}
-          onActivate={setActiveTool}
-        />
       </div>
 
       {show3D && (
@@ -2001,6 +2413,107 @@ export function PcbEditor({
             >
               Only {filterMenu.label.toLowerCase()}
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Layer right-click menu (APPEARANCE_CONTROLS::rightClickHandler /
+          onLayerContextMenu), acting on the active layer like upstream. */}
+      {layerMenu && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 60 }}
+            onMouseDown={() => setLayerMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setLayerMenu(null);
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: Math.min(layerMenu.x, window.innerWidth - 260),
+              top: Math.min(layerMenu.y, window.innerHeight - 320),
+              zIndex: 61,
+              background: '#26262b',
+              border: '1px solid #444',
+              borderRadius: 4,
+              minWidth: 230,
+              padding: '4px 0',
+              fontSize: 12,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {layerMenuItems().map((group, gi, arr) => (
+              <div key={`g${gi}`}>
+                {group.map((item) => (
+                  <div
+                    key={item.label}
+                    className="ze-tree-item"
+                    style={{ padding: '3px 12px', cursor: 'pointer' }}
+                    onClick={() => {
+                      item.run();
+                      setLayerMenu(null);
+                    }}
+                  >
+                    {item.label}
+                  </div>
+                ))}
+                {gi < arr.length - 1 && (
+                  <hr style={{ border: 'none', borderTop: '1px solid #444', margin: '4px 0' }} />
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* "Delete preset/viewport..." chooser (EDA_LIST_DIALOG stand-in). */}
+      {deleteChooser && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 60 }}
+            onMouseDown={() => setDeleteChooser(null)}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              right: 24,
+              bottom: 120,
+              zIndex: 61,
+              background: '#26262b',
+              border: '1px solid #444',
+              borderRadius: 4,
+              minWidth: 180,
+              padding: '4px 0',
+              fontSize: 12,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '2px 12px 4px', opacity: 0.6 }}>
+              Delete {deleteChooser === 'presets' ? 'preset' : 'viewport'}
+            </div>
+            {(deleteChooser === 'presets' ? userPresets : viewports).map((p) => (
+              <div
+                key={p.name}
+                className="ze-tree-item"
+                style={{ padding: '3px 12px', cursor: 'pointer' }}
+                onClick={() => {
+                  if (deleteChooser === 'presets') {
+                    setUserPresets((u) => u.filter((x) => x.name !== p.name));
+                    if (preset === p.name) setPreset('(unsaved)');
+                  } else {
+                    setViewports((v) => v.filter((x) => x.name !== p.name));
+                    if (viewportSel === p.name) setViewportSel('---');
+                  }
+                  setDeleteChooser(null);
+                }}
+              >
+                {p.name}
+              </div>
+            ))}
           </div>
         </>
       )}
