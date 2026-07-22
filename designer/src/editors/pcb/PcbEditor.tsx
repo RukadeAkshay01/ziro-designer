@@ -771,7 +771,7 @@ export function PcbEditor({
       hideFrontFootprints: !objects.footprintsFront,
       hideBackFootprints: !objects.footprintsBack,
     });
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objects.footprintsFront, objects.footprintsBack]);
@@ -789,6 +789,11 @@ export function PcbEditor({
   } | null>(null);
   const renderingRef = useRef(false);
   const viewChangedRef = useRef(true);
+  // The scene/board changed since the cached raster was built, so it needs a
+  // fresh render even though the view matches. We keep the (stale) raster on
+  // screen and re-render into a new canvas in the background, swapping when
+  // ready — so an edit/undo/toggle never blanks the board for a frame.
+  const sceneDirtyRef = useRef(true);
 
   const viewMatchesCache = (): boolean => {
     const c = cacheRef.current;
@@ -811,12 +816,14 @@ export function PcbEditor({
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
     if (!canvas || !scene || canvas.width < 2) return;
-    if (viewMatchesCache()) {
+    if (viewMatchesCache() && !sceneDirtyRef.current) {
       viewChangedRef.current = false;
       return;
     }
     renderingRef.current = true;
     viewChangedRef.current = false;
+    // Capture the current scene into this render; further edits re-dirty it.
+    sceneDirtyRef.current = false;
     const work = document.createElement('canvas');
     work.width = canvas.width;
     work.height = canvas.height;
@@ -849,9 +856,10 @@ export function PcbEditor({
         cacheRef.current = { canvas: work, view: jobView };
         renderingRef.current = false;
         requestDraw();
-        // The view moved on while we were rendering: keep chasing it so the
-        // image keeps sharpening throughout a continuous zoom.
-        if (viewChangedRef.current || !viewMatchesCache()) startCrispRender();
+        // The view moved or the scene changed while we were rendering: keep
+        // chasing it so the image keeps sharpening / catches the latest edit.
+        if (viewChangedRef.current || sceneDirtyRef.current || !viewMatchesCache())
+          startCrispRender();
       }
     };
     run();
@@ -866,7 +874,7 @@ export function PcbEditor({
     const v = viewRef.current;
     // Signed X scale for the flipped (mirrored) view; world→screen X uses this.
     const sx = v.flipX ? -v.scale : v.scale;
-    if (!viewMatchesCache()) {
+    if (!viewMatchesCache() || sceneDirtyRef.current) {
       viewChangedRef.current = true;
       startCrispRender();
     }
@@ -1230,7 +1238,7 @@ export function PcbEditor({
 
   // Layer/object changes invalidate the raster.
   useEffect(() => {
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
   }, [visible, drawOpts, requestDraw]);
 
@@ -1265,7 +1273,7 @@ export function PcbEditor({
         hideBackFootprints: !objects.footprintsBack,
       });
       rebuildSelScene();
-      cacheRef.current = null;
+      sceneDirtyRef.current = true;
       requestDraw();
     },
     [objects.footprintsFront, objects.footprintsBack, requestDraw, rebuildSelScene],
@@ -1436,7 +1444,7 @@ export function PcbEditor({
         fittedRef.current = true;
         zoomToFit();
       } else {
-        cacheRef.current = null;
+        sceneDirtyRef.current = true;
         requestDraw();
       }
     });
@@ -1454,7 +1462,7 @@ export function PcbEditor({
     // Mirror tx about the viewport centre so the visible board doesn't jump.
     if (canvas) v.tx = canvas.width - v.tx;
     setFlipView(v.flipX);
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
   }, [requestDraw]);
 
@@ -1945,7 +1953,7 @@ export function PcbEditor({
       ? null
       : buildScene(subsetBoardItems(brd, sel), sceneFilter());
     moveDeltaRef.current = { x: 0, y: 0 };
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
   };
 
   // Track the in-flight gesture to the grid-snapped cursor. A drag rebuilds the
@@ -2669,7 +2677,7 @@ export function PcbEditor({
         rotateSel(false);
         break;
       case 'zoomRedraw':
-        cacheRef.current = null;
+        sceneDirtyRef.current = true;
         requestDraw();
         break;
       case 'zoomIn':
@@ -2736,7 +2744,7 @@ export function PcbEditor({
         {
           label: 'Redraw',
           action: () => {
-            cacheRef.current = null;
+            sceneDirtyRef.current = true;
             requestDraw();
           },
           shortcut: 'F5',
