@@ -164,7 +164,6 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
         id: 'routeSingleTrack',
         icon: 'routeSingleTrack',
         title: 'Route Single Track (X)\nRoute tracks',
-        ...todo,
       },
       {
         id: 'routeDiffPair',
@@ -202,7 +201,6 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
     id: 'drawVia',
     icon: 'drawVia',
     title: 'Place Vias (Ctrl+Shift+X)\nPlace free-standing vias',
-    ...todo,
   },
   { id: 'drawZone', icon: 'drawZone', title: 'Draw Filled Zones (Ctrl+Shift+Z)', ...todo },
   { id: 'drawRuleArea', icon: 'drawRuleArea', title: 'Draw Rule Areas (Ctrl+Shift+K)', ...todo },
@@ -349,7 +347,7 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
   {
     group: 'Text objects',
     actions: [
-      { id: 'placeText', icon: 'placeText', title: 'Draw Text (Ctrl+Shift+T)', ...todo },
+      { id: 'placeText', icon: 'placeText', title: 'Draw Text (Ctrl+Shift+T)' },
       { id: 'drawTextBox', icon: 'drawTextBox', title: 'Draw Text Boxes', ...todo },
     ],
   },

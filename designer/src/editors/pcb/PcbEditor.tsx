@@ -30,11 +30,15 @@ import {
   serializeBoard,
   buildRatsnest,
   addBoardShape,
+  addBoardTrack,
+  addBoardVia,
+  addBoardText,
   type RatsnestEdge,
   type Board,
   type BoardItemKind,
   type PcbFootprint,
   type PcbShape,
+  type PcbPad,
 } from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
@@ -101,6 +105,15 @@ const DRAW_SHAPE_TOOLS: Record<string, PcbShape['kind']> = {
   drawCircle: 'circle',
   drawPolygon: 'poly',
 };
+
+// Tools that act on plain clicks and take no drag/box-select gestures.
+const isClickTool = (t: string): boolean =>
+  t === 'deleteTool' ||
+  t === 'localRatsnestTool' ||
+  t === 'routeSingleTrack' ||
+  t === 'drawVia' ||
+  t === 'placeText' ||
+  !!DRAW_SHAPE_TOOLS[t];
 
 // Default graphic line widths per layer class, in IU
 // (board_design_settings.h DEFAULT_*_WIDTH, in mm).
@@ -402,15 +415,29 @@ const wildcardMatch = (pattern: string, s: string): boolean => {
   return rx.test(s);
 };
 
+// Routing dimensions of a net class (netclass.cpp defaults, in IU).
+interface ClassDims {
+  trackWidth: number;
+  viaDiameter: number;
+  viaDrill: number;
+}
+const DEFAULT_CLASS_DIMS: ClassDims = {
+  trackWidth: 0.2 * MM,
+  viaDiameter: 0.6 * MM,
+  viaDrill: 0.3 * MM,
+};
+
 /** Net classes from the project file (net_settings in .kicad_pro). */
 function parseNetclasses(files?: { name: string; text: string }[]): {
   classes: string[];
   classColors: Map<string, string>;
+  classDims: Map<string, ClassDims>;
   patterns: { netclass: string; pattern: string }[];
 } {
   const out = {
     classes: ['Default'],
     classColors: new Map<string, string>(),
+    classDims: new Map<string, ClassDims>(),
     patterns: [] as { netclass: string; pattern: string }[],
   };
   const pro = files?.find((f) => f.name.endsWith('.kicad_pro'));
@@ -418,7 +445,13 @@ function parseNetclasses(files?: { name: string; text: string }[]): {
   try {
     const json = JSON.parse(pro.text) as {
       net_settings?: {
-        classes?: { name?: string; pcb_color?: string }[];
+        classes?: {
+          name?: string;
+          pcb_color?: string;
+          track_width?: number;
+          via_diameter?: number;
+          via_drill?: number;
+        }[];
         netclass_patterns?: { netclass?: string; pattern?: string }[];
       };
     };
@@ -429,6 +462,12 @@ function parseNetclasses(files?: { name: string; text: string }[]): {
       // "rgb(0, 0, 0)"/alpha 0 means unset in the project file.
       if (c.pcb_color && !/rgba?\(\s*0,\s*0,\s*0,?\s*0(\.0+)?\s*\)/.test(c.pcb_color))
         out.classColors.set(c.name, c.pcb_color);
+      // Project-file dimensions are in mm.
+      out.classDims.set(c.name, {
+        trackWidth: c.track_width ? c.track_width * MM : DEFAULT_CLASS_DIMS.trackWidth,
+        viaDiameter: c.via_diameter ? c.via_diameter * MM : DEFAULT_CLASS_DIMS.viaDiameter,
+        viaDrill: c.via_drill ? c.via_drill * MM : DEFAULT_CLASS_DIMS.viaDrill,
+      });
     }
     for (const p of ns?.netclass_patterns ?? []) {
       if (p.netclass && p.pattern) out.patterns.push({ netclass: p.netclass, pattern: p.pattern });
@@ -605,9 +644,21 @@ export function PcbEditor({
   }, [activeTool]);
   // In-flight graphic shape (DRAWING_TOOL): the points clicked so far.
   const drawingRef = useRef<{ x: number; y: number }[]>([]);
-  // Switching tools abandons the in-flight shape.
+  // In-flight route (ROUTER_TOOL): net, copper layer, last committed point,
+  // and the net class routing dimensions picked up at start.
+  const routeRef = useRef<{
+    net: number;
+    layer: string;
+    last: { x: number; y: number };
+    dims: ClassDims;
+  } | null>(null);
+  // Pending "Add Text" dialog: where the text will be placed.
+  const [textDialog, setTextDialog] = useState<{ x: number; y: number } | null>(null);
+  const [textDraft, setTextDraft] = useState('');
+  // Switching tools abandons the in-flight shape/route.
   useEffect(() => {
     drawingRef.current = [];
+    routeRef.current = null;
   }, [activeTool]);
   const sceneRef = useRef<BoardScene | null>(null);
   const rafRef = useRef(0);
@@ -877,6 +928,28 @@ export function PcbEditor({
           true,
           SELECT_BRIGHTEN,
         );
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
+    // In-flight route preview (ROUTER_TOOL): the 45° two-segment path from the
+    // last committed point to the snapped cursor, at the net class track width.
+    {
+      const r = routeRef.current;
+      const cur0 = cursorRef.current;
+      if (r && cur0) {
+        const end = snapToGrid(cur0);
+        ctx.save();
+        ctx.setTransform(v.scale, 0, 0, v.scale, v.tx, v.ty);
+        ctx.strokeStyle = layerColor(r.layer);
+        ctx.lineWidth = r.dims.trackWidth;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(r.last.x, r.last.y);
+        for (const p of routePath(r.last, end)) ctx.lineTo(p.x, p.y);
+        ctx.stroke();
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
       }
@@ -1460,6 +1533,192 @@ export function PcbEditor({
     requestDraw();
   };
 
+  // ----- interactive routing (ROUTER_TOOL, highlight mode) --------------------
+
+  // The pad under a board point (board-absolute centres), for net pickup and
+  // snapping route ends onto pads.
+  const padAt = (w: { x: number; y: number }): PcbPad | null => {
+    const brd = boardRef.current;
+    if (!brd) return null;
+    for (const fp of brd.footprints) {
+      for (const pad of fp.pads) {
+        if (Math.hypot(w.x - pad.at.x, w.y - pad.at.y) <= Math.max(pad.size.x, pad.size.y) / 2)
+          return pad;
+      }
+    }
+    return null;
+  };
+
+  // Net + snap point of the copper item under the cursor (pads first, then
+  // vias and tracks via the hit-tester).
+  const copperAt = (w: {
+    x: number;
+    y: number;
+  }): { net: number; snap: { x: number; y: number } } | null => {
+    const brd = boardRef.current;
+    if (!brd) return null;
+    const pad = padAt(w);
+    if (pad) return { net: pad.net ?? 0, snap: { ...pad.at } };
+    for (const id of boardHitCandidates(brd, w, tolOf())) {
+      const r = parseBoardItemId(id);
+      if (r?.kind === 'via') {
+        const v = brd.vias[r.index];
+        if (v) return { net: v.net, snap: { ...v.at } };
+      } else if (r?.kind === 'track' || r?.kind === 'arc') {
+        const t = r.kind === 'track' ? brd.tracks[r.index] : brd.arcs[r.index];
+        if (t) {
+          // Snap to a nearby endpoint, else stay on the grid point.
+          const ends = [t.start, t.end];
+          const near = ends.find((p) => Math.hypot(w.x - p.x, w.y - p.y) <= tolOf());
+          return { net: t.net, snap: near ? { ...near } : snapToGrid(w) };
+        }
+      }
+    }
+    return null;
+  };
+
+  // The 45°-constrained two-segment route path (ROUTER_TOOL's posture):
+  // a straight run along the dominant axis, then the diagonal to the cursor.
+  const routePath = (
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): { x: number; y: number }[] => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (dx === 0 || dy === 0 || Math.abs(dx) === Math.abs(dy)) return [to];
+    if (Math.abs(dx) > Math.abs(dy)) {
+      return [{ x: from.x + Math.sign(dx) * (Math.abs(dx) - Math.abs(dy)), y: from.y }, to];
+    }
+    return [{ x: from.x, y: from.y + Math.sign(dy) * (Math.abs(dy) - Math.abs(dx)) }, to];
+  };
+
+  const routeDims = (net: number): ClassDims =>
+    netclassInfo.classDims.get(netClassOf.get(net) ?? 'Default') ?? DEFAULT_CLASS_DIMS;
+
+  // One left click of the Route Single Track tool.
+  const handleRouteClick = (world: { x: number; y: number }): void => {
+    const brd = boardRef.current;
+    if (!brd) return;
+    const r = routeRef.current;
+    if (!r) {
+      // Start: pick the net (and snap) from the copper item under the cursor;
+      // route on the active copper layer.
+      const c = copperAt(world);
+      const layer = /\.Cu$/.test(activeLayer) ? activeLayer : 'F.Cu';
+      if (layer !== activeLayer) setActiveLayer(layer);
+      routeRef.current = {
+        net: c?.net ?? 0,
+        layer,
+        last: c?.snap ?? snapToGrid(world),
+        dims: routeDims(c?.net ?? 0),
+      };
+    } else {
+      const target = copperAt(world);
+      const landed = target !== null && target.net === r.net && r.net > 0;
+      const end = landed ? target.snap : snapToGrid(world);
+      let b = brd;
+      let prev = r.last;
+      for (const p of routePath(r.last, end)) {
+        if (p.x !== prev.x || p.y !== prev.y) {
+          b = addBoardTrack(b, {
+            start: prev,
+            end: p,
+            width: r.dims.trackWidth,
+            layer: r.layer,
+            net: r.net,
+          }).board;
+          prev = p;
+        }
+      }
+      if (b !== brd) commitBoard(b);
+      // Landing on a same-net item finishes the route; otherwise keep going.
+      routeRef.current = landed ? null : { ...r, last: end };
+    }
+    requestDraw();
+  };
+
+  // 'V' while routing: commit up to the cursor, drop a via there, and continue
+  // on the other copper layer (ROUTER_TOOL::onViaCommand).
+  const routeViaSwitch = (): void => {
+    const r = routeRef.current;
+    const brd = boardRef.current;
+    const cur = cursorRef.current;
+    if (!r || !brd || !cur) return;
+    const end = snapToGrid(cur);
+    let b = brd;
+    let prev = r.last;
+    for (const p of routePath(r.last, end)) {
+      if (p.x !== prev.x || p.y !== prev.y) {
+        b = addBoardTrack(b, {
+          start: prev,
+          end: p,
+          width: r.dims.trackWidth,
+          layer: r.layer,
+          net: r.net,
+        }).board;
+        prev = p;
+      }
+    }
+    b = addBoardVia(b, {
+      at: end,
+      size: r.dims.viaDiameter,
+      drill: r.dims.viaDrill,
+      layers: ['F.Cu', 'B.Cu'],
+      kind: 'through',
+      net: r.net,
+    }).board;
+    commitBoard(b);
+    const other = r.layer === 'F.Cu' ? 'B.Cu' : 'F.Cu';
+    setActiveLayer(other);
+    routeRef.current = { ...r, layer: other, last: end };
+    requestDraw();
+  };
+  const routeViaSwitchRef = useRef(routeViaSwitch);
+  routeViaSwitchRef.current = routeViaSwitch;
+
+  // Commit the "Add Text" dialog: a user gr_text at the clicked point on the
+  // active layer, at the layer class's default size/thickness.
+  const commitPlacedText = (): void => {
+    const brd = boardRef.current;
+    const at = textDialog;
+    const content = textDraft.trim();
+    setTextDialog(null);
+    setTextDraft('');
+    if (!brd || !at || !content) return;
+    const silk = /\.SilkS$/.test(activeLayer);
+    commitBoard(
+      addBoardText(brd, {
+        kind: 'user',
+        text: content,
+        at,
+        angle: 0,
+        layer: activeLayer,
+        size: { x: 1 * MM, y: 1 * MM },
+        thickness: (silk ? 0.1 : 0.15) * MM,
+      }).board,
+    );
+  };
+
+  // Free-standing via placement (PCB_ACTIONS::drawVia): each click drops a via,
+  // picking up the net of the copper item underneath.
+  const handleViaClick = (world: { x: number; y: number }): void => {
+    const brd = boardRef.current;
+    if (!brd) return;
+    const c = copperAt(world);
+    const at = c?.snap ?? snapToGrid(world);
+    const dims = routeDims(c?.net ?? 0);
+    commitBoard(
+      addBoardVia(brd, {
+        at,
+        size: dims.viaDiameter,
+        drill: dims.viaDrill,
+        layers: ['F.Cu', 'B.Cu'],
+        kind: 'through',
+        net: c?.net ?? 0,
+      }).board,
+    );
+  };
+
   // ----- interactive move / drag (EDIT_TOOL Move vs Drag) ---------------------
 
   const sceneFilter = (): { hideFrontFootprints: boolean; hideBackFootprints: boolean } => ({
@@ -1629,14 +1888,9 @@ export function PcbEditor({
     const d = downRef.current;
     if (d) {
       if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 3 * dpr) d.moved = true;
-      // Click-driven tools (delete, local ratsnest, drawing) take no
-      // drag-move or box-select gestures.
-      if (
-        activeToolRef.current === 'deleteTool' ||
-        activeToolRef.current === 'localRatsnestTool' ||
-        DRAW_SHAPE_TOOLS[activeToolRef.current]
-      )
-        return;
+      // Click-driven tools (delete, local ratsnest, drawing, routing, vias,
+      // text) take no drag-move or box-select gestures.
+      if (isClickTool(activeToolRef.current)) return;
       if (d.moved && d.world) {
         const cur = worldAt(e.clientX, e.clientY);
         if (!cur) return;
@@ -1706,6 +1960,15 @@ export function PcbEditor({
         } else if (DRAW_SHAPE_TOOLS[activeToolRef.current]) {
           const w = worldAt(e.clientX, e.clientY);
           if (w) handleDrawClick(w);
+        } else if (activeToolRef.current === 'routeSingleTrack') {
+          const w = worldAt(e.clientX, e.clientY);
+          if (w) handleRouteClick(w);
+        } else if (activeToolRef.current === 'drawVia') {
+          const w = worldAt(e.clientX, e.clientY);
+          if (w) handleViaClick(w);
+        } else if (activeToolRef.current === 'placeText') {
+          const w = worldAt(e.clientX, e.clientY);
+          if (w) setTextDialog(snapToGrid(w));
         } else {
           clickSelect(e.clientX, e.clientY, d.shift);
         }
@@ -1749,6 +2012,12 @@ export function PcbEditor({
       // ACTIONS::highContrastModeCycle (H): Normal -> Dim -> Hide -> Normal.
       if (!mod && (e.key === 'h' || e.key === 'H')) {
         setContrast((c) => (c === 'normal' ? 'dim' : c === 'dim' ? 'hide' : 'normal'));
+        return;
+      }
+      // V while routing: place a via and switch copper layer (ROUTER_TOOL).
+      if (!mod && (e.key === 'v' || e.key === 'V') && routeRef.current) {
+        e.preventDefault();
+        routeViaSwitchRef.current();
         return;
       }
       if (mod && (e.key === 'z' || e.key === 'Z')) {
@@ -1799,6 +2068,10 @@ export function PcbEditor({
         if (disambigRef.current) {
           hoverRef.current = null;
           setDisambig(null);
+        } else if (routeRef.current) {
+          // Esc ends the route in progress; committed segments stay.
+          routeRef.current = null;
+          requestDrawRef.current();
         } else if (drawingRef.current.length > 0) {
           // First Esc abandons the in-flight shape; the tool stays active.
           drawingRef.current = [];
@@ -3177,6 +3450,70 @@ export function PcbEditor({
                 {p.name}
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* "Add Text" properties dialog (DRAWING_TOOL::PlaceText opens the text
+          properties dialog before placing). */}
+      {textDialog && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.3)' }}
+            onMouseDown={() => {
+              setTextDialog(null);
+              setTextDraft('');
+            }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '40%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 61,
+              background: '#2a2c30',
+              border: '1px solid #444',
+              borderRadius: 4,
+              width: 360,
+              padding: 12,
+              fontSize: 13,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Text Properties</div>
+            <textarea
+              // biome-ignore lint/a11y/noAutofocus: focus the just-opened dialog's input
+              autoFocus
+              rows={3}
+              value={textDraft}
+              placeholder="Text"
+              style={{ width: '100%', resize: 'vertical', fontSize: 13 }}
+              onChange={(e) => setTextDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setTextDialog(null);
+                  setTextDraft('');
+                } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  commitPlacedText();
+                }
+              }}
+            />
+            <div style={{ marginTop: 4 }} className="ze-muted">
+              Layer: {LAYER_DISPLAY_NAMES[activeLayer] ?? activeLayer}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+              <button
+                onClick={() => {
+                  setTextDialog(null);
+                  setTextDraft('');
+                }}
+              >
+                Cancel
+              </button>
+              <button onClick={commitPlacedText}>OK</button>
+            </div>
           </div>
         </>
       )}

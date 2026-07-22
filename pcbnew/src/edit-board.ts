@@ -815,6 +815,42 @@ export function addBoardShape(
   };
 }
 
+/** Append a routed track segment (ROUTER_TOOL commit); writer-canonical. */
+export function addBoardTrack(
+  board: Board,
+  track: Omit<PcbTrack, 'source'>,
+): { board: Board; id: string } {
+  const withSource: PcbTrack = { ...track, source: { kind: 'list', items: [] } };
+  return {
+    board: { ...board, tracks: [...board.tracks, withSource] },
+    id: boardItemId('track', board.tracks.length),
+  };
+}
+
+/** Append a via (ROUTER_TOOL layer switch / free via placement). */
+export function addBoardVia(
+  board: Board,
+  via: Omit<PcbVia, 'source'>,
+): { board: Board; id: string } {
+  const withSource: PcbVia = { ...via, source: { kind: 'list', items: [] } };
+  return {
+    board: { ...board, vias: [...board.vias, withSource] },
+    id: boardItemId('via', board.vias.length),
+  };
+}
+
+/** Append a free text item (DRAWING_TOOL::PlaceText commit). */
+export function addBoardText(
+  board: Board,
+  text: Omit<PcbTextItem, 'source'>,
+): { board: Board; id: string } {
+  const withSource: PcbTextItem = { ...text, source: { kind: 'list', items: [] } };
+  return {
+    board: { ...board, texts: [...board.texts, withSource] },
+    id: boardItemId('text', board.texts.length),
+  };
+}
+
 /**
  * A board holding only the selected items, keeping all board metadata (layers,
  * stackup, paper…) so it renders identically. Used as the live move overlay:

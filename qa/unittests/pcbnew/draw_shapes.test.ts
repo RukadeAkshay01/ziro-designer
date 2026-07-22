@@ -2,7 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { parse } from '@ziroeda/sexpr/src/index.js';
 import { readBoard } from '@ziroeda/pcbnew/src/read-board.js';
 import { serializeBoard } from '@ziroeda/pcbnew/src/write-board.js';
-import { addBoardShape } from '@ziroeda/pcbnew/src/edit-board.js';
+import {
+  addBoardShape,
+  addBoardTrack,
+  addBoardVia,
+  addBoardText,
+} from '@ziroeda/pcbnew/src/edit-board.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 import type { Board } from '@ziroeda/pcbnew/src/types.js';
 
@@ -78,5 +83,42 @@ describe('addBoardShape (DRAWING_TOOL commits)', () => {
     expect(back.shapes[1]!.center).toEqual({ x: mmToIU(2), y: mmToIU(2) });
     expect(back.shapes[2]!.mid).toEqual({ x: mmToIU(1), y: mmToIU(1) });
     expect(back.shapes[3]!.pts).toHaveLength(3);
+  });
+
+  it('round-trips routed tracks, vias and placed text (ROUTER_TOOL / PlaceText)', () => {
+    let b = mk();
+    b = addBoardTrack(b, {
+      start: { x: 0, y: 0 },
+      end: { x: mmToIU(5), y: 0 },
+      width: mmToIU(0.2),
+      layer: 'F.Cu',
+      net: 0,
+    }).board;
+    b = addBoardVia(b, {
+      at: { x: mmToIU(5), y: 0 },
+      size: mmToIU(0.6),
+      drill: mmToIU(0.3),
+      layers: ['F.Cu', 'B.Cu'],
+      kind: 'through',
+      net: 0,
+    }).board;
+    b = addBoardText(b, {
+      kind: 'user',
+      text: 'REV A',
+      at: { x: mmToIU(1), y: mmToIU(1) },
+      angle: 0,
+      layer: 'F.SilkS',
+      size: { x: mmToIU(1), y: mmToIU(1) },
+      thickness: mmToIU(0.1),
+    }).board;
+
+    const back = readBoard(parse(serializeBoard(b)));
+    expect(back.tracks).toHaveLength(1);
+    expect(back.tracks[0]!.width).toBe(mmToIU(0.2));
+    expect(back.vias).toHaveLength(1);
+    expect(back.vias[0]!.size).toBe(mmToIU(0.6));
+    expect(back.texts).toHaveLength(1);
+    expect(back.texts[0]!.text).toBe('REV A');
+    expect(back.texts[0]!.layer).toBe('F.SilkS');
   });
 });
