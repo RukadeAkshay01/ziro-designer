@@ -771,7 +771,7 @@ export function PcbEditor({
       hideFrontFootprints: !objects.footprintsFront,
       hideBackFootprints: !objects.footprintsBack,
     });
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [objects.footprintsFront, objects.footprintsBack]);
@@ -789,6 +789,11 @@ export function PcbEditor({
   } | null>(null);
   const renderingRef = useRef(false);
   const viewChangedRef = useRef(true);
+  // The scene/board changed since the cached raster was built, so it needs a
+  // fresh render even though the view matches. We keep the (stale) raster on
+  // screen and re-render into a new canvas in the background, swapping when
+  // ready — so an edit/undo/toggle never blanks the board for a frame.
+  const sceneDirtyRef = useRef(true);
 
   const viewMatchesCache = (): boolean => {
     const c = cacheRef.current;
@@ -811,12 +816,14 @@ export function PcbEditor({
     const canvas = canvasRef.current;
     const scene = sceneRef.current;
     if (!canvas || !scene || canvas.width < 2) return;
-    if (viewMatchesCache()) {
+    if (viewMatchesCache() && !sceneDirtyRef.current) {
       viewChangedRef.current = false;
       return;
     }
     renderingRef.current = true;
     viewChangedRef.current = false;
+    // Capture the current scene into this render; further edits re-dirty it.
+    sceneDirtyRef.current = false;
     const work = document.createElement('canvas');
     work.width = canvas.width;
     work.height = canvas.height;
@@ -849,9 +856,10 @@ export function PcbEditor({
         cacheRef.current = { canvas: work, view: jobView };
         renderingRef.current = false;
         requestDraw();
-        // The view moved on while we were rendering: keep chasing it so the
-        // image keeps sharpening throughout a continuous zoom.
-        if (viewChangedRef.current || !viewMatchesCache()) startCrispRender();
+        // The view moved or the scene changed while we were rendering: keep
+        // chasing it so the image keeps sharpening / catches the latest edit.
+        if (viewChangedRef.current || sceneDirtyRef.current || !viewMatchesCache())
+          startCrispRender();
       }
     };
     run();
@@ -866,7 +874,7 @@ export function PcbEditor({
     const v = viewRef.current;
     // Signed X scale for the flipped (mirrored) view; world→screen X uses this.
     const sx = v.flipX ? -v.scale : v.scale;
-    if (!viewMatchesCache()) {
+    if (!viewMatchesCache() || sceneDirtyRef.current) {
       viewChangedRef.current = true;
       startCrispRender();
     }
@@ -952,6 +960,37 @@ export function PcbEditor({
           }
           ctx.stroke();
         }
+      }
+    }
+    // Field leader line: a selected footprint text draws a thin line back to its
+    // parent footprint's origin, so you can see which part a stray reference/
+    // value belongs to (KiCad's FP_TEXT parent indicator). Follows the drag.
+    {
+      const sel = selForDrawRef.current;
+      const brd = boardRef.current;
+      if (brd) {
+        const md = moveDeltaRef.current;
+        const off = !dragModeRef.current && md ? md : { x: 0, y: 0 };
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.strokeStyle = 'rgba(180,180,180,0.7)';
+        ctx.lineWidth = Math.max(1, dpr);
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        for (const id of sel) {
+          const r = parseBoardItemId(id);
+          if (r?.kind !== 'fptext') continue;
+          const fp = brd.footprints[r.index];
+          const t = fp?.texts[r.sub ?? 0];
+          if (!fp || !t) continue;
+          const tx = (t.at.x + off.x) * sx + v.tx;
+          const ty = (t.at.y + off.y) * v.scale + v.ty;
+          const ax = fp.at.x * sx + v.tx;
+          const ay = fp.at.y * v.scale + v.ty;
+          ctx.beginPath();
+          ctx.moveTo(tx, ty);
+          ctx.lineTo(ax, ay);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
       }
     }
     // Selection / move overlay: the selected items repainted brightened over the
@@ -1230,7 +1269,7 @@ export function PcbEditor({
 
   // Layer/object changes invalidate the raster.
   useEffect(() => {
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
   }, [visible, drawOpts, requestDraw]);
 
@@ -1265,7 +1304,7 @@ export function PcbEditor({
         hideBackFootprints: !objects.footprintsBack,
       });
       rebuildSelScene();
-      cacheRef.current = null;
+      sceneDirtyRef.current = true;
       requestDraw();
     },
     [objects.footprintsFront, objects.footprintsBack, requestDraw, rebuildSelScene],
@@ -1436,7 +1475,7 @@ export function PcbEditor({
         fittedRef.current = true;
         zoomToFit();
       } else {
-        cacheRef.current = null;
+        sceneDirtyRef.current = true;
         requestDraw();
       }
     });
@@ -1454,7 +1493,7 @@ export function PcbEditor({
     // Mirror tx about the viewport centre so the visible board doesn't jump.
     if (canvas) v.tx = canvas.width - v.tx;
     setFlipView(v.flipX);
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
     requestDraw();
   }, [requestDraw]);
 
@@ -1945,7 +1984,7 @@ export function PcbEditor({
       ? null
       : buildScene(subsetBoardItems(brd, sel), sceneFilter());
     moveDeltaRef.current = { x: 0, y: 0 };
-    cacheRef.current = null;
+    sceneDirtyRef.current = true;
   };
 
   // Track the in-flight gesture to the grid-snapped cursor. A drag rebuilds the
@@ -1964,6 +2003,15 @@ export function PcbEditor({
         subsetBoardItems(dragged, dragAffectedRef.current),
         sceneFilter(),
       );
+    }
+    // Live ratsnest (KiCad recomputes airwires while dragging): recompute from
+    // the moved geometry so the airwires follow the part. Skipped on very large
+    // boards where a per-frame recompute would stall.
+    if (liveRatsRef.current) {
+      const preview = dragModeRef.current
+        ? dragBoardItems(brd, movingSelRef.current, delta)
+        : moveBoardItems(brd, movingSelRef.current, delta);
+      ratsDrawRef.current = filterRatsRef.current(buildRatsnest(preview), selectedNetsRef.current);
     }
     requestDraw();
   };
@@ -1995,6 +2043,12 @@ export function PcbEditor({
     moveDeltaRef.current = null;
     moveSceneRef.current = null;
     moveOriginRef.current = null;
+    // Undo the live-ratsnest preview (the board didn't change).
+    if (liveRatsRef.current)
+      ratsDrawRef.current = filterRatsRef.current(
+        ratsnestEdgesRef.current,
+        selectedNetsRef.current,
+      );
     if (brd) rebuildScene(brd);
   };
 
@@ -2499,22 +2553,64 @@ export function PcbEditor({
 
   // The airwires (CONNECTIVITY_DATA::GetRatsnest), recomputed on every edit.
   const ratsnestEdges = useMemo(() => (board ? buildRatsnest(board) : []), [board]);
+  const ratsnestEdgesRef = useRef<RatsnestEdge[]>(ratsnestEdges);
+  ratsnestEdgesRef.current = ratsnestEdges;
 
-  // Airwires filtered/colored for display, kept in a ref for the draw pass.
-  const ratsDrawRef = useRef<{ e: RatsnestEdge; color: string }[]>([]);
-  useEffect(() => {
-    const brd = boardRef.current;
-    const list: { e: RatsnestEdge; color: string }[] = [];
-    if (brd) {
+  // Nets of the current selection — their airwires are always shown (even when
+  // the global ratsnest is off), so clicking a pad/footprint/track reveals the
+  // thin airwires to what it connects to (PCB_SELECTION_TOOL local ratsnest).
+  const selectedNets = useMemo(() => {
+    const nets = new Set<number>();
+    if (!board) return nets;
+    for (const id of selection) {
+      const r = parseBoardItemId(id);
+      if (!r) continue;
+      if (r.kind === 'footprint' || r.kind === 'fptext') {
+        const fp = board.footprints[r.index];
+        if (fp) for (const p of fp.pads) if (p.net && p.net > 0) nets.add(p.net);
+      } else if (r.kind === 'track') {
+        const t = board.tracks[r.index];
+        if (t && t.net > 0) nets.add(t.net);
+      } else if (r.kind === 'arc') {
+        const a = board.arcs[r.index];
+        if (a && a.net > 0) nets.add(a.net);
+      } else if (r.kind === 'via') {
+        const v = board.vias[r.index];
+        if (v && v.net > 0) nets.add(v.net);
+      }
+    }
+    return nets;
+  }, [selection, board]);
+  const selectedNetsRef = useRef<ReadonlySet<number>>(selectedNets);
+  selectedNetsRef.current = selectedNets;
+
+  // Only recompute the ratsnest live during a drag on boards small enough that
+  // a per-frame buildRatsnest stays smooth (bigger boards update on drop).
+  const liveRatsRef = useRef(false);
+  liveRatsRef.current = board
+    ? board.footprints.reduce((n, f) => n + f.pads.length, 0) + board.vias.length <= 1500
+    : false;
+
+  // Filter + color a raw airwire list for display (the Nets-tab visibility, the
+  // Net Display Options modes, and the Local Ratsnest set). Shared by the
+  // steady-state effect and the live recompute during a move.
+  const filterRats = useCallback(
+    (
+      edges: RatsnestEdge[],
+      forcedLocalNets?: ReadonlySet<number>,
+    ): { e: RatsnestEdge; color: string }[] => {
+      const brd = boardRef.current;
+      if (!brd) return [];
       const anyCuVisible = [...visible].some((l) => /\.Cu$/.test(l));
       const layerOn = (l: string): boolean => (l === 'through' ? anyCuVisible : visible.has(l));
-      const localNets = new Set<number>();
+      const localNets = new Set<number>(forcedLocalNets);
       for (const fi of localRats) {
         const fp = brd.footprints[fi];
         if (fp) for (const pad of fp.pads) if (pad.net && pad.net > 0) localNets.add(pad.net);
       }
       const globalOn = objects.ratsnest && ratsnestMode !== 'off';
-      for (const e of ratsnestEdges) {
+      const list: { e: RatsnestEdge; color: string }[] = [];
+      for (const e of edges) {
         const isLocal = localNets.has(e.net);
         if (!globalOn && !isLocal) continue;
         const cls = netClassOf.get(e.net) ?? 'Default';
@@ -2526,23 +2622,30 @@ export function PcbEditor({
         if (netColorMode !== 'off') color = netColors.get(e.net) ?? classColorOf(cls) ?? color;
         list.push({ e, color });
       }
-    }
-    ratsDrawRef.current = list;
+      return list;
+    },
+    [
+      objects.ratsnest,
+      ratsnestMode,
+      hiddenNets,
+      hiddenClasses,
+      netColors,
+      netColorMode,
+      classColorOf,
+      netClassOf,
+      visible,
+      localRats,
+    ],
+  );
+  const filterRatsRef = useRef(filterRats);
+  filterRatsRef.current = filterRats;
+
+  // Airwires filtered/colored for display, kept in a ref for the draw pass.
+  const ratsDrawRef = useRef<{ e: RatsnestEdge; color: string }[]>([]);
+  useEffect(() => {
+    ratsDrawRef.current = filterRats(ratsnestEdges, selectedNets);
     requestDraw();
-  }, [
-    ratsnestEdges,
-    objects.ratsnest,
-    ratsnestMode,
-    hiddenNets,
-    hiddenClasses,
-    netColors,
-    netColorMode,
-    classColorOf,
-    netClassOf,
-    visible,
-    localRats,
-    requestDraw,
-  ]);
+  }, [ratsnestEdges, selectedNets, filterRats, requestDraw]);
 
   // Net colors mode "All": copper items of explicitly-colored nets get an
   // overlay tint (tracks/arcs/vias/zones; pads keep their layer color for now).
@@ -2669,7 +2772,7 @@ export function PcbEditor({
         rotateSel(false);
         break;
       case 'zoomRedraw':
-        cacheRef.current = null;
+        sceneDirtyRef.current = true;
         requestDraw();
         break;
       case 'zoomIn':
@@ -2736,7 +2839,7 @@ export function PcbEditor({
         {
           label: 'Redraw',
           action: () => {
-            cacheRef.current = null;
+            sceneDirtyRef.current = true;
             requestDraw();
           },
           shortcut: 'F5',
