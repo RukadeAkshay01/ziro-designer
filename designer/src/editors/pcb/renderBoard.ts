@@ -142,6 +142,9 @@ export interface BoardScene {
   padHolesPlated: Path2D;
   padHoleWalls: Path2D;
   padHolesNP: Path2D;
+  /** Pad number/name glyphs (thickness → strokes), drawn over the pads in a
+   *  contrasting color (KiCad's LAYER_PAD numbers). */
+  padText: Map<number, Path2D>;
   bbox: { minX: number; minY: number; maxX: number; maxY: number } | null;
 }
 
@@ -604,6 +607,7 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
     padHolesPlated: new Path2D(),
     padHoleWalls: new Path2D(),
     padHolesNP: new Path2D(),
+    padText: new Map(),
     bbox: null,
   };
   const copperNames = board.layers
@@ -740,6 +744,27 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
           h: pad.drill.h + 0.1 * MM,
         });
         addHole(scene.padHolesPlated, pad, pad.drill);
+      }
+      // Pad number, centred on the pad and sized to fit it (KiCad draws the pad
+      // number on LAYER_PADS). Fit by the short side and the digit count so it
+      // stays inside the copper; oriented along the pad's longer axis.
+      if (pad.number && pad.number !== '') {
+        const short = Math.min(pad.size.x, pad.size.y);
+        const long = Math.max(pad.size.x, pad.size.y);
+        const n = pad.number.length;
+        const size = Math.min(short * 0.75, (long * 0.85) / Math.max(1, n * 0.7));
+        if (size > 0.05 * MM) {
+          const vertical = pad.size.y > pad.size.x * 1.2;
+          addText(scene.padText, {
+            kind: 'user',
+            text: pad.number,
+            at: pad.at,
+            angle: (pad.angle ?? 0) + (vertical ? 90 : 0),
+            layer: '',
+            size: { x: size, y: size },
+            thickness: Math.max(size * 0.12, 1),
+          } as PcbTextItem);
+        }
       }
       grow(pad.at.x, pad.at.y, Math.max(pad.size.x, pad.size.y) / 2);
     }
@@ -1232,6 +1257,17 @@ export function buildDrawSteps(
   });
 
   for (let i = fCuIndex + 1; i < PCB_PAINT_ORDER.length; i++) pushLayer(PCB_PAINT_ORDER[i]!);
+
+  // Pad numbers on top, in a bright contrasting color (KiCad draws them over
+  // the pad copper). Selection brightening doesn't apply to the label.
+  if (opts.pads && scene.padText.size > 0) {
+    steps.push(() => {
+      ctx.globalAlpha = opts.padOpacity;
+      ctx.strokeStyle = PCB_SPECIAL.padName;
+      strokeAll(ctx, scene.padText, minPen);
+      ctx.globalAlpha = 1;
+    });
+  }
   return steps;
 }
 
