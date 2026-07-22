@@ -15,11 +15,17 @@ import {
   MU0,
   type TcElectrical,
   ZF0,
-  ellipticK,
+  ellipticIntegral,
   skinDepth,
   unitPropagationDelay,
 } from './tc_common.js';
 import type { TranslineAnalysis } from './transline.js';
+
+// KiCad's EllipticIntegral() interprets its argument as the *parameter* m
+// (b = sqrt(1 - arg)), yet the coplanar code passes the modulus k straight in.
+// The QA-pinned results (e.g. Z0 = 72.30 for the FR-4 vector) depend on that
+// convention, so mirror it exactly rather than using the classical K(k).
+const ellipticK = (arg: number): number => ellipticIntegral(arg)[0];
 
 export interface CoplanarPhysical {
   /** Centre-strip width W, m. */
