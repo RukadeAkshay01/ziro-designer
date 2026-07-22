@@ -9,12 +9,13 @@ import {
   COPPER_TEMP_COEFF_PER_K,
 } from './tracks_width_versus_current_formula.js';
 
+// Same gauge range and naming as KiCad's CABLE_SIZE_ENTRY list (AWG0000 … AWG30).
 export const AWG_NAMES: readonly string[] = [
-  'AWG 0000 (4/0)',
-  'AWG 000 (3/0)',
-  'AWG 00 (2/0)',
-  'AWG 0 (1/0)',
-  ...Array.from({ length: 37 }, (_, i) => `AWG ${i + 1}`),
+  'AWG0000',
+  'AWG000',
+  'AWG00',
+  'AWG0',
+  ...Array.from({ length: 30 }, (_, i) => `AWG${i + 1}`),
 ];
 
 /** Diameter (m) of AWG gauge n, where n = -3 for 0000 … 36. */

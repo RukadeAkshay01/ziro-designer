@@ -41,6 +41,8 @@ export interface FusingResult {
   currentA: number;
   timeS: number;
   error?: string;
+  /** Validity-domain caveat (adiabatic model breaks down for long fuse times). */
+  comment?: string;
 }
 
 /** Energy-per-volume ÷ average resistivity coefficient (t = coeff·(A/I)²). */
@@ -51,6 +53,24 @@ function coefficient(ambientC: number, meltingC: number): number {
   const rm = ((meltingC - ABS_ZERO - 293) * ALPHA + 1) * RHO20;
   const r = (ra + rm) / 2;
   return volumicEnergy / r;
+}
+
+/**
+ * Adiabatic-model validity check, following the paper KiCad cites
+ * (https://adam-research.de/pdfs/TRM_WhitePaper10_AdiabaticWire.pdf): the track
+ * is approximated by a circle of the same area; if the fuse time is not short
+ * compared to the radiative thermal time constant τ, the computed current is
+ * underestimated.
+ */
+function validityComment(areaM2: number, timeS: number, meltingC: number): string | undefined {
+  const r = Math.sqrt(areaM2 / Math.PI); // radius in m
+  const epsilon = 5.67e-8; // Stefan-Boltzmann constant, W/(m²·K⁴)
+  const sigma = 0.5; // surface radiative emissivity (between polished and oxidized)
+  const tmKelvin = meltingC - ABS_ZERO;
+  const frad = 0.5 * (tmKelvin + 293) * (tmKelvin + 293) * (tmKelvin + 293);
+  const tau = (CP * DENSITY * r) / (epsilon * sigma * frad * 2);
+  if (2 * timeS < tau) return undefined;
+  return 'Current calculation is underestimated due to long fusing time.';
 }
 
 export function fusingCurrent(p: FusingParams): FusingResult {
@@ -71,6 +91,7 @@ export function fusingCurrent(p: FusingParams): FusingResult {
         return { ...out, error: 'Enter positive width, thickness and time.' };
       const area = p.widthM * p.thicknessM;
       out.currentA = area * Math.sqrt(coeff / p.timeS);
+      out.comment = validityComment(area, out.timeS, p.meltingC);
       return out;
     }
     case 'time': {
@@ -78,6 +99,7 @@ export function fusingCurrent(p: FusingParams): FusingResult {
         return { ...out, error: 'Enter positive width, thickness and current.' };
       const area = p.widthM * p.thicknessM;
       out.timeS = (coeff * area * area) / (p.currentA * p.currentA);
+      out.comment = validityComment(area, out.timeS, p.meltingC);
       return out;
     }
     case 'width': {
@@ -85,6 +107,7 @@ export function fusingCurrent(p: FusingParams): FusingResult {
         return { ...out, error: 'Enter positive thickness, current and time.' };
       const area = p.currentA / Math.sqrt(coeff / p.timeS);
       out.widthM = area / p.thicknessM;
+      out.comment = validityComment(area, out.timeS, p.meltingC);
       return out;
     }
     case 'thickness': {
@@ -92,6 +115,7 @@ export function fusingCurrent(p: FusingParams): FusingResult {
         return { ...out, error: 'Enter positive width, current and time.' };
       const area = p.currentA / Math.sqrt(coeff / p.timeS);
       out.thicknessM = area / p.widthM;
+      out.comment = validityComment(area, out.timeS, p.meltingC);
       return out;
     }
   }

@@ -4,7 +4,7 @@
  * + `pcb_calculator/class_regulator_data.h`.
  *
  * 3-terminal type:  Vout = Vref · (R1 + R2) / R1 + Iadj · R2
- * Standard type:    Vout = Vref · (R1 + R2) / R1
+ * Standard type:    Vout = Vref · (R1 + R2) / R2
  * (R1 from output to ADJ/FB, R2 from ADJ/FB to ground — as drawn on the panel.)
  */
 

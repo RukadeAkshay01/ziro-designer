@@ -105,18 +105,21 @@ function NumRow({
 
 export function PanelFusingCurrent(): JSX.Element {
   const [ambient, setAmbient] = useState('25');
+  const [melting, setMelting] = useState('1084'); // copper
   const [widthM, setWidthM] = useState(0.1e-3);
   const [thicknessM, setThicknessM] = useState(0.035e-3);
   const [current, setCurrent] = useState('10');
   const [time, setTime] = useState('0.01');
   const [solveFor, setSolveFor] = useState<FusingSolveFor>('current');
   const [error, setError] = useState('');
+  const [comment, setComment] = useState('');
 
   const calculate = (): void => {
     setError('');
+    setComment('');
     const r = fusingCurrent({
       ambientC: parseNum(ambient),
-      meltingC: 1084, // copper
+      meltingC: parseNum(melting),
       widthM,
       thicknessM,
       currentA: parseNum(current),
@@ -127,6 +130,7 @@ export function PanelFusingCurrent(): JSX.Element {
       setError(r.error);
       return;
     }
+    setComment(r.comment ?? '');
     if (solveFor === 'width') setWidthM(r.widthM);
     else if (solveFor === 'thickness') setThicknessM(r.thicknessM);
     else if (solveFor === 'current') setCurrent(fmt(r.currentA, 6));
@@ -137,7 +141,7 @@ export function PanelFusingCurrent(): JSX.Element {
     <div>
       <div style={{ maxWidth: 460 }}>
         <Field label="Ambient temperature:" value={ambient} onChange={setAmbient} unit="°C" />
-        <Field label="Melting point:" value="1084" readOnly unit="°C" title="Copper" />
+        <Field label="Melting point:" value={melting} onChange={setMelting} unit="°C" title="Copper" />
         <LenRow
           label="Track width:"
           solveFor="width"
@@ -178,6 +182,7 @@ export function PanelFusingCurrent(): JSX.Element {
           </button>
         </div>
         {error && <div className="calc-error">{error}</div>}
+        {comment && <div className="calc-note">{comment}</div>}
       </div>
 
       <fieldset className="calc-group" style={{ marginTop: 14 }}>

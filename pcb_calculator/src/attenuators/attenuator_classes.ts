@@ -5,10 +5,10 @@
  * With L = 10^(dB/10) (power ratio) and K = 10^(dB/20) (voltage ratio):
  *   PI  : R2 = (L−1)/2 · sqrt(Zin·Zout/L)
  *         R1 = 1 / ( (L+1)/(Zin·(L−1)) − 1/R2 ),  R3 likewise with Zout
- *   Tee : R3 = 2·sqrt(L·Zin·Zout)/(L−1)
- *         R1 = Zin·(L+1)/(L−1) − R3,  R2 = Zout·(L+1)/(L−1) − R3
+ *   Tee : R2 = 2·sqrt(L·Zin·Zout)/(L−1)   (centre shunt)
+ *         R1 = Zin·(L+1)/(L−1) − R2,  R3 = Zout·(L+1)/(L−1) − R2
  *   Bridged Tee (Zin=Zout=Z): R1 = Z·(K−1),  R2 = Z/(K−1)
- *   Splitter (Zin=Zout=Z):    R1 = R2 = R3 = Z/3, attenuation fixed 6.02 dB
+ *   Splitter (Zin=Zout=Z):    R1 = R2 = R3 = Z/3, attenuation fixed 6 dB
  */
 
 export enum AttenuatorType {
@@ -118,10 +118,11 @@ export function calculateAttenuator(
           `Attenuation must be at least ${minDb.toFixed(3)} dB for this Zin/Zout.`,
           minDb,
         );
+      // KiCad convention: R1 = series in, R2 = centre shunt, R3 = series out.
       const l = 10 ** (attenuationDb / 10);
-      const r3 = (2 * Math.sqrt(l * zin * zout)) / (l - 1);
-      const r1 = (zin * (l + 1)) / (l - 1) - r3;
-      const r2 = (zout * (l + 1)) / (l - 1) - r3;
+      const r2 = (2 * Math.sqrt(l * zin * zout)) / (l - 1);
+      const r1 = (zin * (l + 1)) / (l - 1) - r2;
+      const r3 = (zout * (l + 1)) / (l - 1) - r2;
       if (![r1, r2, r3].every((r) => Number.isFinite(r) && r > 0))
         return fail('No resistive solution for these values.', minDb);
       return { resistors: [r1, r2, r3], attenuationDb, minAttenuationDb: minDb };
@@ -136,8 +137,9 @@ export function calculateAttenuator(
       };
     }
     case AttenuatorType.SPLITTER: {
+      // KiCad reports the split attenuation as a flat 6.0 dB.
       const z3 = zin / 3;
-      return { resistors: [z3, z3, z3], attenuationDb: 6.0206, minAttenuationDb: 6.0206 };
+      return { resistors: [z3, z3, z3], attenuationDb: 6.0, minAttenuationDb: 6.0 };
     }
   }
 }

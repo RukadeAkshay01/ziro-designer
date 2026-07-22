@@ -70,10 +70,10 @@ function AttenuatorDrawing({ type }: { type: AttenuatorType }): JSX.Element {
           {wire(10, 40, 60, 40, 0)}
           {res(60, 35, false, 'R1')}
           {wire(96, 40, 170, 40, 1)}
-          {res(170, 35, false, 'R2')}
+          {res(170, 35, false, 'R3')}
           {wire(206, 40, 310, 40, 2)}
           {wire(150, 40, 150, 60, 3)}
-          {res(145, 60, true, 'R3')}
+          {res(145, 60, true, 'R2')}
           {wire(150, 96, 150, 115, 4)}
           {gnd(150, 115, 0)}
         </svg>
