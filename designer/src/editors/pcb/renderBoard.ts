@@ -523,13 +523,28 @@ function addPadLabels(scene: BoardScene, pad: PcbPad, netName: string): void {
   if (padNumber === '' && !showNet) return;
 
   const round = pad.shape === 'circle' || pad.shape === 'oval';
-  let px = pad.size.x; // along the text baseline
-  let py = pad.size.y; // perpendicular (drives the font size)
-  let angle = pad.angle ?? 0;
+  // KiCad works from the pad's AXIS-ALIGNED bounding box (GetBoundingBox), not
+  // the rotated pad frame, and draws with ANGLE_HORIZONTAL — so labels are
+  // always upright regardless of pad rotation; only a portrait bbox turns the
+  // text -90° to run down the long axis.
+  const rot = ((pad.angle ?? 0) * Math.PI) / 180;
+  const cosR = Math.abs(Math.cos(rot));
+  const sinR = Math.abs(Math.sin(rot));
+  let px = pad.size.x * cosR + pad.size.y * sinR; // bbox width
+  let py = pad.size.x * sinR + pad.size.y * cosR; // bbox height
+  // "Don't allow a 45° rotation to bloat a pad's bounding box unnecessarily."
+  if (pad.shape !== 'custom') {
+    const limit = Math.min(pad.size.x, pad.size.y) * 1.1;
+    if (px > limit && py > limit) {
+      px = limit;
+      py = limit;
+    }
+  }
+  let angle = 0;
   let size = py;
-  // Portrait pad: rotate the text 90° and run it down the taller axis.
+  // Portrait bbox: rotate the text 90° and run it down the taller axis.
   if (px < py * 0.95) {
-    angle += 90;
+    angle = 90;
     size = px;
     [px, py] = [py, px];
   }
@@ -544,11 +559,10 @@ function addPadLabels(scene: BoardScene, pad: PcbPad, netName: string): void {
     yOffNum = size / 1.7; // pad number above centre
   }
   const Xscale = 0.9; // condense x for the stroke font
-  const rad = (-angle * Math.PI) / 180;
-  const sinA = Math.sin(rad);
-  const cosA = Math.cos(rad);
-  // A local +Y (down) offset maps to world (−dy·sin, dy·cos).
-  const anchor = (dy: number): Vec2 => ({ x: pad.at.x - dy * sinA, y: pad.at.y + dy * cosA });
+  // A local +Y (down) offset in the text frame (upright or the -90° portrait
+  // case) maps to world coords about the pad centre.
+  const anchor = (dy: number): Vec2 =>
+    angle === 90 ? { x: pad.at.x + dy, y: pad.at.y } : { x: pad.at.x, y: pad.at.y + dy };
   const label = (text: string, at: Vec2, glyph: number): void => {
     addText(scene.padText, {
       kind: 'user',

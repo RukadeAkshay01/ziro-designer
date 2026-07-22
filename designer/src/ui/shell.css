@@ -968,7 +968,36 @@ body {
 }
 .ze-appearance-bottom select {
   width: 100%;
+}
+
+/* Native <select> comboboxes default to the OS light theme (white box on
+   Linux/GTK). Give KiCad's dark combobox look to the top aux bar (track / via
+   / layer / grid / zoom) and the Presets / Viewports selects, plus the drop-
+   down list itself. The .ze-select / .ze-cell-select classes handle dialogs. */
+.ze-auxbar select,
+.ze-appearance-bottom select {
+  background: var(--chrome-bg2);
+  color: var(--chrome-fg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font: inherit;
   font-size: 12px;
+  outline: none;
+}
+.ze-auxbar select:focus,
+.ze-appearance-bottom select:focus {
+  border-color: var(--chrome-active-border);
+}
+.ze-auxbar select:disabled,
+.ze-appearance-bottom select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+/* The drop-down list items the browser paints when the combo is open. */
+.ze-app select option {
+  background: var(--chrome-bg);
+  color: var(--chrome-fg);
 }
 .ze-leftdock .ze-panel {
   width: auto;
