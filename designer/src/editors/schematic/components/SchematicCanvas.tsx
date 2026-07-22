@@ -21,7 +21,6 @@ import {
   makeJunction,
   makeNoConnect,
   makeLabel,
-  transformItems,
   startSegments,
   computeBreakPoint,
   switchPosture90,
@@ -50,7 +49,6 @@ import {
   type Schematic,
   type LibSymbol,
   type LibGraphic,
-  type TransformOp,
   type LabelKind,
   type LabelShape,
   type PastePayload,
@@ -1565,6 +1563,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   // (KiCad hotkeys): the attached symbol while placing, else the selection.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'schematic') !== 'schematic') return;
       if (e.key === 'Escape' && wiresRef.current.length) {
         wiresRef.current = [];
         draw();
@@ -1617,39 +1618,41 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
+      // R/X/Y here only steer the item attached to the cursor while placing;
+      // selection transforms live in the editor's hotkey handler (a second
+      // window listener — handling them in both applied every transform twice).
       const k = e.key.toLowerCase();
-      const op: TransformOp | null =
-        k === 'r' ? 'rotateCCW' : k === 'x' ? 'mirrorX' : k === 'y' ? 'mirrorY' : null;
-      if (!op) return;
+      if (k !== 'r' && k !== 'x' && k !== 'y') return;
 
       // Bus-entry tool: R cycles the stub through its four 45° orientations.
-      if (activeTool === 'busEntry' && op === 'rotateCCW') {
+      if (activeTool === 'busEntry' && k === 'r') {
         const sz = entrySizeRef.current;
-        entrySizeRef.current = { x: sz.y, y: -sz.x };
+        entrySizeRef.current = e.shiftKey
+          ? { x: -sz.y, y: sz.x } // Shift+R = rotate CW
+          : { x: sz.y, y: -sz.x };
         e.preventDefault();
         draw();
         return;
       }
 
       if ((activeTool === 'placeSymbol' || activeTool === 'placePower') && placeLib) {
-        // Advance the attached symbol's orientation in place.
+        // Advance the attached symbol's orientation in place. Serialized mirror
+        // axis 'y' is KiCad's MirrorHorizontally (hotkey X), 'x' its
+        // MirrorVertically (hotkey Y) — see common/transform.ts.
         const o = placeOrientRef.current;
         placeOrientRef.current =
-          op === 'rotateCCW'
-            ? rotateOrientation(o)
-            : op === 'mirrorX'
-              ? mirrorOrientation(o, 'x')
-              : mirrorOrientation(o, 'y');
+          k === 'r'
+            ? rotateOrientation(o, e.shiftKey)
+            : k === 'x'
+              ? mirrorOrientation(o, 'y')
+              : mirrorOrientation(o, 'x');
         e.preventDefault();
         draw();
-      } else if (selection.size > 0) {
-        e.preventDefault();
-        onCommand(transformItems(selection, op));
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draw, activeTool, placeLib, selection, onCommand, finishPoly]);
+  }, [draw, activeTool, placeLib, finishPoly]);
 
   const cursor = activeTool === 'select' ? 'default' : 'crosshair';
 

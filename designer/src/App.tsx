@@ -105,6 +105,13 @@ export function App(): JSX.Element {
     text: string;
     nonce: number;
   } | null>(null);
+  // Editors stay mounted (display toggled by CSS) but their global hotkey
+  // handlers must only act for the visible frame — a keystroke in eeschema
+  // must not drive the hidden board editor. Handlers read this stamp.
+  useEffect(() => {
+    document.body.dataset.activeView = view;
+  }, [view]);
+
   // Restore the last view on reload: reopen the most-recently-opened project
   // (top of Recent) into the saved view, so a refresh doesn't lose your work.
   // On reload, reopen the most-recently-opened project (top of Recent) — into

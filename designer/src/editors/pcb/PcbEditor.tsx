@@ -2479,6 +2479,9 @@ export function PcbEditor({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'pcb') !== 'pcb') return;
       // Don't steal keys from text fields (net filter, property editors…).
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT'))

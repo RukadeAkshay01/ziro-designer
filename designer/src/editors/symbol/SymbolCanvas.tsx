@@ -634,6 +634,9 @@ export const SymbolCanvas = forwardRef<SymbolCanvasController, Props>(function S
   // Escape cancels an in-progress shape (the frame handles tool reset).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'symbols') !== 'symbols') return;
       if (e.key === 'Escape' && drawStateRef.current) {
         drawStateRef.current = null;
         draw();

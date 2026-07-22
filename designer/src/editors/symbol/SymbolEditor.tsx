@@ -1046,6 +1046,9 @@ export function SymbolEditor({
       checkOpen ||
       newLibName !== null;
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'symbols') !== 'symbols') return;
       if (anyDialogOpen && e.key !== 'Escape') return;
       const tgt = e.target as HTMLElement | null;
       const typing =
@@ -1842,6 +1845,9 @@ function TreeSelActions({
 }): JSX.Element | null {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'symbols') !== 'symbols') return;
       if (!treeSel?.name) return;
       const tgt = e.target as HTMLElement | null;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;

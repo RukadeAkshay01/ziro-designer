@@ -866,6 +866,9 @@ export function DrawingSheetEditor({
   // ---- keyboard (pl_editor hotkeys: M move; standard undo/redo/clipboard) ----
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'drawingsheet') !== 'drawingsheet') return;
       const tgt = e.target as HTMLElement | null;
       const typing =
         !!tgt &&
@@ -928,6 +931,9 @@ export function DrawingSheetEditor({
   // ---- system-clipboard paste (Ctrl+V): image → bitmap, .kicad_wks text → items ----
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
+      // Hidden frames must not act on the document paste event (editors stay
+      // mounted behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'drawingsheet') !== 'drawingsheet') return;
       const tgt = e.target as HTMLElement | null;
       if (
         tgt &&

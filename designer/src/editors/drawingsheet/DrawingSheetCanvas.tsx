@@ -425,6 +425,9 @@ export const DrawingSheetCanvas = forwardRef<DrawingSheetCanvasController, Drawi
     // Space bar: set the relative-coordinate local origin at the cursor.
     useEffect(() => {
       const onKey = (e: KeyboardEvent): void => {
+        // Hidden frames must not act on global hotkeys (editors stay mounted
+        // behind display:none; no stamp = standalone build, always active).
+        if ((document.body.dataset.activeView ?? 'drawingsheet') !== 'drawingsheet') return;
         if (e.key !== ' ' || e.repeat) return;
         const tgt = e.target as HTMLElement | null;
         if (

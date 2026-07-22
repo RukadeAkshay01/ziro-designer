@@ -743,6 +743,9 @@ export function FootprintEditor({
     const dialogOpen =
       newLibName !== null || newFpName !== null || propsOpen || padDialogId !== null;
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'footprints') !== 'footprints') return;
       const tgt = e.target as HTMLElement | null;
       const typing =
         !!tgt &&
@@ -1396,6 +1399,9 @@ function TreeSelActions({
 }): JSX.Element | null {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'footprints') !== 'footprints') return;
       if (!treeSel?.name) return;
       const tgt = e.target as HTMLElement | null;
       if (tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA')) return;

@@ -379,6 +379,9 @@ export const GerberCanvas = forwardRef<GerberCanvasController, GerberCanvasProps
     // Escape cancels an in-flight measurement.
     useEffect(() => {
       const onKey = (e: KeyboardEvent): void => {
+        // Hidden frames must not act on global hotkeys (editors stay mounted
+        // behind display:none; no stamp = standalone build, always active).
+        if ((document.body.dataset.activeView ?? 'gerber') !== 'gerber') return;
         if (e.key === 'Escape' && measuringRef.current) {
           measuringRef.current = false;
           measureRef.current = null;

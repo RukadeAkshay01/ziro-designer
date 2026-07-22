@@ -1410,20 +1410,23 @@ export function SchematicEditor({
   };
 
   useEffect(() => {
+    // Editors stay mounted behind display:none — only the visible frame may
+    // own the document clipboard events (see App's activeView stamp).
+    const hidden = (): boolean => (document.body.dataset.activeView ?? 'schematic') !== 'schematic';
     const onCopy = (e: ClipboardEvent): void => {
-      if (isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
+      if (hidden() || isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
       e.clipboardData?.setData('text/plain', copySelectionText(doc, selection));
       e.preventDefault();
     };
     const onCut = (e: ClipboardEvent): void => {
-      if (isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
+      if (hidden() || isTyping() || propsTarget !== null || selection.size === 0 || !doc) return;
       e.clipboardData?.setData('text/plain', copySelectionText(doc, selection));
       e.preventDefault();
       runCommand(deleteByIds(selection));
       setSelection(new Set());
     };
     const onPaste = (e: ClipboardEvent): void => {
-      if (isTyping() || propsTarget !== null || !doc) return;
+      if (hidden() || isTyping() || propsTarget !== null || !doc) return;
       const text = e.clipboardData?.getData('text/plain') ?? '';
       const payload = parsePastedText(text, doc);
       if (!payload) return;
@@ -2068,6 +2071,9 @@ export function SchematicEditor({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'schematic') !== 'schematic') return;
       // While a modal properties dialog is open, only Escape acts on the editor.
       if (propsTarget !== null && e.key !== 'Escape') return;
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {

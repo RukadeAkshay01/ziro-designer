@@ -428,6 +428,9 @@ export function GerberViewer({
   // ---- keyboard ----------------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Hidden frames must not act on global hotkeys (editors stay mounted
+      // behind display:none; no stamp = standalone build, always active).
+      if ((document.body.dataset.activeView ?? 'gerber') !== 'gerber') return;
       const tgt = e.target as HTMLElement | null;
       if (
         tgt &&
