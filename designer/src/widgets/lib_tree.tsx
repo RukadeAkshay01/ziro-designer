@@ -151,7 +151,6 @@ export function LibTree({
     const out: Row[] = [];
     for (const lib of adapter.tree.children) {
       if (searching && lib.score <= 0) continue;
-      if (lib.isGroup && lib.children.length === 0) continue;
       const libOpen = isOpen(lib);
       out.push({ node: lib, indent: 0, expandable: true, open: libOpen });
       if (!libOpen) continue;
@@ -233,7 +232,9 @@ export function LibTree({
       style={{ left: ctxMenu.x, top: ctxMenu.y }}
       onMouseLeave={() => setCtxMenu(null)}
     >
-      {ctxMenu.node.type === LibTreeNodeType.LIBRARY && !ctxMenu.node.isGroup && (
+      {/* LIB_TREE::onItemContextMenu: Pin/Unpin only, on library rows only —
+          Expand/Collapse All live in the sort-button menu, not here. */}
+      {ctxMenu.node.type === LibTreeNodeType.LIBRARY && !ctxMenu.node.isGroup ? (
         <div
           className="item"
           onClick={() => {
@@ -245,27 +246,7 @@ export function LibTree({
           <span className="check" />
           {ctxMenu.node.pinned ? 'Unpin Library' : 'Pin Library'}
         </div>
-      )}
-      <div
-        className="item"
-        onClick={() => {
-          expandCollapseAll(true);
-          setCtxMenu(null);
-        }}
-      >
-        <span className="check" />
-        Expand All
-      </div>
-      <div
-        className="item"
-        onClick={() => {
-          expandCollapseAll(false);
-          setCtxMenu(null);
-        }}
-      >
-        <span className="check" />
-        Collapse All
-      </div>
+      ) : null}
     </div>
   );
 
@@ -323,7 +304,10 @@ export function LibTree({
             onContextMenu={(e) => {
               e.preventDefault();
               select(node);
-              setCtxMenu({ x: e.clientX, y: e.clientY, node });
+              // LIB_TREE::onItemContextMenu: the row menu exists only for
+              // pinnable (non-group) library rows.
+              if (node.type === LibTreeNodeType.LIBRARY && !node.isGroup)
+                setCtxMenu({ x: e.clientX, y: e.clientY, node });
             }}
             title={node.libId || node.name}
           >

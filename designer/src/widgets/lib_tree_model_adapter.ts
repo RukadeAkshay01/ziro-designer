@@ -66,11 +66,15 @@ export class LibTreeModelAdapter {
     return makeLibraryNode(this.tree, name, '');
   }
 
-  /** Total number of items in the tree (drives the "(N items loaded)" title). */
+  /** Total number of items in the tree (drives the "(N items loaded)" title).
+   *  With a filter set, only items passing it are counted
+   *  (LIB_TREE_MODEL_ADAPTER::GetItemCount). */
   getItemCount(): number {
     let count = 0;
     for (const lib of this.tree.children) {
-      if (!lib.isGroup) count += lib.children.length;
+      if (lib.isGroup) continue;
+      if (this.filter) count += lib.children.filter((c) => this.filter!(c)).length;
+      else count += lib.children.length;
     }
     return count;
   }
