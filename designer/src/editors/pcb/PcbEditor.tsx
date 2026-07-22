@@ -33,6 +33,7 @@ import {
   addBoardTrack,
   addBoardVia,
   addBoardText,
+  addBoardZone,
   type RatsnestEdge,
   type Board,
   type BoardItemKind,
@@ -113,6 +114,8 @@ const isClickTool = (t: string): boolean =>
   t === 'routeSingleTrack' ||
   t === 'drawVia' ||
   t === 'placeText' ||
+  t === 'drawZone' ||
+  t === 'measureTool' ||
   !!DRAW_SHAPE_TOOLS[t];
 
 // Default graphic line widths per layer class, in IU
@@ -655,10 +658,25 @@ export function PcbEditor({
   // Pending "Add Text" dialog: where the text will be placed.
   const [textDialog, setTextDialog] = useState<{ x: number; y: number } | null>(null);
   const [textDraft, setTextDraft] = useState('');
-  // Switching tools abandons the in-flight shape/route.
+  // Pending "Copper Zone Properties" dialog: the zone's first corner.
+  const [zoneDialog, setZoneDialog] = useState<{ x: number; y: number } | null>(null);
+  const [zoneNet, setZoneNet] = useState(0);
+  const [zoneLayer, setZoneLayer] = useState('F.Cu');
+  // In-flight zone outline (DRAWING_TOOL::DrawZone after the dialog).
+  const zoneRef = useRef<{ net: number; layer: string; pts: { x: number; y: number }[] } | null>(
+    null,
+  );
+  // Measure tool ruler: first point, and the frozen second point once clicked.
+  const measureRef = useRef<{
+    a: { x: number; y: number };
+    b: { x: number; y: number } | null;
+  } | null>(null);
+  // Switching tools abandons the in-flight shape/route/zone/ruler.
   useEffect(() => {
     drawingRef.current = [];
     routeRef.current = null;
+    zoneRef.current = null;
+    measureRef.current = null;
   }, [activeTool]);
   const sceneRef = useRef<BoardScene | null>(null);
   const rafRef = useRef(0);
@@ -952,6 +970,70 @@ export function PcbEditor({
         ctx.stroke();
         ctx.restore();
         ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
+    // Zone outline preview (DRAWING_TOOL::DrawZone): a thin polyline in the
+    // zone layer's color, plus the closing hint back to the first corner.
+    {
+      const z = zoneRef.current;
+      const cur0 = cursorRef.current;
+      if (z && z.pts.length > 0 && cur0) {
+        const p = snapToGrid(cur0);
+        ctx.save();
+        ctx.setTransform(v.scale, 0, 0, v.scale, v.tx, v.ty);
+        ctx.strokeStyle = layerColor(z.layer);
+        ctx.lineWidth = Math.max(1, dpr) / v.scale;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.moveTo(z.pts[0]!.x, z.pts[0]!.y);
+        for (let i = 1; i < z.pts.length; i++) ctx.lineTo(z.pts[i]!.x, z.pts[i]!.y);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        if (z.pts.length >= 2) {
+          ctx.globalAlpha = 0.4;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(z.pts[0]!.x, z.pts[0]!.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
+    // Measure ruler (ACTIONS::measureTool): line with end ticks and the
+    // distance / dx / dy readout in the current units.
+    {
+      const m = measureRef.current;
+      const cur0 = cursorRef.current;
+      if (m && (m.b || cur0)) {
+        const b = m.b ?? snapToGrid(cur0!);
+        const ax = m.a.x * v.scale + v.tx;
+        const ay = m.a.y * v.scale + v.ty;
+        const bx = b.x * v.scale + v.tx;
+        const by = b.y * v.scale + v.ty;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.strokeStyle = 'rgba(120,230,255,0.95)';
+        ctx.fillStyle = 'rgba(120,230,255,0.95)';
+        ctx.lineWidth = Math.max(1, dpr);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+        // End ticks perpendicular to the ruler.
+        const len = Math.hypot(bx - ax, by - ay) || 1;
+        const nx = (-(by - ay) / len) * 6 * dpr;
+        const ny = ((bx - ax) / len) * 6 * dpr;
+        ctx.moveTo(ax - nx, ay - ny);
+        ctx.lineTo(ax + nx, ay + ny);
+        ctx.moveTo(bx - nx, by - ny);
+        ctx.lineTo(bx + nx, by + ny);
+        ctx.stroke();
+        const dist = Math.hypot(b.x - m.a.x, b.y - m.a.y);
+        ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+        ctx.fillText(
+          `${fmtCoord(dist)} ${unitLabel}  (dx ${fmtCoord(b.x - m.a.x)}  dy ${fmtCoord(b.y - m.a.y)})`,
+          (ax + bx) / 2 + 10 * dpr,
+          (ay + by) / 2 - 8 * dpr,
+        );
       }
     }
     // In-flight drawing preview (DRAWING_TOOL's live outline): the committed
@@ -1699,6 +1781,56 @@ export function PcbEditor({
     );
   };
 
+  // One left click of the Draw Filled Zones tool: the first click opens the
+  // Copper Zone Properties dialog; afterwards clicks collect the outline,
+  // closing back on the first corner commits the (unfilled) zone.
+  const handleZoneClick = (world: { x: number; y: number }): void => {
+    const brd = boardRef.current;
+    if (!brd) return;
+    const p = snapToGrid(world);
+    const z = zoneRef.current;
+    if (!z) {
+      setZoneNet(copperAt(world)?.net ?? 0);
+      setZoneLayer(/\.Cu$/.test(activeLayer) ? activeLayer : 'F.Cu');
+      setZoneDialog(p);
+      return;
+    }
+    const closeToFirst =
+      z.pts.length >= 3 && Math.hypot(p.x - z.pts[0]!.x, p.y - z.pts[0]!.y) <= tolOf();
+    const sameAsLast =
+      z.pts.length >= 3 && p.x === z.pts[z.pts.length - 1]!.x && p.y === z.pts[z.pts.length - 1]!.y;
+    if (closeToFirst || sameAsLast) {
+      commitBoard(
+        addBoardZone(brd, {
+          net: z.net,
+          netName: brd.nets.get(z.net) ?? '',
+          layers: [z.layer],
+          outline: [...z.pts],
+          hatchStyle: 'edge',
+          hatchPitch: 0.5 * MM,
+        }).board,
+      );
+      zoneRef.current = null;
+    } else if (
+      z.pts.length === 0 ||
+      p.x !== z.pts[z.pts.length - 1]!.x ||
+      p.y !== z.pts[z.pts.length - 1]!.y
+    ) {
+      zoneRef.current = { ...z, pts: [...z.pts, p] };
+    }
+    requestDraw();
+  };
+
+  // Measure tool (ACTIONS::measureTool): two clicks pin the ruler; the next
+  // click starts a new measurement.
+  const handleMeasureClick = (world: { x: number; y: number }): void => {
+    const p = snapToGrid(world);
+    const m = measureRef.current;
+    if (!m || m.b) measureRef.current = { a: p, b: null };
+    else measureRef.current = { a: m.a, b: p };
+    requestDraw();
+  };
+
   // Free-standing via placement (PCB_ACTIONS::drawVia): each click drops a via,
   // picking up the net of the copper item underneath.
   const handleViaClick = (world: { x: number; y: number }): void => {
@@ -1969,6 +2101,12 @@ export function PcbEditor({
         } else if (activeToolRef.current === 'placeText') {
           const w = worldAt(e.clientX, e.clientY);
           if (w) setTextDialog(snapToGrid(w));
+        } else if (activeToolRef.current === 'drawZone') {
+          const w = worldAt(e.clientX, e.clientY);
+          if (w) handleZoneClick(w);
+        } else if (activeToolRef.current === 'measureTool') {
+          const w = worldAt(e.clientX, e.clientY);
+          if (w) handleMeasureClick(w);
         } else {
           clickSelect(e.clientX, e.clientY, d.shift);
         }
@@ -2071,6 +2209,12 @@ export function PcbEditor({
         } else if (routeRef.current) {
           // Esc ends the route in progress; committed segments stay.
           routeRef.current = null;
+          requestDrawRef.current();
+        } else if (zoneRef.current) {
+          zoneRef.current = null;
+          requestDrawRef.current();
+        } else if (measureRef.current) {
+          measureRef.current = null;
           requestDrawRef.current();
         } else if (drawingRef.current.length > 0) {
           // First Esc abandons the in-flight shape; the tool stays active.
@@ -3513,6 +3657,78 @@ export function PcbEditor({
                 Cancel
               </button>
               <button onClick={commitPlacedText}>OK</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* "Copper Zone Properties" dialog: the zone tool opens it on the first
+          click (DRAWING_TOOL::DrawZone), then the outline is drawn. */}
+      {zoneDialog && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.3)' }}
+            onMouseDown={() => setZoneDialog(null)}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: '50%',
+              top: '40%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 61,
+              background: '#2a2c30',
+              border: '1px solid #444',
+              borderRadius: 4,
+              width: 340,
+              padding: 12,
+              fontSize: 13,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>Copper Zone Properties</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 8 }}>
+              <label htmlFor="ze-zone-layer">Layer:</label>
+              <select
+                id="ze-zone-layer"
+                value={zoneLayer}
+                onChange={(e) => setZoneLayer(e.target.value)}
+              >
+                {copperLayers.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="ze-zone-net">Net:</label>
+              <select
+                id="ze-zone-net"
+                value={zoneNet}
+                onChange={(e) => setZoneNet(Number(e.target.value))}
+              >
+                <option value={0}>&lt;no net&gt;</option>
+                {nets.map(([code, name]) => (
+                  <option key={code} value={code}>
+                    {name || `(unnamed ${code})`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+              <button onClick={() => setZoneDialog(null)}>Cancel</button>
+              <button
+                onClick={() => {
+                  if (zoneDialog) {
+                    zoneRef.current = { net: zoneNet, layer: zoneLayer, pts: [zoneDialog] };
+                    if (zoneLayer !== activeLayer) setActiveLayer(zoneLayer);
+                  }
+                  setZoneDialog(null);
+                  requestDraw();
+                }}
+              >
+                OK
+              </button>
             </div>
           </div>
         </>

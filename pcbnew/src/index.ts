@@ -55,6 +55,7 @@ export {
   addBoardTrack,
   addBoardVia,
   addBoardText,
+  addBoardZone,
   rotateBoardItems,
   duplicateBoardItems,
   boardSelectionBBox,

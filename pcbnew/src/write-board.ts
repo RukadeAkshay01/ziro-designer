@@ -22,7 +22,15 @@ import { atom, str, isList, head, type SList, type SNode } from '@ziroeda/sexpr/
 import { serialize } from '@ziroeda/sexpr/src/serializer.js';
 import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { writeFootprintNode } from './write-footprint.js';
-import type { Board, PcbTrack, PcbArcTrack, PcbVia, PcbShape, PcbTextItem } from './types.js';
+import type {
+  Board,
+  PcbTrack,
+  PcbArcTrack,
+  PcbVia,
+  PcbShape,
+  PcbTextItem,
+  PcbZone,
+} from './types.js';
 import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
 const list = (...items: SNode[]): SList => ({ kind: 'list', items });
@@ -115,6 +123,42 @@ export function buildBoardShapeNode(s: PcbShape): SList {
   return { kind: 'list', items };
 }
 
+/**
+ * `(zone (net ..) (net_name ..) (layer[s] ..) (hatch ..) … (polygon (pts …)))`
+ * for a freshly-drawn zone, with KiCad's default zone settings
+ * (ZONE_SETTINGS: clearance 0.5, min thickness 0.25, thermal 0.5/0.5).
+ */
+export function buildZoneNode(z: PcbZone): SList {
+  const items: SNode[] = [
+    atom('zone'),
+    list(atom('net'), atom(String(z.net))),
+    list(atom('net_name'), str(z.netName ?? '')),
+  ];
+  if (z.layers.length === 1) items.push(list(atom('layer'), str(z.layers[0]!)));
+  else items.push({ kind: 'list', items: [atom('layers'), ...z.layers.map((l) => str(l))] });
+  if (z.uuid) items.push(list(atom('uuid'), str(z.uuid)));
+  const hatchStyle = z.hatchStyle ?? 'edge';
+  items.push(list(atom('hatch'), atom(hatchStyle), atom(z.hatchPitch ? mm(z.hatchPitch) : '0.5')));
+  items.push(list(atom('connect_pads'), list(atom('clearance'), atom('0.5'))));
+  items.push(list(atom('min_thickness'), atom('0.25')));
+  items.push(list(atom('filled_areas_thickness'), atom('no')));
+  items.push(
+    list(
+      atom('fill'),
+      atom('yes'),
+      list(atom('thermal_gap'), atom('0.5')),
+      list(atom('thermal_bridge_width'), atom('0.5')),
+    ),
+  );
+  items.push(
+    list(atom('polygon'), {
+      kind: 'list',
+      items: [atom('pts'), ...(z.outline ?? []).map((p) => xy('xy', p))],
+    }),
+  );
+  return { kind: 'list', items };
+}
+
 /** `(gr_text "text" (at ..) (layer ..) (effects (font (size h w) [(thickness ..)])))`. */
 export function buildBoardTextNode(t: PcbTextItem): SList {
   const items: SNode[] = [
@@ -145,6 +189,7 @@ const shapeNode = (s: PcbShape): SNode =>
   s.source.items.length > 0 ? s.source : buildBoardShapeNode(s);
 const textNode = (t: PcbTextItem): SNode =>
   t.source.items.length > 0 ? t.source : buildBoardTextNode(t);
+const zoneNode = (z: PcbZone): SNode => (z.source.items.length > 0 ? z.source : buildZoneNode(z));
 
 /** A source child the reader parsed by these top-level heads. */
 const GRAPHIC_HEADS = new Set(['gr_line', 'gr_arc', 'gr_circle', 'gr_rect', 'gr_poly', 'gr_curve']);
@@ -185,7 +230,7 @@ export function writeBoardNode(board: Board): SList {
       if (vi < board.vias.length) out.push(viaNode(board.vias[vi]!));
       vi++;
     } else if (h === 'zone') {
-      if (zi < board.zones.length) out.push(board.zones[zi]!.source);
+      if (zi < board.zones.length) out.push(zoneNode(board.zones[zi]!));
       zi++;
     } else if (GRAPHIC_HEADS.has(h)) {
       if (si < board.shapes.length) out.push(shapeNode(board.shapes[si]!));
@@ -203,6 +248,7 @@ export function writeBoardNode(board: Board): SList {
   for (; vi < board.vias.length; vi++) out.push(viaNode(board.vias[vi]!));
   for (; si < board.shapes.length; si++) out.push(shapeNode(board.shapes[si]!));
   for (; xi < board.texts.length; xi++) out.push(textNode(board.texts[xi]!));
+  for (; zi < board.zones.length; zi++) out.push(zoneNode(board.zones[zi]!));
 
   return { kind: 'list', items: out };
 }

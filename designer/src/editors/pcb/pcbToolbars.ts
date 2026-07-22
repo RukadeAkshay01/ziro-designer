@@ -202,7 +202,7 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
     icon: 'drawVia',
     title: 'Place Vias (Ctrl+Shift+X)\nPlace free-standing vias',
   },
-  { id: 'drawZone', icon: 'drawZone', title: 'Draw Filled Zones (Ctrl+Shift+Z)', ...todo },
+  { id: 'drawZone', icon: 'drawZone', title: 'Draw Filled Zones (Ctrl+Shift+Z)' },
   { id: 'drawRuleArea', icon: 'drawRuleArea', title: 'Draw Rule Areas (Ctrl+Shift+K)', ...todo },
   sep,
   { id: 'drawLine', icon: 'drawLine', title: 'Draw Lines (Ctrl+Shift+L)' },
@@ -413,7 +413,6 @@ export const PCB_RIGHT_TOOLBAR: ToolEntry[] = [
     id: 'measureTool',
     icon: 'measureTool',
     title: 'Measure Tool (Ctrl+Shift+M)\nInteractively measure distance between points',
-    ...todo,
   },
 ];
 
