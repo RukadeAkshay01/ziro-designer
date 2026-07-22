@@ -7,6 +7,7 @@ import {
   addBoardTrack,
   addBoardVia,
   addBoardText,
+  addBoardZone,
 } from '@ziroeda/pcbnew/src/edit-board.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
 import type { Board } from '@ziroeda/pcbnew/src/types.js';
@@ -120,5 +121,31 @@ describe('addBoardShape (DRAWING_TOOL commits)', () => {
     expect(back.texts).toHaveLength(1);
     expect(back.texts[0]!.text).toBe('REV A');
     expect(back.texts[0]!.layer).toBe('F.SilkS');
+  });
+
+  it('round-trips a freshly-drawn (unfilled) zone', () => {
+    const outline = [
+      { x: 0, y: 0 },
+      { x: mmToIU(10), y: 0 },
+      { x: mmToIU(10), y: mmToIU(10) },
+      { x: 0, y: mmToIU(10) },
+    ];
+    const { board } = addBoardZone(mk(), {
+      net: 0,
+      netName: '',
+      layers: ['F.Cu'],
+      outline,
+      hatchStyle: 'edge',
+      hatchPitch: mmToIU(0.5),
+    });
+    const text = serializeBoard(board);
+    expect(text).toContain('(zone');
+    const back = readBoard(parse(text));
+    expect(back.zones).toHaveLength(1);
+    expect(back.zones[0]!.layers).toEqual(['F.Cu']);
+    expect(back.zones[0]!.outline).toHaveLength(4);
+    expect(back.zones[0]!.outline![1]).toEqual({ x: mmToIU(10), y: 0 });
+    expect(back.zones[0]!.hatchStyle).toBe('edge');
+    expect(back.zones[0]!.fills).toHaveLength(0);
   });
 });

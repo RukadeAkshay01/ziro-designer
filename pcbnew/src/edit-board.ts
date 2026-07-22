@@ -851,6 +851,22 @@ export function addBoardText(
   };
 }
 
+/** Append a freshly-drawn (unfilled) zone (DRAWING_TOOL::DrawZone commit). */
+export function addBoardZone(
+  board: Board,
+  zone: Omit<PcbZone, 'source' | 'fills'> & { fills?: PcbZone['fills'] },
+): { board: Board; id: string } {
+  const withSource: PcbZone = {
+    fills: [],
+    ...zone,
+    source: { kind: 'list', items: [] },
+  };
+  return {
+    board: { ...board, zones: [...board.zones, withSource] },
+    id: boardItemId('zone', board.zones.length),
+  };
+}
+
 /**
  * A board holding only the selected items, keeping all board metadata (layers,
  * stackup, paper…) so it renders identically. Used as the live move overlay:
