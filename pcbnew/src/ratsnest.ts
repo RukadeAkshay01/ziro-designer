@@ -101,7 +101,18 @@ export function buildRatsnest(board: Board): RatsnestEdge[] {
   });
   for (const z of board.zones) {
     if (z.net <= 0) continue;
-    for (const f of z.fills) forNet(z.net).zones.push({ layer: f.layer, polys: f.polys });
+    // A poured (filled) zone connects every same-net item within its boundary.
+    // Use the zone outline for the containment test rather than the fill
+    // polygons: a thermal-relieved pad sits in the fill's clearance hole, so
+    // its centre is outside the fill even though a spoke connects it — the
+    // outline captures that, matching what KiCad's connectivity reports.
+    if (z.fills.length === 0) continue; // unfilled zone: no copper, no connection
+    if (z.outline && z.outline.length >= 3) {
+      for (const layer of z.layers) forNet(z.net).zones.push({ layer, polys: [z.outline] });
+    } else {
+      // No stored outline — fall back to the fill polygons.
+      for (const f of z.fills) forNet(z.net).zones.push({ layer: f.layer, polys: f.polys });
+    }
   }
 
   for (const [net, items] of nets) {

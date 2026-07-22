@@ -48,10 +48,16 @@ const via = (at: { x: number; y: number }, net: number): PcbVia => ({
   net,
   source: EMPTY,
 });
-const zone = (net: number, layer: string, poly: { x: number; y: number }[]): PcbZone => ({
+const zone = (
+  net: number,
+  layer: string,
+  poly: { x: number; y: number }[],
+  fillPolys?: { x: number; y: number }[][],
+): PcbZone => ({
   net,
   layers: [layer],
-  fills: [{ layer, polys: [poly] }],
+  outline: poly,
+  fills: (fillPolys ?? [poly]).map((polys) => ({ layer, polys: [polys] })),
   source: EMPTY,
 });
 
@@ -116,6 +122,46 @@ describe('buildRatsnest', () => {
       ],
     });
     expect(buildRatsnest(b)).toHaveLength(0);
+  });
+
+  it('a poured zone connects thermally-relieved pads whose centres miss the fill', () => {
+    // The fill is the outer ring only (a big hole in the middle), so neither
+    // pad centre lands inside a fill polygon — but both are inside the zone
+    // outline, so the pour still connects them (no airwire), like KiCad.
+    const outerRing = [
+      { x: 0, y: 0 },
+      { x: 2000, y: 0 },
+      { x: 2000, y: 2000 },
+      { x: 0, y: 2000 },
+    ];
+    const holeFill = [
+      // a thin frame with a big empty centre — pad centres fall in the hole
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 2000 },
+      { x: 0, y: 2000 },
+    ];
+    const b = board({
+      footprints: [footprint([pad({ x: 1000, y: 500 }, 1), pad({ x: 1000, y: 1500 }, 1)])],
+      zones: [zone(1, 'F.Cu', outerRing, [holeFill])],
+    });
+    expect(buildRatsnest(b)).toHaveLength(0);
+  });
+
+  it('an unfilled (not poured) zone does not connect pads', () => {
+    const outline = [
+      { x: 0, y: 0 },
+      { x: 1000, y: 0 },
+      { x: 1000, y: 1000 },
+      { x: 0, y: 1000 },
+    ];
+    const b = board({
+      footprints: [footprint([pad({ x: 100, y: 100 }, 1), pad({ x: 900, y: 900 }, 1)])],
+      zones: [
+        { net: 1, layers: ['F.Cu'], outline, fills: [], source: { kind: 'list', items: [] } },
+      ],
+    });
+    expect(buildRatsnest(b)).toHaveLength(1);
   });
 
   it('separate nets and disconnected clusters each get their own airwires', () => {

@@ -48,11 +48,11 @@ import {
   buildDrawSteps,
   drawBoard,
   drawGrid,
+  drawDrawingSheet,
   DEFAULT_GRID_OPTIONS,
   DEFAULT_DRAW_OPTIONS,
   type BoardScene,
   type PcbDrawOptions,
-  type SheetInfo,
 } from './renderBoard.js';
 import type { Viewer3D } from './pcb3d.js';
 import {
@@ -826,9 +826,9 @@ export function PcbEditor({
       return;
     }
     const jobView = { ...viewRef.current };
-    const sheet: SheetInfo | undefined = boardRef.current
-      ? { paper: boardRef.current.paper, titleBlock: boardRef.current.titleBlock, fileName }
-      : undefined;
+    // The drawing sheet is drawn separately (unflipped) in draw(), like KiCad's
+    // DS_PROXY_VIEW_ITEM which un-mirrors itself, so it stays readable and the
+    // title block keeps its corner under a flipped view. So the raster omits it.
     const steps = buildDrawSteps(
       cctx,
       scene,
@@ -837,7 +837,7 @@ export function PcbEditor({
       work.width,
       work.height,
       drawOpts,
-      sheet,
+      undefined,
     );
     let i = 0;
     const run = (): void => {
@@ -878,6 +878,22 @@ export function PcbEditor({
     // top with a transparent background so the grid shows through empty areas.
     if (objects.grid && toggles.has('toggleGrid')) {
       drawGrid(ctx, v, canvas.width, canvas.height, dpr, DEFAULT_GRID_OPTIONS);
+    }
+    // Drawing sheet, drawn behind the board with the UN-flipped transform so the
+    // page frame and title block stay in place and readable when the board is
+    // flipped (KiCad's DS_PROXY_VIEW_ITEM un-mirrors itself). tx is recovered by
+    // mirroring back about the viewport centre.
+    if (drawOpts.drawingSheet && boardRef.current) {
+      const sheetTx = v.flipX ? canvas.width - v.tx : v.tx;
+      ctx.setTransform(v.scale, 0, 0, v.scale, sheetTx, v.ty);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      drawDrawingSheet(ctx, {
+        paper: boardRef.current.paper,
+        titleBlock: boardRef.current.titleBlock,
+        fileName,
+      });
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     const c = cacheRef.current;
     if (c) {
