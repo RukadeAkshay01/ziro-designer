@@ -8,7 +8,16 @@
  */
 
 import { iuToMM } from '@ziroeda/common';
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type JSX,
+  type ReactNode,
+} from 'react';
 import { parse } from '@ziroeda/sexpr';
 import {
   readBoard,
@@ -75,17 +84,35 @@ const MM = 10000;
 // Brightened(0.8) (per channel c·0.2 + 0.8), i.e. pushed 80% toward white.
 const SELECT_BRIGHTEN = 0.8;
 
-// Snap a world point to the active grid (GAL GetGridPoint). Shared by the
+// Snap a world point to the given grid (GAL GetGridPoint). Shared by the
 // crosshair and the move so a dragged item follows the snapped crosshair and
 // lands on grid nodes, like KiCad (edit_tool_move_fct.cpp: m_cursor =
-// grid.BestSnapAnchor(mousePos); movement = m_cursor - prevPos).
-const snapToGrid = (p: { x: number; y: number }): { x: number; y: number } => {
-  const { size, origin } = DEFAULT_GRID_OPTIONS;
+// grid.BestSnapAnchor(mousePos); movement = m_cursor - prevPos). The editor
+// shadows this with a component-local `snapToGrid` bound to the live grid size.
+const snapToGridSize = (p: { x: number; y: number }, size: number): { x: number; y: number } => {
+  const { origin } = DEFAULT_GRID_OPTIONS;
   return {
     x: Math.round((p.x - origin.x) / size) * size + origin.x,
     y: Math.round((p.y - origin.y) / size) * size + origin.y,
   };
 };
+
+// One mil in IU.
+const MIL = 0.0254 * MM;
+
+// pcbnew's grid presets, exactly APP_SETTINGS_BASE::DefaultGridSizeList()
+// (app_settings.cpp): the mil rows first, then the metric rows.
+const PCB_GRIDS: number[] = [
+  ...[1000, 500, 250, 200, 100, 50, 25, 20, 10, 5, 2, 1].map((m) => m * MIL),
+  ...[5.0, 2.5, 1.0, 0.5, 0.25, 0.2, 0.1, 0.05, 0.025, 0.01].map((mm) => mm * MM),
+];
+
+// pcbnew's zoom presets (zoom_defines.h ZOOM_LIST_PCBNEW). The status bar's Z
+// indicator is scale·1000, so a preset Z maps to view scale Z/1000.
+const PCB_ZOOMS: number[] = [
+  0.13, 0.22, 0.35, 0.6, 1.0, 1.5, 2.2, 3.5, 5.0, 8.0, 13.0, 20.0, 35.0, 50.0, 80.0, 130.0, 220.0,
+  300.0,
+];
 
 // Visibility (eye) toggle, drawn inline so it always renders (no asset-URL
 // resolution) and reads as KiCad's light-grey eye on the dark panel. `on`
@@ -657,6 +684,23 @@ export function PcbEditor({
   // re-creating the callback; null when the pointer is off the canvas.
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const [scale, setScale] = useState(0);
+  // Active grid size (the TOP_AUX grid selector; EDA_DRAW_FRAME's grid list).
+  const [gridIU, setGridIU] = useState(DEFAULT_GRID_OPTIONS.size);
+  const gridIURef = useRef(gridIU);
+  gridIURef.current = gridIU;
+  // Grid-size-aware snap: shadows the module-level helper with the live size so
+  // every existing call site follows the selected grid.
+  const snapToGrid = (p: { x: number; y: number }): { x: number; y: number } =>
+    snapToGridSize(p, gridIURef.current);
+  // TOP_AUX track-width / via-size selections: index 0 = "use netclass",
+  // 1.. = the pre-defined list entries (BOARD_DESIGN_SETTINGS m_TrackWidthList /
+  // m_ViasDimensionsList; ours come from the project's netclasses).
+  const [trackSel, setTrackSel] = useState(0);
+  const [viaSel, setViaSel] = useState(0);
+  const trackSelRef = useRef(trackSel);
+  trackSelRef.current = trackSel;
+  const viaSelRef = useRef(viaSel);
+  viaSelRef.current = viaSel;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef({ scale: 0.005, tx: 0, ty: 0, flipX: false });
@@ -931,7 +975,10 @@ export function PcbEditor({
     // view every frame so it stays sharp during pan/zoom. The raster is drawn on
     // top with a transparent background so the grid shows through empty areas.
     if (objects.grid && toggles.has('toggleGrid')) {
-      drawGrid(ctx, v, canvas.width, canvas.height, dpr, DEFAULT_GRID_OPTIONS);
+      drawGrid(ctx, v, canvas.width, canvas.height, dpr, {
+        ...DEFAULT_GRID_OPTIONS,
+        size: gridIURef.current,
+      });
     }
     // Drawing sheet, drawn behind the board with the UN-flipped transform so the
     // page frame and title block stay in place and readable when the board is
@@ -1556,42 +1603,80 @@ export function PcbEditor({
     [commitBoard, flipView],
   );
 
-  const zoomToFit = useCallback(() => {
-    const canvas = canvasRef.current;
-    const scene = sceneRef.current;
-    if (!canvas || !scene?.bbox) return;
-    let { minX, minY, maxX, maxY } = scene.bbox;
-    // Include the drawing sheet (page origin at 0,0) so the frame fits on screen.
-    const paper = boardRef.current?.paper?.split(/\s+/)[0];
-    const PAGE: Record<string, [number, number]> = {
-      A5: [210, 148],
-      A4: [297, 210],
-      A3: [420, 297],
-      A2: [594, 420],
-      A1: [841, 594],
-      A0: [1189, 841],
-    };
-    if (paper && PAGE[paper] && objects.drawingSheet) {
-      const [pw, ph] = PAGE[paper]!;
-      minX = Math.min(minX, 0);
-      minY = Math.min(minY, 0);
-      maxX = Math.max(maxX, pw * MM);
-      maxY = Math.max(maxY, ph * MM);
-    }
-    const margin = 5 * MM;
-    const s = Math.min(
-      canvas.width / (maxX - minX + margin * 2),
-      canvas.height / (maxY - minY + margin * 2),
-    );
-    const flipX = viewRef.current.flipX;
-    viewRef.current = {
-      scale: s,
-      flipX,
-      tx: canvas.width / 2 - ((minX + maxX) / 2) * (flipX ? -s : s),
-      ty: canvas.height / 2 - ((minY + maxY) / 2) * s,
-    };
-    requestDraw();
-  }, [requestDraw]);
+  // Fit the view to a world-space box (shared by Zoom-to-Fit variants and the
+  // interactive zoom tool).
+  const fitWorldBox = useCallback(
+    (minX: number, minY: number, maxX: number, maxY: number, margin: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas || maxX <= minX || maxY <= minY) return;
+      const s = Math.min(
+        canvas.width / (maxX - minX + margin * 2),
+        canvas.height / (maxY - minY + margin * 2),
+      );
+      const flipX = viewRef.current.flipX;
+      viewRef.current = {
+        scale: s,
+        flipX,
+        tx: canvas.width / 2 - ((minX + maxX) / 2) * (flipX ? -s : s),
+        ty: canvas.height / 2 - ((minY + maxY) / 2) * s,
+      };
+      requestDraw();
+    },
+    [requestDraw],
+  );
+
+  // ACTIONS::zoomFitScreen (Home): fit the page frame + objects.
+  // ACTIONS::zoomFitObjects (Ctrl+Home): fit the objects only, ignoring the
+  // drawing sheet.
+  const zoomToFitImpl = useCallback(
+    (includeSheet: boolean) => {
+      const scene = sceneRef.current;
+      if (!scene?.bbox) return;
+      let { minX, minY, maxX, maxY } = scene.bbox;
+      const paper = boardRef.current?.paper?.split(/\s+/)[0];
+      const PAGE: Record<string, [number, number]> = {
+        A5: [210, 148],
+        A4: [297, 210],
+        A3: [420, 297],
+        A2: [594, 420],
+        A1: [841, 594],
+        A0: [1189, 841],
+      };
+      if (includeSheet && paper && PAGE[paper] && objects.drawingSheet) {
+        const [pw, ph] = PAGE[paper]!;
+        minX = Math.min(minX, 0);
+        minY = Math.min(minY, 0);
+        maxX = Math.max(maxX, pw * MM);
+        maxY = Math.max(maxY, ph * MM);
+      }
+      fitWorldBox(minX, minY, maxX, maxY, 5 * MM);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fitWorldBox, objects.drawingSheet],
+  );
+  const zoomToFit = useCallback(() => zoomToFitImpl(true), [zoomToFitImpl]);
+  const zoomFitObjects = useCallback(() => zoomToFitImpl(false), [zoomToFitImpl]);
+
+  // The TOP_AUX zoom selector: set an absolute zoom about the viewport centre.
+  // The status bar Z indicator is scale·1000, so preset Z → scale Z/1000.
+  const setZoomPreset = useCallback(
+    (z: number) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const v = viewRef.current;
+      const target = z / 1000;
+      const px = canvas.width / 2;
+      const py = canvas.height / 2;
+      const sx = v.flipX ? -v.scale : v.scale;
+      const wx = (px - v.tx) / sx;
+      const wy = (py - v.ty) / v.scale;
+      v.scale = target;
+      v.tx = px - wx * (v.flipX ? -target : target);
+      v.ty = py - wy * target;
+      requestDraw();
+    },
+    [requestDraw],
+  );
 
   const zoomStep = useCallback(
     (factor: number) => {
@@ -1950,8 +2035,19 @@ export function PcbEditor({
     return [{ x: from.x, y: from.y + Math.sign(dy) * (Math.abs(dy) - Math.abs(dx)) }, to];
   };
 
-  const routeDims = (net: number): ClassDims =>
-    netclassInfo.classDims.get(netClassOf.get(net) ?? 'Default') ?? DEFAULT_CLASS_DIMS;
+  // Routing dimensions for a net: its net class dims, overridden by the
+  // TOP_AUX track-width / via-size selections when they're not "use netclass"
+  // (BOARD_DESIGN_SETTINGS::GetCurrentTrackWidth / GetCurrentViaSize).
+  const routeDims = (net: number): ClassDims => {
+    const base = netclassInfo.classDims.get(netClassOf.get(net) ?? 'Default') ?? DEFAULT_CLASS_DIMS;
+    const tw = trackWidthListRef.current[trackSelRef.current - 1];
+    const vs = viaSizeListRef.current[viaSelRef.current - 1];
+    return {
+      trackWidth: tw ?? base.trackWidth,
+      viaDiameter: vs?.diameter ?? base.viaDiameter,
+      viaDrill: vs?.drill ?? base.viaDrill,
+    };
+  };
 
   // One left click of the Route Single Track tool.
   const handleRouteClick = (world: { x: number; y: number }): void => {
@@ -2311,7 +2407,9 @@ export function PcbEditor({
       }
       const w = worldAt(e.clientX, e.clientY);
       const brd = boardRef.current;
-      const hitId = w && brd ? (hitCandidates(w)[0] ?? null) : null;
+      // The zoom tool always rubber-bands: never grab the item under the cursor.
+      const hitId =
+        activeToolRef.current !== 'zoomTool' && w && brd ? (hitCandidates(w)[0] ?? null) : null;
       downRef.current = {
         x: e.clientX,
         y: e.clientY,
@@ -2393,6 +2491,25 @@ export function PcbEditor({
     boxRef.current = null;
     movingRef.current = false;
     if (d) {
+      // Zoom-to-selection (ZOOM_TOOL::Main): a dragged box zooms into it, a
+      // plain click zooms in a step about the clicked point; either way the
+      // tool returns to selection after one use.
+      if (activeToolRef.current === 'zoomTool') {
+        if (box) {
+          fitWorldBox(
+            Math.min(box.a.x, box.b.x),
+            Math.min(box.a.y, box.b.y),
+            Math.max(box.a.x, box.b.x),
+            Math.max(box.a.y, box.b.y),
+            0,
+          );
+        } else if (!d.moved) {
+          zoomStep(1.3);
+        }
+        setActiveTool('selectSetRect');
+        requestDraw();
+        return;
+      }
       if (!d.moved) {
         // Interactive Delete Tool (PCB_CONTROL::DeleteItemCursor): each click
         // deletes the item under the cursor, honouring the selection filter.
@@ -2772,6 +2889,33 @@ export function PcbEditor({
   // ----- ratsnest + net classes ----------------------------------------------
 
   const netclassInfo = useMemo(() => parseNetclasses(projectFiles), [projectFiles]);
+
+  // TOP_AUX pre-defined size lists (BOARD_DESIGN_SETTINGS m_TrackWidthList /
+  // m_ViasDimensionsList). The project's netclasses provide the entries —
+  // unique, ascending, like the Board Setup "Pre-defined Sizes" table.
+  const trackWidthList = useMemo(() => {
+    const s = new Set<number>([DEFAULT_CLASS_DIMS.trackWidth]);
+    for (const d of netclassInfo.classDims.values()) s.add(d.trackWidth);
+    return [...s].sort((a, b) => a - b);
+  }, [netclassInfo]);
+  const viaSizeList = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { diameter: number; drill: number }[] = [];
+    const push = (diameter: number, drill: number): void => {
+      const key = `${diameter}:${drill}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        out.push({ diameter, drill });
+      }
+    };
+    push(DEFAULT_CLASS_DIMS.viaDiameter, DEFAULT_CLASS_DIMS.viaDrill);
+    for (const d of netclassInfo.classDims.values()) push(d.viaDiameter, d.viaDrill);
+    return out.sort((a, b) => a.diameter - b.diameter || a.drill - b.drill);
+  }, [netclassInfo]);
+  const trackWidthListRef = useRef(trackWidthList);
+  trackWidthListRef.current = trackWidthList;
+  const viaSizeListRef = useRef(viaSizeList);
+  viaSizeListRef.current = viaSizeList;
   // net code -> net class name, via the project's netclass_patterns.
   const netClassOf = useMemo(() => {
     const m = new Map<number, string>();
@@ -3065,8 +3209,15 @@ export function PcbEditor({
         zoomStep(1 / 1.3);
         break;
       case 'zoomFit':
-      case 'zoomFitObjects':
         zoomToFit();
+        break;
+      case 'zoomFitObjects':
+        zoomFitObjects();
+        break;
+      case 'zoomTool':
+        // ACTIONS::zoomTool: drag a rectangle to zoom into it; reverts to the
+        // selection tool after one use (handled on pointer-up).
+        setActiveTool('zoomTool');
         break;
       case 'showEeschema':
         onShowSchematic?.();
@@ -3242,7 +3393,18 @@ export function PcbEditor({
     : toggles.has('togglePolarCoords')
       ? 'r —  theta —'
       : 'dx —  dy —  dist —';
-  const gridText = `grid ${fmtCoord(DEFAULT_GRID_OPTIONS.size)}`;
+  const gridText = `grid ${fmtCoord(gridIU)}`;
+  // TOP_AUX combo formatting (PCB_EDIT_FRAME::ComboBoxUnits): mm at %.3f,
+  // mils at %.2f.
+  const auxMM = (iu: number): string => iuToMM(iu).toFixed(3);
+  const auxMils = (iu: number): string => ((iuToMM(iu) / 25.4) * 1000).toFixed(2);
+  const auxSepStyle: CSSProperties = { width: 1, alignSelf: 'stretch', background: '#333' };
+  // Zoom selector value (EDA_DRAW_FRAME::OnUpdateSelectZoom): snap to a preset
+  // within 1%, else surface the live zoom as a dynamic custom entry.
+  const zoomNow = scale * 1000;
+  const zoomPreset = PCB_ZOOMS.find((z) => Math.abs(z - zoomNow) / z < 0.01);
+  const zoomCustom = scale > 0 && zoomPreset === undefined ? Number(zoomNow.toFixed(2)) : null;
+  const zoomSelValue: string | number = zoomPreset ?? zoomCustom ?? 'auto';
   // Field 6 (EDA_DRAW_FRAME::DisplayToolMsg, the "Current Tool" panel): the
   // friendly name of the active right-toolbar tool, blank in the selection tool.
   const toolMsg = PCB_TOOL_MSGS[activeTool] ?? '';
@@ -3489,7 +3651,11 @@ export function PcbEditor({
       />
       <Toolbar entries={PCB_TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
-      {/* TOP_AUX bar: track width / via size / active layer / grid / zoom */}
+      {/* TOP_AUX bar (toolbars_pcb_editor.cpp TOOLBAR_LOC::TOP_AUX): track
+          width + auto-width | via size | layer selector + layer pair | grid |
+          zoom | override locks. Combo texts follow UpdateTrackWidthSelectBox /
+          UpdateViaSizeSelectBox / GRID_MENU::BuildChoiceList /
+          UpdateZoomSelectBox exactly. */}
       <div
         className="ze-auxbar"
         style={{
@@ -3501,13 +3667,38 @@ export function PcbEditor({
           fontSize: 12,
         }}
       >
-        <select disabled title="Track width (routing is staged)">
-          <option>Track: use netclass width</option>
+        <select
+          title="Track width"
+          value={trackSel}
+          onChange={(e) => setTrackSel(Number(e.target.value))}
+        >
+          <option value={0}>Track: use netclass width</option>
+          {trackWidthList.map((w, i) => (
+            <option key={w} value={i + 1}>
+              Track: {auxMM(w)} mm ({auxMils(w)} mil)
+            </option>
+          ))}
         </select>
-        <select disabled title="Via size (routing is staged)">
-          <option>Via: use netclass sizes</option>
+        <button
+          type="button"
+          disabled
+          title="Auto track width: when routing from an existing track use its width, otherwise, use the current width setting"
+          style={{ opacity: 0.4 }}
+        >
+          auto
+        </button>
+        <span style={auxSepStyle} />
+        <select title="Via size" value={viaSel} onChange={(e) => setViaSel(Number(e.target.value))}>
+          <option value={0}>Via: use netclass sizes</option>
+          {viaSizeList.map((v, i) => (
+            <option key={`${v.diameter}:${v.drill}`} value={i + 1}>
+              {v.drill > 0
+                ? `Via: ${auxMM(v.diameter)} / ${auxMM(v.drill)} mm (${auxMils(v.diameter)} / ${auxMils(v.drill)} mil)`
+                : `Via: ${auxMM(v.diameter)} mm (${auxMils(v.diameter)} mil)`}
+            </option>
+          ))}
         </select>
-        <span style={{ width: 8 }} />
+        <span style={auxSepStyle} />
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span
             style={{
@@ -3530,13 +3721,61 @@ export function PcbEditor({
             ))}
           </select>
         </span>
-        <span style={{ width: 8 }} />
-        <select disabled title="Grid">
-          <option>Grid: 0.635 mm (25 mils)</option>
+        <button
+          type="button"
+          disabled
+          title="Select the layer pair for routing vias"
+          style={{ opacity: 0.4 }}
+        >
+          pair
+        </button>
+        <span style={auxSepStyle} />
+        <select
+          title="Grid"
+          value={gridIU}
+          onChange={(e) => {
+            setGridIU(Number(e.target.value));
+            requestDraw();
+          }}
+        >
+          {PCB_GRIDS.map((g) => (
+            <option key={g} value={g}>
+              {fmtCoord(g)} {unitLabel} (
+              {toggles.has('unitsMils') ? `${auxMM(g)} mm` : `${auxMils(g)} mil`})
+            </option>
+          ))}
+          {!PCB_GRIDS.includes(gridIU) && (
+            <option value={gridIU}>
+              {fmtCoord(gridIU)} {unitLabel}
+            </option>
+          )}
         </select>
-        <select disabled title="Zoom presets">
-          <option>Zoom Auto</option>
+        <span style={auxSepStyle} />
+        <select
+          title="Zoom"
+          value={zoomSelValue}
+          onChange={(e) => {
+            if (e.target.value === 'auto') zoomToFit();
+            else setZoomPreset(Number(e.target.value));
+          }}
+        >
+          <option value="auto">Zoom Auto</option>
+          {zoomCustom !== null && <option value={zoomCustom}>Zoom {zoomCustom.toFixed(2)}</option>}
+          {PCB_ZOOMS.map((z) => (
+            <option key={z} value={z}>
+              Zoom {z.toFixed(2)}
+            </option>
+          ))}
         </select>
+        <span style={auxSepStyle} />
+        <button
+          type="button"
+          disabled
+          title="Override locks: allow editing locked items"
+          style={{ opacity: 0.4 }}
+        >
+          locks
+        </button>
       </div>
 
       <div className="ze-body">
