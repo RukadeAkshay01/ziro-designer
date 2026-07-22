@@ -10,6 +10,9 @@
   --chrome-active-border: #4a86c5;
   --panel-bg: #2a2c30;
   --panel-header: #34363b;
+  /* KiCad's Appearance list background (m_layerPanelColour): a mid grey,
+     lighter than the chrome so the layer/object rows read as a list. */
+  --panel-list-bg: #3a3d42;
 }
 
 html,
@@ -236,6 +239,9 @@ body {
   padding: 6px 8px;
   overflow: auto;
   flex: 1;
+  /* Let the body shrink below its content height so it scrolls internally
+     instead of pushing the pane (and the docked panels below it) taller. */
+  min-height: 0;
 }
 
 .ze-tree-item {
@@ -640,12 +646,41 @@ body {
 }
 
 /* Right dock (LayersManager + SelectionFilter panes): at the window edge,
-   outside the right toolbar, like pcbnew's AUI Right().Layer(4). */
+   outside the right toolbar, like pcbnew's AUI Right().Layer(4). It fills the
+   body height; the Appearance pane grows and scrolls internally while the
+   Selection Filter stays pinned at the bottom (fixed height), matching KiCad's
+   AUI layout where only the notebook scrolls. */
 .ze-rightdock {
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--chrome-border);
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* In the dock the panes stack vertically, so drop the fixed 220px width.
+   The whole content area is KiCad's lighter panel grey (m_layerPanelColour)
+   so the layer/object rows read as a list, not the near-black chrome. */
+.ze-rightdock .ze-panel {
+  width: auto;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--panel-list-bg);
+}
+/* Appearance pane: grows to fill and clips, so its notebook body scrolls. */
+.ze-rightdock .ze-panel.grow {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+/* Selection Filter pane: fixed at the bottom, sized to its content. */
+.ze-rightdock .ze-panel:not(.grow) {
+  flex: 0 0 auto;
+  border-bottom: none;
+}
+/* Layer Display Options / Presets / Viewports sit below the scroll, fixed. */
+.ze-rightdock .ze-collapsepane,
+.ze-rightdock .ze-appearance-bottom {
+  flex: 0 0 auto;
 }
 
 /* APPEARANCE_CONTROLS layer row: [indicator][swatch][eye][name] */
@@ -691,12 +726,26 @@ body {
   background: transparent;
   border-color: transparent;
 }
-/* BITMAP_TOGGLE visibility eye */
-.ze-layer-eye {
-  width: 16px;
+/* BITMAP_TOGGLE visibility eye: an inline-SVG button that always renders,
+   drawn in a light grey that stays visible on the grey list background. */
+.ze-eye-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
   height: 16px;
   flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: transparent;
   cursor: pointer;
+  color: #d6d8db;
+}
+.ze-eye-btn:hover {
+  color: #ffffff;
+}
+.ze-eye {
+  display: block;
 }
 
 /* Objects tab row: [swatch|spacer][eye|spacer][label][opacity slider] */

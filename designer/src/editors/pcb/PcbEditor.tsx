@@ -88,14 +88,31 @@ const snapToGrid = (p: { x: number; y: number }): { x: number; y: number } => {
   };
 };
 
-// KiCad's own visibility (eye) icons, vendored under assets/.
-const EYE_ICONS = import.meta.glob('../assets/toolbar/visibility*.svg', {
-  query: '?url',
-  import: 'default',
-  eager: true,
-}) as Record<string, string>;
-const eyeUrl = (on: boolean): string | undefined =>
-  EYE_ICONS[`../assets/toolbar/visibility${on ? '' : '_off'}.svg`];
+// Visibility (eye) toggle, drawn inline so it always renders (no asset-URL
+// resolution) and reads as KiCad's light-grey eye on the dark panel. `on`
+// draws the open eye; off draws it struck through and dimmed
+// (APPEARANCE_CONTROLS' BITMAP_TOGGLE visible/not-visible bitmaps).
+function EyeIcon({ on }: { on: boolean }): JSX.Element {
+  return (
+    <svg
+      className="ze-eye"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      aria-hidden="true"
+      style={{ opacity: on ? 1 : 0.4 }}
+    >
+      <path
+        d="M12 5c-5 0-9 4.5-10 7 1 2.5 5 7 10 7s9-4.5 10-7c-1-2.5-5-7-10-7z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+      <circle cx="12" cy="12" r="3" fill="currentColor" />
+      {!on && <line x1="4" y1="20" x2="20" y2="4" stroke="currentColor" strokeWidth="1.6" />}
+    </svg>
+  );
+}
 
 // The graphic-shape drawing tools (DRAWING_TOOL) and the PcbShape kind each
 // one creates.
@@ -2969,16 +2986,17 @@ export function PcbEditor({
                           className="ze-layer-swatch"
                           style={{ background: layerColor(name) }}
                         />
-                        <img
-                          className="ze-layer-eye"
-                          src={eyeUrl(on)}
-                          alt={on ? 'visible' : 'hidden'}
+                        <button
+                          type="button"
+                          className="ze-eye-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggleLayer(name);
                           }}
                           title="Show or hide this layer"
-                        />
+                        >
+                          <EyeIcon on={on} />
+                        </button>
                         <span className="ze-ellipsis">{LAYER_DISPLAY_NAMES[name] ?? name}</span>
                       </div>
                     );
@@ -3005,15 +3023,16 @@ export function PcbEditor({
                         {noVisibility ? (
                           <span style={{ width: 16, flex: '0 0 auto' }} />
                         ) : (
-                          <img
-                            className="ze-layer-eye"
-                            src={eyeUrl(on)}
-                            alt={on ? 'visible' : 'hidden'}
+                          <button
+                            type="button"
+                            className="ze-eye-btn"
                             onClick={() => {
                               if (!disabled) setObjects((p) => ({ ...p, [key]: !p[key] }));
                             }}
                             title={`Show or hide ${label.toLowerCase()}`}
-                          />
+                          >
+                            <EyeIcon on={on} />
+                          </button>
                         )}
                         <span style={{ flex: slider ? '0 0 auto' : 1, minWidth: slider ? 88 : 0 }}>
                           {label}
@@ -3068,10 +3087,9 @@ export function PcbEditor({
                               }
                             />
                           </label>
-                          <img
-                            className="ze-layer-eye"
-                            src={eyeUrl(on)}
-                            alt={on ? 'visible' : 'hidden'}
+                          <button
+                            type="button"
+                            className="ze-eye-btn"
                             title={`Show or hide ratsnest for ${name}`}
                             onClick={() =>
                               setHiddenNets((p) => {
@@ -3081,7 +3099,9 @@ export function PcbEditor({
                                 return next;
                               })
                             }
-                          />
+                          >
+                            <EyeIcon on={on} />
+                          </button>
                           <span className="ze-ellipsis">{name || `(unnamed ${code})`}</span>
                         </div>
                       );
@@ -3110,10 +3130,9 @@ export function PcbEditor({
                               }
                             />
                           </label>
-                          <img
-                            className="ze-layer-eye"
-                            src={eyeUrl(on)}
-                            alt={on ? 'visible' : 'hidden'}
+                          <button
+                            type="button"
+                            className="ze-eye-btn"
                             title={`Show or hide ratsnest for the ${cls} class`}
                             onClick={() =>
                               setHiddenClasses((p) => {
@@ -3123,7 +3142,9 @@ export function PcbEditor({
                                 return next;
                               })
                             }
-                          />
+                          >
+                            <EyeIcon on={on} />
+                          </button>
                           <span className="ze-ellipsis">{cls}</span>
                         </div>
                       );
