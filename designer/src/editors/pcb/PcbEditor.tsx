@@ -999,6 +999,29 @@ export function PcbEditor({
     // moving items are excluded from the raster and this overlay follows the
     // cursor at the drag offset (EDIT_TOOL::Move's GAL overlay); otherwise it
     // sits exactly over the raster so the selection just lights up in place.
+    // Net highlight: the selected nets' copper, lit up over the raster (a
+    // gentler brighten than the selection itself), so a clicked part's whole
+    // net is visible. Skipped while dragging (the overlay covers it).
+    {
+      const hs = highlightSceneRef.current;
+      if (hs && !moveDeltaRef.current) {
+        ctx.save();
+        drawBoard(
+          ctx,
+          hs,
+          v,
+          visible,
+          canvas.width,
+          canvas.height,
+          drawOpts,
+          undefined,
+          true,
+          0.45,
+        );
+        ctx.restore();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+    }
     {
       const md = moveDeltaRef.current;
       const os = moveSceneRef.current ?? selSceneRef.current;
@@ -2583,6 +2606,34 @@ export function PcbEditor({
   }, [selection, board]);
   const selectedNetsRef = useRef<ReadonlySet<number>>(selectedNets);
   selectedNetsRef.current = selectedNets;
+
+  // Highlight scene: all copper (tracks/arcs/vias/zones) on the selected nets,
+  // painted brightened over the raster so clicking a pad/part lights up the
+  // whole net it belongs to (KiCad's selection/cross-probe net highlight).
+  const highlightSceneRef = useRef<BoardScene | null>(null);
+  useEffect(() => {
+    const brd = boardRef.current;
+    if (!brd || selectedNets.size === 0) {
+      highlightSceneRef.current = null;
+      requestDraw();
+      return;
+    }
+    const ids = new Set<string>();
+    brd.tracks.forEach((t, i) => {
+      if (selectedNets.has(t.net)) ids.add(boardItemId('track', i));
+    });
+    brd.arcs.forEach((a, i) => {
+      if (selectedNets.has(a.net)) ids.add(boardItemId('arc', i));
+    });
+    brd.vias.forEach((vv, i) => {
+      if (selectedNets.has(vv.net)) ids.add(boardItemId('via', i));
+    });
+    brd.zones.forEach((z, i) => {
+      if (selectedNets.has(z.net)) ids.add(boardItemId('zone', i));
+    });
+    highlightSceneRef.current = ids.size > 0 ? buildScene(subsetBoardItems(brd, ids)) : null;
+    requestDraw();
+  }, [selectedNets, requestDraw]);
 
   // Only recompute the ratsnest live during a drag on boards small enough that
   // a per-frame buildRatsnest stays smooth (bigger boards update on drop).
