@@ -77,6 +77,7 @@ export {
   plotGerberLayer,
   plotExcellonDrill,
   gerberProtelExtension,
+  plotGerberJob,
   gerberFileFunction,
 } from './plot_gerber.js';
 export {

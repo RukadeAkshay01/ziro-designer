@@ -87,6 +87,9 @@ export interface PcbDrawOptions {
   /** Paint every layer in this color — the net-color overlay pass
    *  (net colors mode "All": copper items tinted with their net's color). */
   colorOverride?: string;
+  /** Print's drill-marks mode: 'none' hides holes ('small' renders as real —
+   *  hole geometry is pre-baked in the scene). Default: real. */
+  drillMarks?: 'none' | 'small' | 'real';
 }
 
 /** KiCad defaults (project_local_settings.cpp + s_objectSettings). */
@@ -145,6 +148,9 @@ export interface BoardScene {
   /** Pad number/name glyphs (thickness → strokes), drawn over the pads in a
    *  contrasting color (KiCad's LAYER_PAD numbers). */
   padText: Map<number, Path2D>;
+  /** Every hole redrawn at the SMALL_DRILL cap (0.35 mm) — print's
+   *  "Drill marks: Small mark" (pcbplot.h SMALL_DRILL). */
+  holesSmall: Path2D;
   bbox: { minX: number; minY: number; maxX: number; maxY: number } | null;
 }
 
@@ -698,6 +704,7 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
     padHoleWalls: new Path2D(),
     padHolesNP: new Path2D(),
     padText: new Map(),
+    holesSmall: new Path2D(),
     bbox: null,
   };
   const copperNames = board.layers
@@ -748,6 +755,11 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
     const hr = v.drill / 2;
     scene.viaHoleWalls.moveTo(v.at.x + hr + 0.05 * MM, v.at.y);
     scene.viaHoleWalls.arc(v.at.x, v.at.y, hr + 0.05 * MM, 0, Math.PI * 2);
+    {
+      const sr = Math.min(hr, 0.175 * MM);
+      scene.holesSmall.moveTo(v.at.x + sr, v.at.y);
+      scene.holesSmall.arc(v.at.x, v.at.y, sr, 0, Math.PI * 2);
+    }
     scene.viaHoles.moveTo(v.at.x + hr, v.at.y);
     scene.viaHoles.arc(v.at.x, v.at.y, hr, 0, Math.PI * 2);
     grow(v.at.x, v.at.y, r);
@@ -813,7 +825,10 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
     for (const pad of fp.pads) {
       if (pad.type === 'np_thru_hole') {
         // Painter draws NPTH as its hole in LAYER_NON_PLATEDHOLES.
-        if (pad.drill) addHole(scene.padHolesNP, pad, pad.drill);
+        if (pad.drill) {
+          addHole(scene.padHolesNP, pad, pad.drill);
+          addSmallHole(scene, pad);
+        }
         continue;
       }
       for (const layer of expandLayers(pad.layers, copperNames)) {
@@ -834,6 +849,7 @@ export function buildScene(board: Board, filter: SceneFilter = {}): BoardScene {
           h: pad.drill.h + 0.1 * MM,
         });
         addHole(scene.padHolesPlated, pad, pad.drill);
+        addSmallHole(scene, pad);
       }
       // Pad number + net name text (PCB_PAINTER::draw(PAD) netname layer).
       addPadLabels(scene, pad, board.nets.get(pad.net ?? 0) ?? '');
@@ -865,6 +881,17 @@ const addHole = (
     sub.arc(ox, oy, drill.w / 2, 0, Math.PI * 2);
   }
   path.addPath(sub, m);
+};
+
+/** Small-mark hole for a pad: same centre, diameter capped at 0.35 mm. */
+const addSmallHole = (scene: BoardScene, pad: PcbPad): void => {
+  if (!pad.drill) return;
+  const r = Math.min(Math.min(pad.drill.w, pad.drill.h) / 2, 0.175 * MM);
+  const off = pad.drill.offset;
+  const m = new DOMMatrix().translate(pad.at.x, pad.at.y).rotate(-pad.angle);
+  const sub = new Path2D();
+  sub.arc(off?.x ?? 0, off?.y ?? 0, r, 0, Math.PI * 2);
+  scene.holesSmall.addPath(sub, m);
 };
 
 /** F.Cu first, inners in numeric order, B.Cu last (board stackup). */
@@ -1309,6 +1336,14 @@ export function buildDrawSteps(
   for (let i = 0; i <= fCuIndex; i++) pushLayer(PCB_PAINT_ORDER[i]!);
 
   steps.push(() => {
+    // Print's drill-marks modes: 'none' suppresses every hole; 'small' draws
+    // each hole capped at SMALL_DRILL (0.35 mm) instead of true size.
+    if (opts.drillMarks === 'none') return;
+    if (opts.drillMarks === 'small') {
+      ctx.fillStyle = sp(PCB_SPECIAL.padPlatedHole);
+      ctx.fill(scene.holesSmall);
+      return;
+    }
     if (opts.pads) {
       ctx.fillStyle = sp(PCB_SPECIAL.padHoleWall);
       ctx.fill(scene.padHoleWalls);

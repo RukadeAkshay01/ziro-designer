@@ -17,8 +17,10 @@ import { iuToMM } from '@ziroeda/common/src/eda_units.js';
 import { tessellateArc, rotatePcb } from './read-board.js';
 import type { Vec2 } from '@ziroeda/kimath/src/math/vector2.js';
 
-/** IU -> Gerber 4.6 integer (mm · 10⁶). */
-const g = (iu: number): string => String(Math.round(iuToMM(iu) * 1e6));
+/** Fractional digits for the 4.x format; the dialog offers 4.5 / 4.6. */
+let coordDigits = 6;
+/** IU -> Gerber 4.x integer (mm · 10^digits). */
+const g = (iu: number): string => String(Math.round(iuToMM(iu) * 10 ** coordDigits));
 /** A coordinate pair with KiCad's negated Y. */
 const xy = (p: Vec2): string => `X${g(p.x)}Y${g(-p.y)}`;
 /** mm with a forced decimal point (aperture definitions). */
@@ -82,8 +84,9 @@ interface Aperture {
 export function plotGerberLayer(
   board: Board,
   layer: string,
-  opts: { creationDate?: string } = {},
+  opts: { creationDate?: string; coordDigits?: 5 | 6 } = {},
 ): string {
+  coordDigits = opts.coordDigits ?? 6;
   const copperCount = board.layers.filter((l) => /\.Cu$/.test(l.name)).length || 2;
   const apertures = new Map<string, Aperture>();
   let nextD = 10;
@@ -198,8 +201,8 @@ export function plotGerberLayer(
     ...(date ? [`%TF.CreationDate,${date}*%`] : []),
     `%TF.FileFunction,${gerberFileFunction(layer, copperCount)}*%`,
     `%TF.FilePolarity,${filePolarity(layer)}*%`,
-    '%FSLAX46Y46*%',
-    'G04 Gerber Fmt 4.6, Leading zero omitted, Abs format (unit mm)*',
+    `%FSLAX4${coordDigits}Y4${coordDigits}*%`,
+    `G04 Gerber Fmt 4.${coordDigits}, Leading zero omitted, Abs format (unit mm)*`,
     '%MOMM*%',
     '%LPD*%',
     'G01*',
@@ -260,4 +263,21 @@ export function plotExcellonDrill(board: Board, opts: { creationDate?: string } 
   });
   out.push('M30');
   return `${out.join('\n')}\n`;
+}
+
+/** Minimal Gerber job file (.gbrjob) listing the plotted layer files. */
+export function plotGerberJob(board: Board, files: { layer: string; name: string }[]): string {
+  const copperCount = board.layers.filter((l) => /\.Cu$/.test(l.name)).length || 2;
+  return JSON.stringify(
+    {
+      Header: { GenerationSoftware: { Vendor: 'ZiroEDA', Application: 'Pcbnew' } },
+      GeneralSpecs: { ProjectId: { Name: board.fileName ?? 'board' }, LayerNumber: copperCount },
+      FilesAttributes: files.map((f) => ({
+        Path: f.name,
+        FileFunction: gerberFileFunction(f.layer, copperCount),
+      })),
+    },
+    null,
+    2,
+  );
 }
