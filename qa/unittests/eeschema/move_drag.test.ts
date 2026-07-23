@@ -59,7 +59,7 @@ describe('planMove drag connectivity', () => {
     // W1's end, and the label slides to the new midpoint.
     const sch = addItems({
       lines: [makeWire(at(0, 0), at(20, 0)), makeWire(at(20, 0), at(30, 0))],
-      labels: [makeLabel('label', 'NET1', at(10, 0), 0)],
+      labels: [makeLabel('label', 'NET1', at(10, 0))],
     }).apply(EMPTY());
     const spec = planMove(sch, new Map(), new Set([lineId(sch, 1)]));
     expect(spec.labelRides.length).toBe(1);
@@ -72,7 +72,7 @@ describe('planMove drag connectivity', () => {
   it('a label on a fully-moved wire translates rigidly', () => {
     const sch = addItems({
       lines: [makeWire(at(0, 0), at(20, 0))],
-      labels: [makeLabel('label', 'NET1', at(5, 0), 0)],
+      labels: [makeLabel('label', 'NET1', at(5, 0))],
     }).apply(EMPTY());
     const spec = planMove(sch, new Map(), new Set([lineId(sch, 0)]));
     const moved = moveWithConnections(spec, at(3, 7)).apply(sch);

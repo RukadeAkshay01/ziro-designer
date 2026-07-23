@@ -53,7 +53,9 @@ describe('collectAndGuess', () => {
     const base = EMPTY();
     const sch = {
       ...base,
-      textBoxes: [{ start: at(0, 0), end: at(60, 40), text: 'note', source: base.source }],
+      textBoxes: [
+        { start: at(0, 0), end: at(60, 40), angle: 0, text: 'note', source: base.source },
+      ],
       noConnects: [{ at: at(30.4, 20), source: base.source }],
     } as Schematic;
     const cands = collectAndGuess(sch, new Map(), at(30.1, 20), ACC);
@@ -64,7 +66,7 @@ describe('collectAndGuess', () => {
   it('describes items with KiCad wording', () => {
     const sch = addItems({
       lines: [makeWire(at(0, 0), at(20, 0))],
-      labels: [makeLabel('label', 'NETX', at(0, 0), 0)],
+      labels: [makeLabel('label', 'NETX', at(0, 0))],
       junctions: [makeJunction(at(10, 0))],
     }).apply(EMPTY());
     // (12, 0.1) is past the junction dot's radius, so the wire wins there.

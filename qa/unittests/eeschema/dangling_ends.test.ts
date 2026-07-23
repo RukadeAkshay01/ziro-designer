@@ -60,7 +60,7 @@ describe('danglingWireEnds', () => {
         makeBus(at(10, 30), at(20, 30)),
       ],
       junctions: [makeJunction(at(10, 0))],
-      labels: [makeLabel('label', 'N', at(10, 10), 0)],
+      labels: [makeLabel('label', 'N', at(10, 10))],
       noConnects: [makeNoConnect(at(10, 20))],
     }).apply(EMPTY());
     const marked = danglingWireEnds(sch, new Map()).map((e) => `${e.pos.x},${e.pos.y}`);
@@ -97,9 +97,9 @@ describe('danglingLabelAnchors', () => {
     const sch = addItems({
       lines: [makeWire(at(0, 0), at(20, 0))],
       labels: [
-        makeLabel('label', 'MID', at(10, 0), 0),
-        makeLabel('label', 'TIP', at(20, 0), 0),
-        makeLabel('global_label', 'FLOAT', at(40, 40), 0),
+        makeLabel('label', 'MID', at(10, 0)),
+        makeLabel('label', 'TIP', at(20, 0)),
+        makeLabel('global_label', 'FLOAT', at(40, 40)),
       ],
     }).apply(EMPTY());
     const marked = danglingLabelAnchors(sch, new Map());
