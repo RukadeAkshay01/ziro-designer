@@ -70,7 +70,18 @@ function spaceAdvance(): number {
 const SUPER_SUB_SIZE_MULTIPLIER = 0.8;
 const SUPER_HEIGHT_OFFSET = 0.35;
 const SUB_HEIGHT_OFFSET = 0.15;
-const OVERBAR_HEIGHT = 1.23;
+const DEFAULT_OVERBAR_HEIGHT = 1.23;
+
+// m_OverbarHeight is project-adjustable (Schematic Setup > Formatting's
+// "Vertical offset ratio"); renderers set it before drawing, like KiCad seeds
+// SCH_RENDER_SETTINGS' font metrics from SCHEMATIC_SETTINGS.
+let overbarHeight = DEFAULT_OVERBAR_HEIGHT;
+
+/** Set the overbar Y offset as a multiple of text size (FONT_METRICS
+ *  m_OverbarHeight); undefined or non-positive restores the default 1.23. */
+export function setOverbarHeightRatio(ratio?: number): void {
+  overbarHeight = ratio && ratio > 0 ? ratio : DEFAULT_OVERBAR_HEIGHT;
+}
 
 type MarkupStyle = 'normal' | 'overbar' | 'sub' | 'super';
 interface MarkupRun {
@@ -145,7 +156,7 @@ function layoutRun(run: MarkupRun, size: number, cursorX: number, out?: Vec2[][]
   if (out && run.style === 'overbar') {
     // Shorten the bar a little so its rounded ends don't make it over-long.
     const barTrim = size * 0.1;
-    const y = -size * OVERBAR_HEIGHT;
+    const y = -size * overbarHeight;
     out.push([
       { x: barStart + barTrim, y },
       { x: cursorX - barTrim, y },

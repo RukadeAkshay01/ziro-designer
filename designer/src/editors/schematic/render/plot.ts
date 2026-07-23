@@ -40,6 +40,10 @@ export interface PlotOpts {
   dashLengthRatio?: number;
   gapLengthRatio?: number;
   textOffsetRatio?: number;
+  /** Global-label box margin + overbar offset ratios (m_LabelSizeRatio,
+   *  FONT_METRICS m_OverbarHeight), so plots match the screen. */
+  labelSizeRatio?: number;
+  overbarHeightRatio?: number;
 }
 
 /** An all-black-on-white theme for monochrome output (KiCad's B&W plot). */
@@ -107,6 +111,8 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     dashLengthRatio: opts.dashLengthRatio,
     gapLengthRatio: opts.gapLengthRatio,
     textOffsetRatio: opts.textOffsetRatio,
+    labelSizeRatio: opts.labelSizeRatio,
+    overbarHeightRatio: opts.overbarHeightRatio,
     selectionThicknessMils: 0,
     highlightThicknessMils: 0,
     grid: { show: false, sizeIU: 12700, style: 'dots', lineWidthPx: 1, minSpacingPx: 10 },

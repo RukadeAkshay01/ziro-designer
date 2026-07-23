@@ -960,6 +960,9 @@ export function SchematicEditor({
       gapLengthRatio: setup.formatting.gapLengthRatio,
       // The panel stores percent (KiCad UI convention); the ratio is /100.
       textOffsetRatio: setup.formatting.labelOffsetRatio / 100,
+      labelSizeRatio: setup.formatting.labelSizeRatio / 100,
+      // Overbar offset is stored as the raw ratio (1.23), not percent.
+      overbarHeightRatio: setup.formatting.overbarOffsetRatio,
     }),
     [setup],
   );

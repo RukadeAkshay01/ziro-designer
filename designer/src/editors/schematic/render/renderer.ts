@@ -15,6 +15,7 @@ import {
   iuToMM,
   layoutDrawingSheet,
   defaultDrawingSheet,
+  setOverbarHeightRatio,
   type WksResolveContext,
   type WksSheet,
   type Transform,
@@ -188,6 +189,12 @@ export interface RenderOpts {
   /** Label / pin-text lift as a fraction of text size (m_TextOffsetRatio;
    *  default 0.15 — the Formatting panel's percent value ÷ 100). */
   textOffsetRatio?: number;
+  /** Global-label box margin as a fraction of text size (m_LabelSizeRatio;
+   *  default 0.375 — the Formatting panel's percent value ÷ 100). */
+  labelSizeRatio?: number;
+  /** Overbar Y offset as a multiple of text size (FONT_METRICS
+   *  m_OverbarHeight; default 1.23). */
+  overbarHeightRatio?: number;
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -233,6 +240,7 @@ let g_junctionDiam = DEFAULT_JUNCTION_DIAM;
 let g_dashRatio = 12;
 let g_gapRatio = 3;
 let g_textOffsetRatio = 0.15;
+let g_labelSizeRatio = 0.375; // DEFAULT_LABEL_SIZE_RATIO (box expansion)
 const _GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
@@ -328,6 +336,10 @@ export function renderSchematic(
   g_gapRatio = opts.gapLengthRatio && opts.gapLengthRatio > 0 ? opts.gapLengthRatio : 3;
   g_textOffsetRatio =
     opts.textOffsetRatio !== undefined && opts.textOffsetRatio >= 0 ? opts.textOffsetRatio : 0.15;
+  g_labelSizeRatio =
+    opts.labelSizeRatio !== undefined && opts.labelSizeRatio >= 0 ? opts.labelSizeRatio : 0.375;
+  // The stroke font draws ~{...} overbars at the settings ratio (m_OverbarHeight).
+  setOverbarHeightRatio(opts.overbarHeightRatio);
   const libById = new Map<string, LibSymbol>();
   for (const lib of sch.libSymbols) libById.set(lib.libId, lib);
 
@@ -1189,8 +1201,6 @@ const SHAPE_INDEX: Record<string, number> = {
   tri_state: 3,
   passive: 4,
 };
-const LABEL_RATIO = 0.375; // KiCad DEFAULT_LABEL_SIZE_RATIO (box expansion)
-
 /** Rotate a point by the spin style, as KiCad's global-label CreateGraphicShape does. */
 function spinRotate(p: Vec2, spin: number): Vec2 {
   switch (spin) {
@@ -1263,8 +1273,10 @@ function drawLabel(
           justifyFor(spin),
         );
     } else {
-      // Global label: 6-point box (margined) with a notch/point per shape, then spin-rotated.
-      const margin = LABEL_RATIO * h;
+      // Global label: 6-point box (margined) with a notch/point per shape, then
+      // spin-rotated. Margin = m_LabelSizeRatio × text size
+      // (SCH_LABEL_BASE::GetLabelBoxExpansion).
+      const margin = g_labelSizeRatio * h;
       const hs = halfSize + margin;
       const symbLen = Math.max(1, l.text.length) * h * 0.62 + 2 * margin;
       const x = symbLen + 3,
