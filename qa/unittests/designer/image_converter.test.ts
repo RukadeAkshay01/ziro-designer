@@ -19,6 +19,7 @@ import {
 } from '@ziroeda/designer/src/editors/image/bitmap2component.js';
 import {
   convertOutputSize,
+  formatOutputSize,
   initialOutputSize,
   outputDpi,
 } from '@ziroeda/designer/src/editors/image/imageSize.js';
@@ -101,6 +102,14 @@ describe('output size (KiCad IMAGE_SIZE)', () => {
     expect(convertOutputSize(25.4, 300, 'mm', 'dpi')).toBeCloseTo(300, 6);
     expect(convertOutputSize(300, 300, 'dpi', 'mm')).toBeCloseTo(25.4, 6);
   });
+
+  it('formats with KiCad precision: mm %.1f, inch %.2f, DPI integer', () => {
+    expect(formatOutputSize(25.4, 'mm')).toBe('25.4');
+    expect(formatOutputSize(84.66667, 'mm')).toBe('84.7');
+    expect(formatOutputSize(0, 'mm')).toBe('0.0');
+    expect(formatOutputSize(1, 'inch')).toBe('1.00');
+    expect(formatOutputSize(299.6, 'dpi')).toBe('300');
+  });
 });
 
 describe('layer choices', () => {
@@ -167,6 +176,8 @@ describe('footprint output', () => {
     const { text } = convert(bm, { format: 'footprint', layer, dpiX: 300, dpiY: 300, name: NAME });
     const fp = readFootprintFile(parse(text))!;
     expect(fp.shapes.find((s) => s.kind === 'poly')!.layer).toBe(layer);
+    // outputDataHeader keeps the reference/value texts on F.SilkS regardless.
+    expect(text.match(/\(layer "F\.SilkS"\)/g)).toHaveLength(2);
   });
 
   it('centres the artwork on the origin', () => {
@@ -228,6 +239,35 @@ describe('symbol output', () => {
     expect(polylines.length).toBe(1);
     expect(polylines[0]!.fill?.type).toBe('outline');
   });
+
+  it('places Reference above and Value below the artwork (KiCad outputDataHeader)', () => {
+    // 24 px @ 300 DPI → half-height 1.016 mm; ±(1.016 − fieldSize/2) = ±0.381.
+    const bm = filledRect(24, 24, 6, 6, 18, 18);
+    const { text } = convert(bm, {
+      format: 'symbol',
+      layer: 'F.SilkS',
+      dpiX: 300,
+      dpiY: 300,
+      name: NAME,
+    });
+    expect(text).toMatch(/\(property "Reference" "#G"\s*\(at 0 0\.381 0\)/);
+    expect(text).toMatch(/\(property "Value" "LOGO"\s*\(at 0 -0\.381 0\)/);
+    expect(text).not.toContain('exclude_from_sim');
+  });
+
+  it('clipboard paste variant emits the bare symbol fragment (SYMBOL_PASTE_FMT)', () => {
+    const bm = filledRect(24, 24, 6, 6, 18, 18);
+    const { text } = convert(bm, {
+      format: 'symbol',
+      layer: 'F.SilkS',
+      dpiX: 300,
+      dpiY: 300,
+      name: NAME,
+      paste: true,
+    });
+    expect(text).not.toContain('kicad_symbol_lib');
+    expect(text.trimStart().startsWith('(symbol "LOGO"')).toBe(true);
+  });
 });
 
 describe('postscript & drawing-sheet output', () => {
@@ -261,6 +301,20 @@ describe('postscript & drawing-sheet output', () => {
     const root = parse(text);
     expect(root.items[0]).toMatchObject({ kind: 'atom', value: 'kicad_wks' });
     expect(text).toContain('(polygon');
+    // DS_DATA_ITEM_POLYGONS gets m_LineWidth = 0.01 in createDrawingSheetData.
+    expect(text).toContain('(linewidth 0.01)');
+  });
+
+  it('EPS uses newpath/moveto with integer pixel coordinates', () => {
+    const { text } = convert(bm, {
+      format: 'postscript',
+      layer: 'F.SilkS',
+      dpiX: 300,
+      dpiY: 300,
+      name: NAME,
+    });
+    expect(text).toContain('newpath');
+    expect(text).toMatch(/newpath\n-?\d+ -?\d+ moveto\n/);
   });
 });
 
@@ -287,6 +341,22 @@ describe('threshold & negative', () => {
     // light pixel (x=w-1): opposite
     expect(normal.data[w - 1]).toBe(0);
     expect(inverted.data[w - 1]).toBe(1);
+  });
+
+  it('negates the greyscale before thresholding, as KiCad does', () => {
+    // binarize(negated): fg iff (255 − gray) < th. gray 240, th 50 → 15 < 50.
+    const rgba = new Uint8ClampedArray([240, 240, 240, 255]);
+    const gray = imageToGray(rgba, 1, 1);
+    expect(grayToMono(gray, 50, false).data[0]).toBe(0);
+    expect(grayToMono(gray, 50, true).data[0]).toBe(1);
+  });
+
+  it('drops pixels that are too transparent (alpha ≤ 0.7·threshold)', () => {
+    const rgba = new Uint8ClampedArray([0, 0, 0, 30]); // black but nearly invisible
+    const gray = imageToGray(rgba, 1, 1);
+    expect(grayToMono(gray, 128, false).data[0]).toBe(0); // 30 ≤ 89.6 → background
+    const opaque = imageToGray(new Uint8ClampedArray([0, 0, 0, 255]), 1, 1);
+    expect(grayToMono(opaque, 128, false).data[0]).toBe(1);
   });
 
   it('a blank bitmap yields an empty but valid footprint', () => {

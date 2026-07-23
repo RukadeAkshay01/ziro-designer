@@ -57,8 +57,15 @@ export interface ConvertOptions {
   layer: string;
   dpiX: number;
   dpiY: number;
-  /** Component / symbol / footprint name. */
+  /** Component / symbol / footprint name (KiCad always uses "LOGO"). */
   name: string;
+  /** Download file stem; defaults to `name`. */
+  fileStem?: string;
+  /**
+   * Clipboard variant: KiCad's SYMBOL_PASTE_FMT — the symbol fragment without
+   * the `kicad_symbol_lib` wrapper. Only meaningful for `format: 'symbol'`.
+   */
+  paste?: boolean;
 }
 
 // ----- image processing (greyscale + threshold) -------------------------------
@@ -66,38 +73,42 @@ export interface ConvertOptions {
 export interface GrayImage {
   w: number;
   h: number;
-  /** One luminance byte per pixel, 0 (black) … 255 (white); transparency flattened onto white. */
+  /** One luminance byte per pixel, 0 (black) … 255 (white); alpha kept apart. */
   gray: Uint8ClampedArray;
+  /** Per-pixel alpha, 0 (transparent) … 255 (opaque). */
+  alpha: Uint8ClampedArray;
 }
 
 /**
  * Reduce RGBA image data to greyscale, KiCad's Rec. 601 luma
- * (`0.299 R + 0.587 G + 0.114 B`), compositing any alpha over a white
- * background so transparent pixels read as background.
+ * (`0.299 R + 0.587 G + 0.114 B`, wx `ConvertToGreyscale`). Alpha is kept as
+ * its own channel — `binarize` consults it separately, as KiCad does.
  */
 export function imageToGray(data: Uint8ClampedArray, w: number, h: number): GrayImage {
   const gray = new Uint8ClampedArray(w * h);
+  const alpha = new Uint8ClampedArray(w * h);
   for (let i = 0; i < w * h; i++) {
     const r = data[i * 4]!;
     const g = data[i * 4 + 1]!;
     const b = data[i * 4 + 2]!;
-    const a = data[i * 4 + 3]! / 255;
-    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    gray[i] = lum * a + 255 * (1 - a);
+    gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    alpha[i] = data[i * 4 + 3]!;
   }
-  return { w, h, gray };
+  return { w, h, gray, alpha };
 }
 
 /**
- * Threshold a greyscale image to a 1-bit bitmap for tracing. A pixel is
- * foreground (bit 1) when it is darker than the threshold; `negative` inverts
- * that, exactly like the panel's Negative checkbox.
+ * Threshold a greyscale image to a 1-bit bitmap for tracing —
+ * `BITMAP2CMP_PANEL::binarize` exactly: with `negative` the greyscale is
+ * negated first (`negateGreyscaleImage`), then a pixel is foreground when it is
+ * darker than the threshold *and* opaque enough (`alpha > 0.7 · threshold`).
  */
 export function grayToMono(img: GrayImage, threshold: number, negative: boolean): Bitmap {
+  const alphaThresh = 0.7 * threshold;
   const bm = new Bitmap(img.w, img.h);
   for (let i = 0; i < img.w * img.h; i++) {
-    const dark = img.gray[i]! < threshold;
-    bm.data[i] = dark !== negative ? 1 : 0;
+    const pixel = negative ? 255 - img.gray[i]! : img.gray[i]!;
+    bm.data[i] = pixel < threshold && img.alpha[i]! > alphaThresh ? 1 : 0;
   }
   return bm;
 }
@@ -123,7 +134,9 @@ export function monoToRGBA(bm: Bitmap): ImageData {
 export function grayToRGBA(img: GrayImage, negative = false): ImageData {
   const out = new Uint8ClampedArray(img.w * img.h * 4);
   for (let i = 0; i < img.w * img.h; i++) {
-    const v = negative ? 255 - img.gray[i]! : img.gray[i]!;
+    const g = negative ? 255 - img.gray[i]! : img.gray[i]!;
+    const a = img.alpha[i]! / 255;
+    const v = g * a + 255 * (1 - a); // blend over the light panel background
     out[i * 4] = v;
     out[i * 4 + 1] = v;
     out[i * 4 + 2] = v;
@@ -275,8 +288,9 @@ function makeXForm(fmtId: OutputFormat, w: number, h: number, dpiX: number, dpiY
     case 'drawingsheet':
       return (p) => ({ x: (p.x - cx) * sx, y: (p.y - cy) * sy });
     case 'postscript':
-      // PostScript is Y-up from the origin; flip within the page height (points).
-      return (p) => ({ x: p.x, y: h - p.y });
+      // PostScript is Y-up from the origin; flip within the page height. KiCad
+      // works in integer units at scale 1.0, so coordinates are whole pixels.
+      return (p) => ({ x: Math.trunc(p.x), y: h - Math.trunc(p.y) });
   }
 }
 
@@ -292,12 +306,20 @@ function uuid(): string {
   return `00000000-0000-0000-0000-${hex(uuidSeq, 12)}`;
 }
 
-/** One closed ring (outer with holes bridged in) as `(xy ..)` lines. */
-function ringXY(region: Region, xf: XForm, indent: string): string {
+/**
+ * One ring (outer with holes bridged in) as `(xy ..)` lines. `close` repeats
+ * the first point — KiCad closes the polygon for symbol and drawing-sheet
+ * output but not for `fp_poly` ("No need to close polygon").
+ */
+function ringXY(region: Region, xf: XForm, indent: string, close = false): string {
   const ring = fractureWithHoles(region.outer, region.holes);
   let out = '';
   for (const p of ring) {
     const q = xf(p);
+    out += `${indent}(xy ${fmt(q.x)} ${fmt(q.y)})\n`;
+  }
+  if (close && ring.length > 0) {
+    const q = xf(ring[0]!);
     out += `${indent}(xy ${fmt(q.x)} ${fmt(q.y)})\n`;
   }
   return out;
@@ -313,15 +335,17 @@ function writeFootprint(regions: Region[], o: ConvertOptions, w: number, h: numb
   s += `\t(generator_version "${GENERATOR_VERSION}")\n`;
   s += `\t(layer "F.Cu")\n`;
   s += `\t(attr board_only exclude_from_pos_files exclude_from_bom)\n`;
+  // KiCad's outputDataHeader always puts the (hidden-in-use) reference and
+  // value texts on F.SilkS, whatever layer the outline itself goes to.
   s += `\t(fp_text reference "G***"\n`;
   s += `\t\t(at 0 0 0)\n`;
-  s += `\t\t(layer "${layer}")\n`;
+  s += `\t\t(layer "F.SilkS")\n`;
   s += `\t\t(uuid "${uuid()}")\n`;
   s += `\t\t(effects\n\t\t\t(font\n\t\t\t\t(size 1.5 1.5)\n\t\t\t\t(thickness 0.3)\n\t\t\t)\n\t\t)\n`;
   s += `\t)\n`;
   s += `\t(fp_text value "${o.name}"\n`;
   s += `\t\t(at 0.75 0 0)\n`;
-  s += `\t\t(layer "${layer}")\n`;
+  s += `\t\t(layer "F.SilkS")\n`;
   s += `\t\t(hide yes)\n`;
   s += `\t\t(uuid "${uuid()}")\n`;
   s += `\t\t(effects\n\t\t\t(font\n\t\t\t\t(size 1.5 1.5)\n\t\t\t\t(thickness 0.3)\n\t\t\t)\n\t\t)\n`;
@@ -343,27 +367,30 @@ function writeFootprint(regions: Region[], o: ConvertOptions, w: number, h: numb
 function writeSymbol(regions: Region[], o: ConvertOptions, w: number, h: number): string {
   const xf = makeXForm('symbol', w, h, o.dpiX, o.dpiY);
   const fieldSize = 1.27;
-  // Reference sits above the artwork, Value below it (KiCad places them at ±Ypos).
-  const ypos = (h / 2) * (25.4 / o.dpiY) + fieldSize / 2;
+  // KiCad's outputDataHeader: Ypos = (h/2 · scaleY)/IU + fieldSize/2 with a
+  // negative scaleY, so the Reference lands at +(h/2·25.4/dpi − fieldSize/2)
+  // (above the artwork, Y-up) and the Value mirrored below it.
+  const ypos = (h / 2) * (25.4 / o.dpiY) - fieldSize / 2;
   let s = '';
-  s += `(kicad_symbol_lib\n`;
-  s += `\t(version ${SEXPR_SYMBOL_LIB_FILE_VERSION})\n`;
-  s += `\t(generator "bitmap2component")\n`;
-  s += `\t(generator_version "${GENERATOR_VERSION}")\n`;
+  if (!o.paste) {
+    s += `(kicad_symbol_lib\n`;
+    s += `\t(version ${SEXPR_SYMBOL_LIB_FILE_VERSION})\n`;
+    s += `\t(generator "bitmap2component")\n`;
+    s += `\t(generator_version "${GENERATOR_VERSION}")\n`;
+  }
   s += `\t(symbol "${o.name}"\n`;
   s += `\t\t(pin_names\n\t\t\t(offset 1.016)\n\t\t)\n`;
-  s += `\t\t(exclude_from_sim no)\n`;
   s += `\t\t(in_bom yes)\n`;
   s += `\t\t(on_board yes)\n`;
-  s += `\t\t(property "Reference" "#G"\n\t\t\t(at 0 ${fmt(-ypos)} 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
-  s += `\t\t(property "Value" "${o.name}"\n\t\t\t(at 0 ${fmt(ypos)} 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
+  s += `\t\t(property "Reference" "#G"\n\t\t\t(at 0 ${fmt(ypos)} 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
+  s += `\t\t(property "Value" "${o.name}"\n\t\t\t(at 0 ${fmt(-ypos)} 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
   s += `\t\t(property "Footprint" ""\n\t\t\t(at 0 0 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
   s += `\t\t(property "Datasheet" ""\n\t\t\t(at 0 0 0)\n\t\t\t(effects\n\t\t\t\t(font\n\t\t\t\t\t(size ${fieldSize} ${fieldSize})\n\t\t\t\t)\n\t\t\t\t(hide yes)\n\t\t\t)\n\t\t)\n`;
   s += `\t\t(symbol "${o.name}_0_0"\n`;
   for (const region of regions) {
     // Symbols cannot cut holes, so bridge them into the single filled outline.
     s += `\t\t\t(polyline\n\t\t\t\t(pts\n`;
-    s += ringXY(region, xf, '\t\t\t\t\t');
+    s += ringXY(region, xf, '\t\t\t\t\t', true);
     s += `\t\t\t\t)\n`;
     s += `\t\t\t\t(stroke\n\t\t\t\t\t(width ${SCH_LINE_THICKNESS_MM})\n\t\t\t\t\t(type default)\n\t\t\t\t)\n`;
     s += `\t\t\t\t(fill\n\t\t\t\t\t(type outline)\n\t\t\t\t)\n`;
@@ -371,7 +398,7 @@ function writeSymbol(regions: Region[], o: ConvertOptions, w: number, h: number)
   }
   s += `\t\t)\n`;
   s += `\t)\n`;
-  s += `)\n`;
+  if (!o.paste) s += `)\n`;
   return s;
 }
 
@@ -385,8 +412,9 @@ function writeDrawingSheet(regions: Region[], o: ConvertOptions, w: number, h: n
   s += `\t(setup\n\t\t(textsize 1.5 1.5)\n\t\t(linewidth 0.15)\n\t\t(textlinewidth 0.15)\n`;
   s += `\t\t(left_margin 10)\n\t\t(right_margin 10)\n\t\t(top_margin 10)\n\t\t(bottom_margin 10)\n\t)\n`;
   for (const region of regions) {
-    s += `\t(polygon\n\t\t(name "")\n\t\t(pos 0 0)\n\t\t(linewidth 0)\n\t\t(pts\n`;
-    s += ringXY(region, xf, '\t\t\t');
+    // KiCad's DS_DATA_ITEM_POLYGONS gets m_LineWidth = 0.01 and a closed ring.
+    s += `\t(polygon\n\t\t(name "")\n\t\t(pos 0 0)\n\t\t(linewidth 0.01)\n\t\t(pts\n`;
+    s += ringXY(region, xf, '\t\t\t', true);
     s += `\t\t)\n\t)\n`;
   }
   s += `)\n`;
@@ -401,11 +429,20 @@ function writePostScript(regions: Region[], o: ConvertOptions, w: number, h: num
   s += `gsave\n`;
   for (const region of regions) {
     const ring = fractureWithHoles(region.outer, region.holes);
-    ring.forEach((p, i) => {
-      const q = xf(p);
-      s += `${fmt(q.x)} ${fmt(q.y)} ${i === 0 ? 'moveto' : 'lineto'}\n`;
-    });
-    s += `closepath fill\n`;
+    if (ring.length === 0) continue;
+    // outputOnePolygon: "newpath\nX Y moveto\n", then 8 linetos per line.
+    const q0 = xf(ring[0]!);
+    s += `newpath\n${q0.x} ${q0.y} moveto\n`;
+    let jj = 0;
+    for (let i = 1; i < ring.length; i++) {
+      const q = xf(ring[i]!);
+      s += ` ${q.x} ${q.y} lineto`;
+      if (jj++ > 6) {
+        jj = 0;
+        s += '\n';
+      }
+    }
+    s += `\nclosepath fill\n`;
   }
   s += `grestore\n`;
   s += `%%EOF\n`;
@@ -426,29 +463,30 @@ export function convert(bm: Bitmap, o: ConvertOptions): ConvertResult {
   const regions = traceRegions(bm);
   const w = bm.w;
   const h = bm.h;
+  const stem = o.fileStem ?? o.name;
   switch (o.format) {
     case 'symbol':
       return {
         text: writeSymbol(regions, o, w, h),
-        filename: `${o.name}.kicad_sym`,
+        filename: `${stem}.kicad_sym`,
         mime: 'text/plain',
       };
     case 'footprint':
       return {
         text: writeFootprint(regions, o, w, h),
-        filename: `${o.name}.kicad_mod`,
+        filename: `${stem}.kicad_mod`,
         mime: 'text/plain',
       };
     case 'drawingsheet':
       return {
         text: writeDrawingSheet(regions, o, w, h),
-        filename: `${o.name}.kicad_wks`,
+        filename: `${stem}.kicad_wks`,
         mime: 'text/plain',
       };
     case 'postscript':
       return {
         text: writePostScript(regions, o, w, h),
-        filename: `${o.name}.ps`,
+        filename: `${stem}.ps`,
         mime: 'application/postscript',
       };
   }

@@ -716,6 +716,7 @@ export function HomePage({
     editSymbols: () => onOpenSymbolEditor?.(picked ?? undefined),
     editPcb: launchPcb,
     editFootprints: () => onOpenFootprintEditor?.(picked ?? undefined),
+    openImageConverter: () => onOpenImageConverter?.(),
     openPreferences: () => setPrefsOpen(true),
     openPluginManager: () => setPcmOpen(true),
     showAbout: () => setAboutOpen(true),
@@ -742,6 +743,7 @@ export function HomePage({
       else if (k === 'l') run(() => onOpenSymbolEditor?.(picked ?? undefined));
       else if (k === 'p' && picked) run(launchPcb);
       else if (k === 'f') run(() => onOpenFootprintEditor?.(picked ?? undefined));
+      else if (k === 'b') run(() => onOpenImageConverter?.());
       else if (k === 'm') run(() => setPcmOpen(true));
       else if (k === ',') run(() => setPrefsOpen(true));
     };

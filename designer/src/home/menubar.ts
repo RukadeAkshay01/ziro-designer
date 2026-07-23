@@ -28,6 +28,7 @@ export interface ManagerMenuHandlers {
   editSymbols: () => void;
   editPcb: () => void;
   editFootprints: () => void;
+  openImageConverter: () => void;
   openPreferences: () => void;
   openPluginManager: () => void;
   showAbout: () => void;
@@ -146,7 +147,7 @@ export function buildManagerMenus(h: ManagerMenuHandlers): Menu[] {
         { label: 'Footprint Editor', shortcut: 'Ctrl+F', action: h.editFootprints },
         SEP,
         { label: 'Gerber Viewer', shortcut: 'Ctrl+G', disabled: true },
-        { label: 'Image Converter', shortcut: 'Ctrl+B', disabled: true },
+        { label: 'Image Converter', shortcut: 'Ctrl+B', action: h.openImageConverter },
         { label: 'Calculator Tools', disabled: true },
         { label: 'Drawing Sheet Editor', shortcut: 'Ctrl+Y', disabled: true },
         { label: 'Plugin and Content Manager', shortcut: 'Ctrl+M', action: h.openPluginManager },
