@@ -19,6 +19,14 @@ export * from './galvanic_corrosion.js';
 export * from './color_code.js';
 export * from './attenuators/attenuator_classes.js';
 export * from './transline/transline.js';
+export {
+  type DielectricModelParams,
+  type DjordjevicSarkarModel,
+  dispersedSubstrate,
+  djordjevicSarkarFit,
+  dsEpsilonRealAt,
+  dsTanDeltaAt,
+} from './transline/tc_common.js';
 export * from './transline/microstrip.js';
 export * from './transline/c_microstrip.js';
 export * from './transline/coplanar.js';

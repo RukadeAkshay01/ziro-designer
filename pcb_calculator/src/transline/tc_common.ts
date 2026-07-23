@@ -95,3 +95,90 @@ export function ellipticIntegral(arg: number): [number, number] {
 
 /** K(k) for a modulus k (not k²), matching KiCad's `EllipticIntegral(k).first`. */
 export const ellipticK = (k: number): number => ellipticIntegral(k * k)[0];
+
+// ---------------------------------------------------------------------------
+// Djordjevic–Sarkar causal wideband Debye dielectric model.
+// Port of KiCad `common/transline_calculations/dielectric_djordjevic_sarkar.cpp`
+// (Djordjevic et al., IEEE Trans. EMC 43(4):662-667, 2001, eqs. (8)-(11)).
+// ---------------------------------------------------------------------------
+
+export interface DjordjevicSarkarModel {
+  lossless: boolean;
+  epsInf: number;
+  m: number;
+  f1: number;
+  f2: number;
+}
+
+/**
+ * Fit the model to the substrate spec (εr, tan δ at fSpec). Returns null for
+ * invalid inputs — KiCad falls back to the constant model in that case.
+ */
+export function djordjevicSarkarFit(
+  epsRSpec: number,
+  tanDSpec: number,
+  fSpec: number,
+  f1 = 1.0e3,
+  f2 = 1.0e12,
+): DjordjevicSarkarModel | null {
+  if (!(f1 > 0.0) || !(f2 > f1) || !(fSpec >= f1) || !(fSpec <= f2)) return null;
+
+  if (tanDSpec === 0.0) return { lossless: true, epsInf: epsRSpec, m: 0.0, f1, f2 };
+
+  // k = log((f2 + j·fSpec) / (f1 + j·fSpec))
+  const kRe = 0.5 * Math.log((f2 * f2 + fSpec * fSpec) / (f1 * f1 + fSpec * fSpec));
+  const kIm = Math.atan2(fSpec, f2) - Math.atan2(fSpec, f1);
+
+  return {
+    lossless: false,
+    m: (-tanDSpec * epsRSpec) / kIm,
+    epsInf: epsRSpec * (1.0 + (tanDSpec * kRe) / kIm),
+    f1,
+    f2,
+  };
+}
+
+/** Complex ε(f), eq. (8): εinf + m·log((f2 + j·f)/(f1 + j·f)). */
+function dsComplexEpsilonAt(ds: DjordjevicSarkarModel, f: number): [number, number] {
+  if (ds.lossless) return [ds.epsInf, 0.0];
+  const logRe = 0.5 * Math.log((ds.f2 * ds.f2 + f * f) / (ds.f1 * ds.f1 + f * f));
+  const logIm = Math.atan2(f, ds.f2) - Math.atan2(f, ds.f1);
+  return [ds.epsInf + ds.m * logRe, ds.m * logIm];
+}
+
+export const dsEpsilonRealAt = (ds: DjordjevicSarkarModel, f: number): number =>
+  dsComplexEpsilonAt(ds, f)[0];
+
+export function dsTanDeltaAt(ds: DjordjevicSarkarModel, f: number): number {
+  if (ds.lossless) return 0.0;
+  const [re, im] = dsComplexEpsilonAt(ds, f);
+  return -im / re;
+}
+
+/** Panel-level dielectric model selection (KiCad DIELECTRIC_MODEL_SEL). */
+export interface DielectricModelParams {
+  model: 'constant' | 'djordjevic_sarkar';
+  /** Frequency at which the substrate εr / tan δ are specified, Hz. */
+  specFreqHz?: number;
+}
+
+/**
+ * The substrate values an analysis should actually use — the constant inputs,
+ * or the Djordjevic–Sarkar dispersion of them at the operating frequency
+ * (KiCad UpdateDielectricModel + GetDispersedEpsilonR/TanDelta; invalid spec
+ * frequency falls back to the constant model).
+ */
+export function dispersedSubstrate(
+  el: TcElectrical,
+  diel?: DielectricModelParams,
+): { epsilonR: number; tanD: number } {
+  if (diel?.model !== 'djordjevic_sarkar') return { epsilonR: el.epsilonR, tanD: el.tanD };
+  const fSpec = diel.specFreqHz ?? NaN;
+  if (!Number.isFinite(fSpec) || fSpec <= 0.0) return { epsilonR: el.epsilonR, tanD: el.tanD };
+  const ds = djordjevicSarkarFit(el.epsilonR, el.tanD, fSpec);
+  if (!ds) return { epsilonR: el.epsilonR, tanD: el.tanD };
+  return {
+    epsilonR: dsEpsilonRealAt(ds, el.frequencyHz),
+    tanD: dsTanDeltaAt(ds, el.frequencyHz),
+  };
+}

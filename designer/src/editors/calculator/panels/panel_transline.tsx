@@ -17,6 +17,7 @@ import {
   coaxSynthesize,
   coupledStriplineAnalyze,
   coupledStriplineSynthesize,
+  dispersedSubstrate,
   coplanarAnalyze,
   coplanarSynthesize,
   coupledMicrostripAnalyze,
@@ -195,6 +196,9 @@ export function PanelTransline(): JSX.Element {
   const [z0, setZ0] = useState('50');
   // Odd-mode impedance target — used by the coupled stripline (KiCad Zodd).
   const [zOdd, setZOdd] = useState('50');
+  // Dielectric dispersion model (KiCad m_dielectricModelChoice + spec frequency).
+  const [dielModel, setDielModel] = useState<'constant' | 'djordjevic_sarkar'>('constant');
+  const [specFreqHz, setSpecFreqHz] = useState(1e9);
   const [angle, setAngle] = useState('90');
   const [result, setResult] = useState<TranslineAnalysis | null>(null);
   const [error, setError] = useState('');
@@ -212,14 +216,20 @@ export function PanelTransline(): JSX.Element {
     setZOdd('50');
   };
 
-  const el = () => ({
-    frequencyHz: freqHz,
-    epsilonR: parseNum(sub.er),
-    tanD: parseNum(sub.tand),
-    sigma: 1 / parseNum(sub.rho),
-    mur: 1, // dielectric relative permeability (non-magnetic substrate)
-    murC: parseNum(sub.mur),
-  });
+  const el = () => {
+    const base = {
+      frequencyHz: freqHz,
+      epsilonR: parseNum(sub.er),
+      tanD: parseNum(sub.tand),
+      sigma: 1 / parseNum(sub.rho),
+      mur: 1, // dielectric relative permeability (non-magnetic substrate)
+      murC: parseNum(sub.mur),
+    };
+    // Djordjevic–Sarkar overlays the dispersed εr / tan δ at the operating
+    // frequency, exactly as KiCad's UpdateDielectricModel does per analysis.
+    const d = dispersedSubstrate(base, { model: dielModel, specFreqHz });
+    return { ...base, epsilonR: d.epsilonR, tanD: d.tanD };
+  };
   const v = (key: string): number => phys[key] ?? 0;
 
   const analyze = (): void => {
@@ -485,6 +495,31 @@ export function PanelTransline(): JSX.Element {
             unit="Ω·m"
             presets={CONDUCTOR_RESISTIVITIES}
           />
+          <div
+            className="calc-field"
+            title={
+              "'Constant': εr and tan δ applied at all frequencies.\n" +
+              "'Djordjevic-Sarkar': causal wideband Debye anchored at the spec frequency."
+            }
+          >
+            <span className="calc-field-label">Dielectric model:</span>
+            <select
+              className="calc-select"
+              value={dielModel}
+              onChange={(e) => setDielModel(e.target.value as 'constant' | 'djordjevic_sarkar')}
+            >
+              <option value="constant">Constant</option>
+              <option value="djordjevic_sarkar">Djordjevic-Sarkar</option>
+            </select>
+          </div>
+          {dielModel === 'djordjevic_sarkar' && (
+            <NumField
+              label="εr, tanδ spec frequency:"
+              units={FREQ_UNITS}
+              base={specFreqHz}
+              onBase={setSpecFreqHz}
+            />
+          )}
           <Field
             label="Conductor permeability (µ):"
             value={sub.mur}
