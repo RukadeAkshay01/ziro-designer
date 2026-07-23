@@ -462,6 +462,7 @@ export function App(): JSX.Element {
             onExit={goHome}
             onShowSchematic={hasSchematic ? showSchematic : undefined}
             onShowFootprintEditor={showFootprintEditor}
+            onBoardChange={(text: string) => onProjectChange([{ name: pcbFile.name, text }])}
             onSaveBoard={(text: string) => {
               const name = pcbFile.name;
               setProjectFiles((prev) =>

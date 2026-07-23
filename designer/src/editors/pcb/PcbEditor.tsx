@@ -598,6 +598,7 @@ export function PcbEditor({
   onShowSchematic,
   onShowFootprintEditor,
   onSaveBoard,
+  onBoardChange,
   projectName,
   projectFiles,
 }: {
@@ -610,6 +611,9 @@ export function PcbEditor({
   /** Save the board into the project (cloud/file-manager storage); when
    *  absent, Save falls back to a local download. */
   onSaveBoard?: (text: string) => void;
+  /** Debounced autosave sink (the app's coalesced project autosave): board
+   *  edits sync automatically like the schematic's. */
+  onBoardChange?: (text: string) => void;
   /** Project name shown as "<project> — PCB Editor" in the menu bar. */
   projectName?: string;
   /** The open project's files (name + text) — lets the 3D viewer resolve
@@ -822,6 +826,21 @@ export function PcbEditor({
   const sceneRef = useRef<BoardScene | null>(null);
   const rafRef = useRef(0);
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+
+  // Auto-sync: a moment after any edit, serialize into the app's coalesced
+  // autosave. The title's '*' shows while the write is pending and clears once
+  // handed off — every change reaches the project storage without Ctrl+S.
+  useEffect(() => {
+    if (!dirty || !onBoardChange) return;
+    const id = setTimeout(() => {
+      const brd = boardRef.current;
+      if (brd) {
+        onBoardChange(serializeBoard(brd));
+        setDirty(false);
+      }
+    }, 1000);
+    return () => clearTimeout(id);
+  }, [dirty, board, onBoardChange]);
 
   const showAppearance = toggles.has('showLayersManager');
   const showProperties = toggles.has('showProperties');
