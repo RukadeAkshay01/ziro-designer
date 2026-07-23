@@ -598,6 +598,7 @@ export function PcbEditor({
   onExit,
   onShowSchematic,
   onShowFootprintEditor,
+  onSaveBoard,
   projectName,
   projectFiles,
 }: {
@@ -607,6 +608,9 @@ export function PcbEditor({
   onShowSchematic?: () => void;
   /** Open the Footprint Editor (the top-toolbar button / Tools menu). */
   onShowFootprintEditor?: () => void;
+  /** Save the board into the project (cloud/file-manager storage); when
+   *  absent, Save falls back to a local download. */
+  onSaveBoard?: (text: string) => void;
   /** Project name shown as "<project> — PCB Editor" in the menu bar. */
   projectName?: string;
   /** The open project's files (name + text) — lets the 3D viewer resolve
@@ -3392,7 +3396,10 @@ export function PcbEditor({
   const onTopAction = (id: string): void => {
     switch (id) {
       case 'save':
-        saveCopy();
+        // Save writes into the project's file manager (cloud storage); users
+        // download from there. "Save a Copy…" keeps the local download.
+        if (onSaveBoard) onSaveBoard(boardRef.current ? serializeBoard(boardRef.current) : text);
+        else saveCopy();
         break;
       case 'undo':
         undo();
@@ -3482,7 +3489,11 @@ export function PcbEditor({
         { label: 'New Board', disabled: dis },
         { label: 'Open…', disabled: dis },
         { sep: true },
-        { label: 'Save', action: saveCopy, shortcut: 'Ctrl+S' },
+        {
+          label: 'Save',
+          action: () => onTopAction('save'),
+          shortcut: 'Ctrl+S',
+        },
         { label: 'Save a Copy…', action: saveCopy },
         { sep: true },
         { label: 'Import', disabled: dis },
@@ -3890,20 +3901,7 @@ export function PcbEditor({
           </>
         }
       />
-      <Toolbar
-        entries={PCB_TOP_TOOLBAR}
-        orientation="horizontal"
-        onActivate={onTopAction}
-        trailing={
-          <select
-            disabled
-            title="Current variant (design variants are staged)"
-            style={{ marginLeft: 4 }}
-          >
-            <option>Default</option>
-          </select>
-        }
-      />
+      <Toolbar entries={PCB_TOP_TOOLBAR} orientation="horizontal" onActivate={onTopAction} />
 
       {/* TOP_AUX bar (toolbars_pcb_editor.cpp TOOLBAR_LOC::TOP_AUX): track
           width + auto-width | via size | layer selector + layer pair | grid |

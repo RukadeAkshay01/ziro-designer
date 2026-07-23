@@ -1447,6 +1447,12 @@ export function SchematicEditor({
     setDoc((d) => {
       if (!d) return d;
       const text = serializeSchematic(d);
+      if (onPersistFiles && currentFile !== DEFAULT_FILE) {
+        // Save writes into the project's file manager (cloud storage); a local
+        // copy can be downloaded from there (or via Save a Copy).
+        onPersistFiles([{ name: currentFile, text }]);
+        return d;
+      }
       const url = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
       const a = document.createElement('a');
       a.href = url;
