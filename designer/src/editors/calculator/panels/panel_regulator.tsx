@@ -573,14 +573,15 @@ export function PanelRegulator(): JSX.Element {
             </button>
             {toast && <span className="calc-toast">{toast}</span>}
           </div>
-
-          {/* KiCad: bottom-right of the right column, after a stretch spacer. */}
-          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="button" className="calc-btn" onClick={resetDefaults}>
-              Reset to Defaults
-            </button>
-          </div>
         </div>
+      </div>
+
+      {/* KiCad: the right column stretches over the remaining window, and
+          Reset to Defaults floats to its far bottom-right corner. */}
+      <div style={{ marginTop: 48, display: 'flex', justifyContent: 'flex-end' }}>
+        <button type="button" className="calc-btn" onClick={resetDefaults}>
+          Reset to Defaults
+        </button>
       </div>
 
       {form && (
