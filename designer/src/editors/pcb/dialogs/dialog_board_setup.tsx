@@ -350,7 +350,9 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
 
         <div style={{ ...secLabel, marginTop: 14 }}>Zone Fill Strategy</div>
         <hr style={secRule} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, margin: '4px 0' }}>
+        <label
+          style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, margin: '4px 0' }}
+        >
           <span style={{ display: 'inline-flex', width: 18, height: 18 }}>
             <ConIcon name="fillet" />
           </span>
@@ -383,7 +385,9 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
 
         <div style={{ ...secLabel, marginTop: 14 }}>Length Tuning</div>
         <hr style={secRule} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, margin: '4px 0' }}>
+        <label
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, margin: '4px 0' }}
+        >
           <input
             type="checkbox"
             checked={v.constraints.includeStackupHeight}

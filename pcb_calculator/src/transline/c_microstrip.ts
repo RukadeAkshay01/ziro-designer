@@ -334,8 +334,22 @@ export function coupledMicrostripAnalyze(
   if (soldermask?.present) {
     const uOverH = phys.widthM / phys.heightM;
     const deltaQ = microstripSoldermaskDeltaQ(uOverH, soldermask.thicknessM / phys.heightM);
-    const smE = applySoldermaskCorrection(soldermask, phys.heightM, st.erEffE0, el.tanD, er, deltaQ);
-    const smO = applySoldermaskCorrection(soldermask, phys.heightM, st.erEffO0, el.tanD, er, deltaQ);
+    const smE = applySoldermaskCorrection(
+      soldermask,
+      phys.heightM,
+      st.erEffE0,
+      el.tanD,
+      er,
+      deltaQ,
+    );
+    const smO = applySoldermaskCorrection(
+      soldermask,
+      phys.heightM,
+      st.erEffO0,
+      el.tanD,
+      er,
+      deltaQ,
+    );
     if (smE.changed) {
       st.z0E0 *= Math.sqrt(st.erEffE0 / smE.epsEff);
       st.erEffE0 = smE.epsEff;

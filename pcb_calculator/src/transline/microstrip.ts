@@ -174,9 +174,7 @@ export function microstripAnalyze(
     erEff0,
     el.tanD,
     er,
-    soldermask?.present
-      ? microstripSoldermaskDeltaQ(u, soldermask.thicknessM / phys.heightM)
-      : 0.0,
+    soldermask?.present ? microstripSoldermaskDeltaQ(u, soldermask.thicknessM / phys.heightM) : 0.0,
   );
   if (sm.changed) {
     z0Static *= Math.sqrt(erEff0 / sm.epsEff);

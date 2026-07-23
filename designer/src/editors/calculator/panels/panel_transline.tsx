@@ -652,12 +652,7 @@ export function PanelTransline(): JSX.Element {
             unit="Ω"
           />
           {type === 'c_stripline' && (
-            <Field
-              label="Odd-mode impedance (Zodd):"
-              value={zOdd}
-              onChange={setZOdd}
-              unit="Ω"
-            />
+            <Field label="Odd-mode impedance (Zodd):" value={zOdd} onChange={setZOdd} unit="Ω" />
           )}
           <Field label="Electrical length:" value={angle} onChange={setAngle} unit="°" />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

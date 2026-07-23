@@ -105,7 +105,8 @@ export function cableUpdateAll(radiusM: number, p: CableParams): CableState {
   const rhoHot = cableHotResistivity(p.rho20, p.alpha, p.temperatureC);
   const linearResistance = rhoHot / areaM2;
   const maxFrequencyHz =
-    rhoHot / (Math.PI * radiusM * radiusM * CABLE_VACUUM_PERMEABILITY * CABLE_RELATIVE_PERMEABILITY);
+    rhoHot /
+    (Math.PI * radiusM * radiusM * CABLE_VACUUM_PERMEABILITY * CABLE_RELATIVE_PERMEABILITY);
   const m2ByAmpere = 1 / p.ampPerMm2 / 1e6;
   const resistanceDcOhm = linearResistance * p.lengthM;
   const voltageDropV = resistanceDcOhm * p.currentA;
@@ -133,9 +134,7 @@ export const cableRadiusFromLinResistance = (linROhmPerM: number, rhoHot: number
   Math.sqrt(rhoHot / linROhmPerM / Math.PI);
 
 export const cableRadiusFromFrequency = (fHz: number, rhoHot: number): number =>
-  Math.sqrt(
-    rhoHot / fHz / Math.PI / CABLE_VACUUM_PERMEABILITY / CABLE_RELATIVE_PERMEABILITY,
-  );
+  Math.sqrt(rhoHot / fHz / Math.PI / CABLE_VACUUM_PERMEABILITY / CABLE_RELATIVE_PERMEABILITY);
 
 export const cableRadiusFromAmpacity = (ampacityA: number, ampPerMm2: number): number =>
   Math.sqrt((ampacityA * (1 / ampPerMm2 / 1e6)) / Math.PI);
@@ -144,18 +143,18 @@ export const cableRadiusFromResistanceDc = (
   rdcOhm: number,
   rhoHot: number,
   lengthM: number,
-): number => Math.sqrt((rhoHot / rdcOhm) * lengthM / Math.PI);
+): number => Math.sqrt(((rhoHot / rdcOhm) * lengthM) / Math.PI);
 
 export const cableRadiusFromVDrop = (
   vdropV: number,
   rhoHot: number,
   lengthM: number,
   currentA: number,
-): number => Math.sqrt((rhoHot / vdropV) * lengthM * currentA / Math.PI);
+): number => Math.sqrt(((rhoHot / vdropV) * lengthM * currentA) / Math.PI);
 
 export const cableRadiusFromPower = (
   powerW: number,
   rhoHot: number,
   lengthM: number,
   currentA: number,
-): number => Math.sqrt((rhoHot / powerW) * lengthM * currentA * currentA / Math.PI);
+): number => Math.sqrt(((rhoHot / powerW) * lengthM * currentA * currentA) / Math.PI);

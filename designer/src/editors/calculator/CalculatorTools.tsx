@@ -131,9 +131,7 @@ export function CalculatorTools({ onExitToHome }: { onExitToHome: () => void }):
                   })
                 }
               >
-                <span
-                  className={`twisty expandable${collapsed.has(group.name) ? '' : ' open'}`}
-                />
+                <span className={`twisty expandable${collapsed.has(group.name) ? '' : ' open'}`} />
                 {group.name}
               </div>
               {!collapsed.has(group.name) &&

@@ -205,7 +205,11 @@ export function PagedDialog({
           {showReset && (
             // Stubbed: enabled only for resettable pages, exactly like KiCad — none
             // of our pages declare themselves resettable yet, so it reads disabled.
-            <button className="ze-btn" disabled={!active?.resettable} title="Reset this page to defaults">
+            <button
+              className="ze-btn"
+              disabled={!active?.resettable}
+              title="Reset this page to defaults"
+            >
               {resetLabel}
             </button>
           )}

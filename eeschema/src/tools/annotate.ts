@@ -109,7 +109,8 @@ export function annotateSymbols(
   };
 
   const candidates: Candidate[] = [];
-  const valueOf = (s: SchSymbol): string => s.fields.find((f) => f.key === 'Value')?.value ?? '';
+  const symbolValue = (s: SchSymbol): string =>
+    s.fields.find((f) => f.key === 'Value')?.value ?? '';
   // prefix → number → occupants. 'full' = a single-unit symbol owns the number
   // outright; a UnitRec list = multi-unit occupants that may share it.
   const reserved = new Map<string, Map<number, 'full' | UnitRec[]>>();
@@ -126,7 +127,7 @@ export function annotateSymbols(
   };
   const unitRecOf = (sym: SchSymbol): UnitRec => ({
     lib: sym.libId,
-    value: valueOf(sym),
+    value: symbolValue(sym),
     unit: sym.unit,
   });
 
@@ -227,7 +228,7 @@ export function annotateSymbols(
       const units = c.origFull ? groupUnits.get(c.origFull)! : [c.sym.unit];
       n = firstFree(c.prefix, minRefId(), {
         lib: c.sym.libId,
-        value: valueOf(c.sym),
+        value: symbolValue(c.sym),
         units,
       });
       if (c.origFull) groupNumber.set(c.origFull, n);

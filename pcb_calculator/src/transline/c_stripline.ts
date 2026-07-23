@@ -96,7 +96,8 @@ function applyOffsetCorrection(
   const position = Math.abs(0.5 - offset / plateSpacing);
   const positionFactor = position ** 2.2;
   const widthFactor = ((thickness + width) / plateSpacing) ** 2.9;
-  const correction = ((0.26 * Math.PI) / 8.0) * Math.sqrt(er) * zImage * positionFactor * widthFactor;
+  const correction =
+    ((0.26 * Math.PI) / 8.0) * Math.sqrt(er) * zImage * positionFactor * widthFactor;
   return zImage * (1.0 - correction);
 }
 
@@ -221,8 +222,10 @@ export function coupledStriplineAnalyze(
     { widthM: w, heightM: h, thicknessM: t, lengthM: len },
     { ...el, tanD: 0.0 },
   );
-  const attenCondEvenDb = z0e > 0 && Number.isFinite(z0e) ? single.conductorLossDb * (single.z0 / z0e) : 0.0;
-  const attenCondOddDb = z0o > 0 && Number.isFinite(z0o) ? single.conductorLossDb * (single.z0 / z0o) : 0.0;
+  const attenCondEvenDb =
+    z0e > 0 && Number.isFinite(z0e) ? single.conductorLossDb * (single.z0 / z0e) : 0.0;
+  const attenCondOddDb =
+    z0o > 0 && Number.isFinite(z0o) ? single.conductorLossDb * (single.z0 / z0o) : 0.0;
 
   // Homogeneous dielectric: both modes see εr; equal propagation delay.
   const v = C0 / Math.sqrt(er);

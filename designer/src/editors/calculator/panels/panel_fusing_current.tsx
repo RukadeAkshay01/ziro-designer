@@ -141,7 +141,13 @@ export function PanelFusingCurrent(): JSX.Element {
     <div>
       <div style={{ maxWidth: 460 }}>
         <Field label="Ambient temperature:" value={ambient} onChange={setAmbient} unit="°C" />
-        <Field label="Melting point:" value={melting} onChange={setMelting} unit="°C" title="Copper" />
+        <Field
+          label="Melting point:"
+          value={melting}
+          onChange={setMelting}
+          unit="°C"
+          title="Copper"
+        />
         <LenRow
           label="Track width:"
           solveFor="width"

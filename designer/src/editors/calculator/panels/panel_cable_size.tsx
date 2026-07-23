@@ -84,7 +84,11 @@ interface LinkedRowProps {
 function LinkedRow(p: LinkedRowProps): JSX.Element {
   const mult = p.units[p.unitIdx]?.mult ?? 1;
   const text =
-    p.editing?.field === p.field ? p.editing.text : Number.isFinite(p.si) ? fmt(p.si / mult, 6) : '';
+    p.editing?.field === p.field
+      ? p.editing.text
+      : Number.isFinite(p.si)
+        ? fmt(p.si / mult, 6)
+        : '';
   return (
     <div className="calc-field">
       <span className="calc-field-label" style={{ minWidth: 190 }}>
@@ -152,9 +156,7 @@ export function PanelCableSize(): JSX.Element {
   const valid =
     params.rho20 > 0 && Number.isFinite(params.alpha) && Number.isFinite(params.temperatureC);
   const s = valid ? cableUpdateAll(radiusM, params) : null;
-  const rhoHot = valid
-    ? cableHotResistivity(params.rho20, params.alpha, params.temperatureC)
-    : NaN;
+  const rhoHot = valid ? cableHotResistivity(params.rho20, params.alpha, params.temperatureC) : NaN;
 
   // Any wire-property edit clears the AWG selection, as in KiCad.
   const commitRadius = (r: number): void => {

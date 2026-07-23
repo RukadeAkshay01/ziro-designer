@@ -1751,7 +1751,7 @@ body {
   outline: 2px solid var(--chrome-active);
   outline-offset: -2px;
 }
-.ze-grid td input[type='text'],
+.ze-grid td input[type="text"],
 .ze-grid td .ze-grid-input {
   width: 100%;
   box-sizing: border-box;
@@ -2799,7 +2799,7 @@ body {
   flex: 1 1 55%;
   min-width: 0;
 }
-.ze-propgrid-value input[type='text'],
+.ze-propgrid-value input[type="text"],
 .ze-propgrid-value select {
   width: 100%;
   box-sizing: border-box;
@@ -2810,7 +2810,7 @@ body {
   padding: 1px 4px;
   font-size: 12px;
 }
-.ze-propgrid-value input[type='checkbox'] {
+.ze-propgrid-value input[type="checkbox"] {
   accent-color: #e07b1a;
 }
 .ze-propgrid-value .ze-muted {

@@ -53,7 +53,13 @@ describe('coax (test_coax.cpp)', () => {
 });
 
 describe('coplanar (test_coplanar.cpp)', () => {
-  const fr4 = { widthM: 0.5 * mm, gapM: 0.3 * mm, heightM: 0.8 * mm, thicknessM: 35 * um, lengthM: 100 * mm };
+  const fr4 = {
+    widthM: 0.5 * mm,
+    gapM: 0.3 * mm,
+    heightM: 0.8 * mm,
+    thicknessM: 35 * um,
+    lengthM: 100 * mm,
+  };
 
   it('ungrounded CPW on FR-4 pins Z0 = 72.30 ±2 %', () => {
     const r = coplanarAnalyze(fr4, el(), false);
@@ -112,7 +118,13 @@ describe('twisted pair (test_twistedpair.cpp)', () => {
 describe('coupled microstrip (test_coupled_microstrip.cpp)', () => {
   it('Zdiff = 2·Z0_odd', () => {
     const r = coupledMicrostripAnalyze(
-      { widthM: 0.3 * mm, gapM: 0.2 * mm, heightM: 1.6 * mm, thicknessM: 35 * um, lengthM: 100 * mm },
+      {
+        widthM: 0.3 * mm,
+        gapM: 0.2 * mm,
+        heightM: 1.6 * mm,
+        thicknessM: 35 * um,
+        lengthM: 100 * mm,
+      },
       el({ epsilonR: 4.3, tanD: 0.02 }),
     );
     expect(r.extra.zDiff).toBeCloseTo(2 * r.extra.z0Odd, 9);
@@ -121,7 +133,13 @@ describe('coupled microstrip (test_coupled_microstrip.cpp)', () => {
 
 describe('coupled stripline (test_coupled_stripline.cpp)', () => {
   // b = 20 mil, W = S = 8 mil, T = 0.7 mil, εr 4.3, tan δ 0.02, 1 GHz, 100 mm.
-  const phys = { widthM: 8 * mil, gapM: 8 * mil, heightM: 20 * mil, thicknessM: 0.7 * mil, lengthM: 0.1 };
+  const phys = {
+    widthM: 8 * mil,
+    gapM: 8 * mil,
+    heightM: 20 * mil,
+    thicknessM: 0.7 * mil,
+    lengthM: 0.1,
+  };
   const fr4 = el({ epsilonR: 4.3, tanD: 0.02 });
 
   it('dielectric loss matches the homogeneous-TEM closed form (0.378 dB ±3 %)', () => {
@@ -185,7 +203,13 @@ describe('Djordjevic–Sarkar (test_djordjevic_sarkar.cpp, scikit-rf oracle)', (
 });
 
 describe('soldermask (test_soldermask.cpp)', () => {
-  const mask = { present: true, thicknessM: 0.125 * mm, epsilonR: 3.5, tanD: 0.025, fillsGaps: true };
+  const mask = {
+    present: true,
+    thicknessM: 0.125 * mm,
+    epsilonR: 3.5,
+    tanD: 0.025,
+    fillsGaps: true,
+  };
 
   it('Wan-Hoorfar hand computation: Δq = 0.0466, εeff 3.3 → 3.4166', () => {
     const dq = microstripSoldermaskDeltaQ(1.75, 0.125);
@@ -197,7 +221,14 @@ describe('soldermask (test_soldermask.cpp)', () => {
 
   it('thick mask approaches the Bahl-Stuchly limit within 5 %', () => {
     const dq = microstripSoldermaskDeltaQ(1.75, 100);
-    const r = applySoldermaskCorrection({ ...mask, thicknessM: 100 * mm }, 1 * mm, 3.3, 0.02, 4.4, dq);
+    const r = applySoldermaskCorrection(
+      { ...mask, thicknessM: 100 * mm },
+      1 * mm,
+      3.3,
+      0.02,
+      4.4,
+      dq,
+    );
     const qSub = (3.3 - 1) / (4.4 - 1);
     const limit = qSub * 4.4 + (1 - qSub) * 3.5;
     expect(r.epsEff).toBeGreaterThan(3.3);
@@ -206,7 +237,9 @@ describe('soldermask (test_soldermask.cpp)', () => {
 
   it('mask disabled / zero thickness are bit-identical no-ops', () => {
     const dq = microstripSoldermaskDeltaQ(1.75, 0.125);
-    expect(applySoldermaskCorrection({ ...mask, present: false }, 1 * mm, 3.3, 0.02, 4.4, dq)).toEqual({
+    expect(
+      applySoldermaskCorrection({ ...mask, present: false }, 1 * mm, 3.3, 0.02, 4.4, dq),
+    ).toEqual({
       epsEff: 3.3,
       tanD: 0.02,
       changed: false,
@@ -217,7 +250,13 @@ describe('soldermask (test_soldermask.cpp)', () => {
   });
 
   it('CPW: gaps-filled drop exceeds traces-only drop (wide strip)', () => {
-    const phys = { widthM: 0.5 * mm, gapM: 0.3 * mm, heightM: 0.25 * mm, thicknessM: 35 * um, lengthM: 0.1 };
+    const phys = {
+      widthM: 0.5 * mm,
+      gapM: 0.3 * mm,
+      heightM: 0.25 * mm,
+      thicknessM: 35 * um,
+      lengthM: 0.1,
+    };
     const lpi = { ...mask, thicknessM: 25 * um };
     const base = coplanarAnalyze(phys, el(), false);
     const gaps = coplanarAnalyze(phys, el(), false, { ...lpi, fillsGaps: true });
@@ -227,7 +266,13 @@ describe('soldermask (test_soldermask.cpp)', () => {
   });
 
   it('coupled microstrip: both mode impedances drop under mask', () => {
-    const phys = { widthM: 0.3 * mm, gapM: 0.2 * mm, heightM: 0.2 * mm, thicknessM: 35 * um, lengthM: 0.1 };
+    const phys = {
+      widthM: 0.3 * mm,
+      gapM: 0.2 * mm,
+      heightM: 0.2 * mm,
+      thicknessM: 35 * um,
+      lengthM: 0.1,
+    };
     const off = coupledMicrostripAnalyze(phys, el());
     const on = coupledMicrostripAnalyze(phys, el(), { ...mask, thicknessM: 25 * um });
     expect(on.extra.z0Even).toBeLessThan(off.extra.z0Even);
