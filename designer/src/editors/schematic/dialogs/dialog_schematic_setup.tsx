@@ -5,43 +5,31 @@
  * selectable; upstream pages whose engine data we do not store yet are shown
  * greyed, exactly where KiCad puts them, so the surface matches.
  *
- * The dialog edits a working copy of the project-scoped SCHEMATIC settings and
- * commits it on OK.
+ * The chrome (tree, sizing, Reset / Import buttons) lives in the shared
+ * PagedDialog, matching KiCad's PAGED_DIALOG base class. This file supplies the
+ * page tree and panel renderers. The dialog edits a working copy of the
+ * project-scoped SCHEMATIC settings and commits it on OK.
  */
 
 import { useState, type JSX } from 'react';
-import { defaultErcSettings, type ErcSettings } from '@ziroeda/eeschema';
+import type { ErcSettings } from '@ziroeda/eeschema';
+import { PagedDialog, type PagedDialogSection } from '../../../ui/PagedDialog.js';
+import type { SchematicSetup } from '../schematic_settings.js';
 import { PanelSetupSeverities } from './panels/panel_setup_severities.js';
 import { PanelSetupPinmap } from './panels/panel_setup_pinmap.js';
-import { PanelTextVariables, type TextVar } from './panels/panel_text_variables.js';
-import { PanelTemplateFieldnames, type FieldTemplate } from './panels/panel_template_fieldnames.js';
-import {
-  PanelSetupFormatting,
-  defaultFormatting,
-  type FormattingSettings,
-} from './panels/panel_setup_formatting.js';
+import { PanelTextVariables } from './panels/panel_text_variables.js';
+import { PanelTemplateFieldnames } from './panels/panel_template_fieldnames.js';
+import { PanelEeschemaAnnotationOptions } from './panels/panel_eeschema_annotation_options.js';
+import { PanelSetupFormatting } from './panels/panel_setup_formatting.js';
+import { PanelBomPresets } from './panels/panel_bom_presets.js';
+import { PanelSetupBuses } from './panels/panel_setup_buses.js';
+import { PanelSetupNetChains } from './panels/panel_setup_net_chains.js';
+import { PanelSetupNetclasses } from './panels/panel_setup_netclasses.js';
+import { PanelEmbeddedFiles } from './panels/panel_embedded_files.js';
 
-/** Project-scoped schematic settings edited by the dialog (SCHEMATIC_SETTINGS subset). */
-export interface SchematicSetup {
-  erc: ErcSettings;
-  textVars: TextVar[];
-  fieldTemplates: FieldTemplate[];
-  /** Formatting defaults (PANEL_SETUP_FORMATTING). */
-  formatting: FormattingSettings;
-  /** ERC exclusion signatures (SCHEMATIC::m_ercExclusions), persisted like the
-   *  project file's stored exclusions so an excluded marker stays excluded. */
-  ercExclusions: string[];
-}
-
-export function defaultSchematicSetup(): SchematicSetup {
-  return {
-    erc: defaultErcSettings(),
-    textVars: [],
-    fieldTemplates: [],
-    formatting: defaultFormatting(),
-    ercExclusions: [],
-  };
-}
+// The dialog's data model lives in schematic_settings.ts (KiCad's
+// SCHEMATIC_SETTINGS data/UI split); re-exported for existing importers.
+export { defaultSchematicSetup, type SchematicSetup } from '../schematic_settings.js';
 
 type PageId =
   | 'formatting'
@@ -55,35 +43,6 @@ type PageId =
   | 'netChains'
   | 'textVars'
   | 'embedded';
-
-interface PageNode {
-  id?: PageId;
-  label: string;
-  /** Section header (bold, non-selectable) when true. */
-  section?: boolean;
-  /** Not implemented yet — greyed, in its upstream position. */
-  disabled?: boolean;
-  depth: number;
-}
-
-// The upstream page tree (DIALOG_SCHEMATIC_SETUP::DIALOG_SCHEMATIC_SETUP).
-const PAGES: PageNode[] = [
-  { label: 'General', section: true, depth: 0 },
-  { id: 'formatting', label: 'Formatting', depth: 1 },
-  { id: 'annotation', label: 'Annotation', disabled: true, depth: 1 },
-  { id: 'fieldTemplates', label: 'Field Name Templates', depth: 1 },
-  { id: 'bomPresets', label: 'BOM Presets', disabled: true, depth: 1 },
-  { label: 'Electrical Rules', section: true, depth: 0 },
-  { id: 'severities', label: 'Violation Severity', depth: 1 },
-  { id: 'pinmap', label: 'Pin Conflicts Map', depth: 1 },
-  { label: 'Project', section: true, depth: 0 },
-  { id: 'netclasses', label: 'Net Classes', disabled: true, depth: 1 },
-  { id: 'buses', label: 'Bus Alias Definitions', disabled: true, depth: 1 },
-  { id: 'netChains', label: 'Net Chains', disabled: true, depth: 1 },
-  { id: 'textVars', label: 'Text Variables', depth: 1 },
-  { label: 'Schematic Data', section: true, depth: 0 },
-  { id: 'embedded', label: 'Embedded Files', disabled: true, depth: 1 },
-];
 
 interface Props {
   value: SchematicSetup;
@@ -100,114 +59,152 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
     textVars: value.textVars.map((v) => ({ ...v })),
     fieldTemplates: value.fieldTemplates.map((t) => ({ ...t })),
     formatting: { ...value.formatting },
+    annotation: { ...value.annotation },
+    bomPresets: structuredClone(value.bomPresets),
+    busAliases: structuredClone(value.busAliases),
+    netChains: structuredClone(value.netChains),
+    netClasses: structuredClone(value.netClasses),
+    embeddedFiles: structuredClone(value.embeddedFiles),
     ercExclusions: [...value.ercExclusions],
   }));
-  const [page, setPage] = useState<PageId>(initialPage ?? 'severities');
 
   const setErc = (erc: ErcSettings): void => setS((cur) => ({ ...cur, erc }));
 
-  const panel = ((): JSX.Element => {
-    switch (page) {
-      case 'formatting':
-        return (
-          <PanelSetupFormatting
-            value={s.formatting}
-            onChange={(formatting) => setS((cur) => ({ ...cur, formatting }))}
-          />
-        );
-      case 'severities':
-        return <PanelSetupSeverities settings={s.erc} onChange={setErc} />;
-      case 'pinmap':
-        return <PanelSetupPinmap settings={s.erc} onChange={setErc} />;
-      case 'textVars':
-        return (
-          <PanelTextVariables
-            vars={s.textVars}
-            onChange={(textVars) => setS((cur) => ({ ...cur, textVars }))}
-          />
-        );
-      case 'fieldTemplates':
-        return (
-          <PanelTemplateFieldnames
-            templates={s.fieldTemplates}
-            onChange={(fieldTemplates) => setS((cur) => ({ ...cur, fieldTemplates }))}
-          />
-        );
-      default:
-        return (
-          <div style={{ padding: 16, color: 'var(--ze-muted, #888)', fontSize: 12 }}>
-            This setup page is not implemented yet.
-          </div>
-        );
-    }
-  })();
+  // The upstream page tree (DIALOG_SCHEMATIC_SETUP::DIALOG_SCHEMATIC_SETUP).
+  // Pages whose engine data we do not store yet are `disabled` — greyed in place.
+  const sections: PagedDialogSection[] = [
+    {
+      label: 'General',
+      pages: [
+        {
+          id: 'formatting',
+          label: 'Formatting',
+          render: () => (
+            <PanelSetupFormatting
+              value={s.formatting}
+              onChange={(formatting) => setS((cur) => ({ ...cur, formatting }))}
+            />
+          ),
+        },
+        {
+          id: 'annotation',
+          label: 'Annotation',
+          render: () => (
+            <PanelEeschemaAnnotationOptions
+              value={s.annotation}
+              onChange={(annotation) => setS((cur) => ({ ...cur, annotation }))}
+            />
+          ),
+        },
+        {
+          id: 'fieldTemplates',
+          label: 'Field Name Templates',
+          render: () => (
+            <PanelTemplateFieldnames
+              templates={s.fieldTemplates}
+              onChange={(fieldTemplates) => setS((cur) => ({ ...cur, fieldTemplates }))}
+            />
+          ),
+        },
+        {
+          id: 'bomPresets',
+          label: 'BOM Presets',
+          render: () => (
+            <PanelBomPresets
+              value={s.bomPresets}
+              onChange={(bomPresets) => setS((cur) => ({ ...cur, bomPresets }))}
+            />
+          ),
+        },
+      ],
+    },
+    {
+      label: 'Electrical Rules',
+      pages: [
+        {
+          id: 'severities',
+          label: 'Violation Severity',
+          render: () => <PanelSetupSeverities settings={s.erc} onChange={setErc} />,
+        },
+        {
+          id: 'pinmap',
+          label: 'Pin Conflicts Map',
+          render: () => <PanelSetupPinmap settings={s.erc} onChange={setErc} />,
+        },
+      ],
+    },
+    {
+      label: 'Project',
+      pages: [
+        {
+          id: 'netclasses',
+          label: 'Net Classes',
+          render: () => (
+            <PanelSetupNetclasses
+              value={s.netClasses}
+              onChange={(netClasses) => setS((cur) => ({ ...cur, netClasses }))}
+            />
+          ),
+        },
+        {
+          id: 'buses',
+          label: 'Bus Alias Definitions',
+          render: () => (
+            <PanelSetupBuses
+              aliases={s.busAliases}
+              onChange={(busAliases) => setS((cur) => ({ ...cur, busAliases }))}
+            />
+          ),
+        },
+        {
+          id: 'netChains',
+          label: 'Net Chains',
+          render: () => (
+            <PanelSetupNetChains
+              value={s.netChains}
+              onChange={(netChains) => setS((cur) => ({ ...cur, netChains }))}
+            />
+          ),
+        },
+        {
+          id: 'textVars',
+          label: 'Text Variables',
+          render: () => (
+            <PanelTextVariables
+              vars={s.textVars}
+              onChange={(textVars) => setS((cur) => ({ ...cur, textVars }))}
+            />
+          ),
+        },
+      ],
+    },
+    {
+      label: 'Schematic Data',
+      pages: [
+        {
+          id: 'embedded',
+          label: 'Embedded Files',
+          render: () => (
+            <PanelEmbeddedFiles
+              value={s.embeddedFiles}
+              onChange={(embeddedFiles) => setS((cur) => ({ ...cur, embeddedFiles }))}
+            />
+          ),
+        },
+      ],
+    },
+  ];
 
   return (
-    <div className="ze-modal-backdrop" onMouseDown={onCancel}>
-      <div
-        className="ze-modal"
-        style={{
-          width: 720,
-          maxWidth: '96vw',
-          height: 540,
-          maxHeight: '92vh',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <div className="ze-modal-header">
-          Schematic Setup
-          <span className="x" title="Cancel" onClick={onCancel}>
-            ✕
-          </span>
-        </div>
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-          <div
-            style={{
-              width: 210,
-              flex: '0 0 auto',
-              borderRight: '1px solid var(--ze-border, #ccc)',
-              overflowY: 'auto',
-              padding: '6px 0',
-            }}
-          >
-            {PAGES.map((p, i) =>
-              p.section ? (
-                <div key={i} style={{ fontWeight: 700, fontSize: 12, padding: '6px 10px 2px' }}>
-                  {p.label}
-                </div>
-              ) : (
-                <div
-                  key={i}
-                  className={`ze-tree-item ${p.id === page ? 'active' : ''}`}
-                  style={{
-                    paddingLeft: 10 + p.depth * 14,
-                    fontSize: 12,
-                    opacity: p.disabled ? 0.45 : 1,
-                    cursor: p.disabled ? 'default' : 'pointer',
-                  }}
-                  onClick={() => !p.disabled && p.id && setPage(p.id)}
-                  title={p.disabled ? 'Not implemented yet' : p.label}
-                >
-                  {p.label}
-                </div>
-              ),
-            )}
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px', minWidth: 0 }}>
-            {panel}
-          </div>
-        </div>
-        <div className="ze-modal-footer">
-          <button className="ze-btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="ze-btn primary" onClick={() => onOk(s)}>
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
+    <PagedDialog
+      title="Schematic Setup"
+      sections={sections}
+      initialPage={initialPage}
+      showReset
+      auxiliaryAction="Import Settings from Another Project..."
+      initialSize={{ width: 920, height: 600 }}
+      onOk={() => onOk(s)}
+      onCancel={onCancel}
+    />
   );
 }

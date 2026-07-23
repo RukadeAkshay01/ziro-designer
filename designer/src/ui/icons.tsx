@@ -244,6 +244,9 @@ const ICONS: Record<string, JSX.Element> = {
     </g>
   ),
   delete: P('M3 4h10 M5 4V2h6v2 M4 4l1 11h6l1-11'),
+  plus: P('M8 3v10 M3 8h10'),
+  arrowUp: P('M8 13V3 M4 7l4-4 4 4'),
+  arrowDown: P('M8 3v10 M4 9l4 4 4-4'),
 };
 
 export function Icon({ name, size = 16 }: { name: string; size?: number }): JSX.Element {
