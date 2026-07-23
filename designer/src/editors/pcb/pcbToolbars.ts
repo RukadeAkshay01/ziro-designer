@@ -18,8 +18,8 @@ const todo = { disabled: true } as const;
 
 /** TOP_MAIN toolbar. */
 export const PCB_TOP_TOOLBAR: ToolEntry[] = [
-  { id: 'new', icon: 'new', title: 'New board' },
-  { id: 'open', icon: 'open', title: 'Open' },
+  // doNew/open appear only when Kiface().IsSingle() — standalone pcbnew. This
+  // editor is project-hosted (KiCad project mode), so they are not shown.
   { id: 'save', icon: 'save', title: 'Save' },
   sep,
   { id: 'boardSetup', icon: 'boardSetup', title: 'Board setup' },
@@ -57,6 +57,10 @@ export const PCB_TOP_TOOLBAR: ToolEntry[] = [
   { id: 'runDRC', icon: 'runDRC', title: 'Design Rules Checker' },
   sep,
   { id: 'showEeschema', icon: 'showEeschema', title: 'Open schematic in Schematic Editor' },
+  // PCB_ACTION_TOOLBAR_CONTROLS::currentVariant + ACTION_TOOLBAR_CONTROLS::
+  // ipcScripting close the bar (greyed: variants and the IPC API are staged).
+  { id: 'currentVariant', icon: 'currentVariant', title: 'Design variant', ...todo },
+  { id: 'ipcScripting', icon: 'ipcScripting', title: 'IPC API scripting console', ...todo },
 ];
 
 /** LEFT (view options) toolbar. */
