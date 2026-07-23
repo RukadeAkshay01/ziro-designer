@@ -99,6 +99,7 @@ import {
   type PendingLabel,
 } from './components/SchematicCanvas.js';
 import { LabelDialog, type LabelFormat } from './components/LabelDialog.js';
+import { StatusField, STATUS_FIELD_TEMPLATES } from '../../ui/StatusField.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
 import { ErcDialog } from './components/ErcDialog.js';
 import {
@@ -2931,18 +2932,18 @@ export function SchematicEditor({
         <span className="cell msg" data-testid="sch-status-msg">
           {highlightName ? `Highlighted net: ${highlightName}` : ''}
         </span>
-        <span className="cell">
+        <StatusField template={STATUS_FIELD_TEMPLATES.zoom}>
           Z {Number.isFinite(zoomPct) ? (zoomPct / 100).toFixed(2) : '1.00'}
-        </span>
-        <span className="cell">
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.coords}>
           X {cursor ? fmt(cursor.x) : '—'} Y {cursor ? fmt(cursor.y) : '—'}
-        </span>
-        <span className="cell">
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.deltas}>
           dx {cursor ? fmt(cursor.x - localOrigin.x) : '—'} dy{' '}
           {cursor ? fmt(cursor.y - localOrigin.y) : '—'} dist{' '}
           {cursor ? fmt(Math.hypot(cursor.x - localOrigin.x, cursor.y - localOrigin.y)) : '—'}
-        </span>
-        <span className="cell">
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.grid}>
           grid {(() => {
             const iu = renderOpts.grid.sizeIU;
             const mm = iuToMM(iu);
@@ -2952,12 +2953,14 @@ export function SchematicEditor({
                 ? (mm / 0.0254).toFixed(0)
                 : (mm / 25.4).toFixed(4);
           })()}
-        </span>
-        <span className="cell">{units === 'in' ? 'inches' : units}</span>
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.units}>
+          {units === 'in' ? 'inches' : units}
+        </StatusField>
         <span className="cell tool" data-testid="sch-tool-msg">
           {SCH_TOOL_MSGS[activeTool] ?? ''}
         </span>
-        <span className="cell constraint" />
+        <StatusField template={STATUS_FIELD_TEMPLATES.constraint} />
       </div>
 
       {chooserOpen && (

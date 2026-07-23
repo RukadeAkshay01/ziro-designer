@@ -2674,7 +2674,7 @@ body {
   flex: 1 1 55%;
   min-width: 0;
 }
-.ze-propgrid-value input[type='text'],
+.ze-propgrid-value input[type="text"],
 .ze-propgrid-value select {
   width: 100%;
   box-sizing: border-box;
@@ -2685,7 +2685,7 @@ body {
   padding: 1px 4px;
   font-size: 12px;
 }
-.ze-propgrid-value input[type='checkbox'] {
+.ze-propgrid-value input[type="checkbox"] {
   accent-color: #e07b1a;
 }
 .ze-propgrid-value .ze-muted {
@@ -2694,4 +2694,20 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: block;
+}
+
+/* Fixed-width status fields (EDA_DRAW_FRAME::updateStatusBarWidths): the
+   invisible template string reserves the pane's widest-case width plus the
+   "M" spacer, so live values never reposition their neighbours. */
+.ze-statusbar .cell.sized {
+  display: inline-grid;
+  padding-right: calc(10px + 1ch);
+}
+.ze-statusbar .cell.sized > .ze-size-template,
+.ze-statusbar .cell.sized > .ze-size-value {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+.ze-statusbar .cell.sized > .ze-size-template {
+  visibility: hidden;
 }

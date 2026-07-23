@@ -64,6 +64,7 @@ import {
 } from '@ziroeda/pcbnew';
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
+import { StatusField, STATUS_FIELD_TEMPLATES } from '../../ui/StatusField.js';
 import { DialogPcbFind, DEFAULT_PCB_FIND, type PcbFindOptions } from './dialogs/dialog_find.js';
 import {
   buildScene,
@@ -4970,21 +4971,25 @@ export function PcbEditor({
           r/theta | grid | units | current-tool (grows) | constraint mode. */}
       <div className="ze-statusbar">
         <span className="cell msg" data-testid="pcb-status-msg" />
-        <span className="cell">Z {scale > 0 ? (scale * 1000).toFixed(2) : '—'}</span>
-        <span className="cell" data-testid="pcb-absolute-coords">
+        <StatusField template={STATUS_FIELD_TEMPLATES.zoom}>
+          Z {scale > 0 ? (scale * 1000).toFixed(2) : '—'}
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.coords} testId="pcb-absolute-coords">
           {statusCoordText}
-        </span>
-        <span className="cell" data-testid="pcb-relative-coords">
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.deltas} testId="pcb-relative-coords">
           {statusDeltaText}
-        </span>
-        <span className="cell">{gridText}</span>
-        <span className="cell">{unitLabel === 'in' ? 'inches' : unitLabel}</span>
+        </StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.grid}>{gridText}</StatusField>
+        <StatusField template={STATUS_FIELD_TEMPLATES.units}>
+          {unitLabel === 'in' ? 'inches' : unitLabel}
+        </StatusField>
         <span className="cell tool" data-testid="pcb-tool-msg">
           {toolMsg}
         </span>
-        <span className="cell constraint" data-testid="pcb-constraint-msg">
+        <StatusField template={STATUS_FIELD_TEMPLATES.constraint} testId="pcb-constraint-msg">
           {constraintMsg}
-        </span>
+        </StatusField>
       </div>
     </div>
   );
