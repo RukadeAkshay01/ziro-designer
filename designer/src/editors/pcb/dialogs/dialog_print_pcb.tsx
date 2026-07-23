@@ -167,171 +167,185 @@ export function DialogPcbPrint({ board, visibleLayers, drawOpts, onClose }: Prop
   };
 
   return (
-    <div className="ze-find-dialog" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="ze-modal-header">
-        Print
-        <span className="x" onClick={onClose}>
-          ✕
-        </span>
-      </div>
-      <div className="ze-find-body" style={{ display: 'flex', gap: 12 }}>
-        <fieldset style={{ minWidth: 200 }}>
-          <legend>Include Layers</legend>
-          <div
-            style={{ maxHeight: 260, overflowY: 'auto' }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              setMenu({ x: e.clientX, y: e.clientY });
-            }}
-          >
-            {layerNames.map((l) => (
-              <label key={l} style={{ display: 'block' }}>
-                <input type="checkbox" checked={checked.has(l)} onChange={() => toggle(l)} /> {l}
+    <div className="ze-modal-backdrop" onMouseDown={onClose}>
+      <div className="ze-modal" style={{ width: 560 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ze-modal-header">
+          Print
+          <span className="x" onClick={onClose}>
+            ✕
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 12, padding: 12 }}>
+          <fieldset style={{ minWidth: 200 }}>
+            <legend>Include Layers</legend>
+            <div
+              style={{ maxHeight: 260, overflowY: 'auto' }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY });
+              }}
+            >
+              {layerNames.map((l) => (
+                <label key={l} style={{ display: 'block' }}>
+                  <input type="checkbox" checked={checked.has(l)} onChange={() => toggle(l)} /> {l}
+                </label>
+              ))}
+            </div>
+            <div className="ze-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              Right-click for layer selection commands.
+            </div>
+          </fieldset>
+          <div>
+            <fieldset>
+              <legend>Options</legend>
+              <label style={{ display: 'block' }}>
+                Output mode:{' '}
+                <select
+                  value={bw ? 'bw' : 'color'}
+                  onChange={(e) => setBw(e.target.value === 'bw')}
+                >
+                  <option value="color">Color</option>
+                  <option value="bw">Black and white</option>
+                </select>
               </label>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={sheet}
+                  onChange={(e) => setSheet(e.target.checked)}
+                />{' '}
+                Print drawing sheet
+              </label>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={useObjectsTab}
+                  onChange={(e) => setUseObjectsTab(e.target.checked)}
+                />{' '}
+                Print according to objects tab of appearance manager
+              </label>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={background}
+                  onChange={(e) => setBackground(e.target.checked)}
+                />{' '}
+                Print background color
+              </label>
+              <label
+                style={{ display: 'block', opacity: 0.5 }}
+                title="Staged: holes always print at real size"
+              >
+                Drill marks:{' '}
+                <select disabled value="real">
+                  <option value="real">Real drill</option>
+                </select>
+              </label>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={mirrored}
+                  onChange={(e) => setMirrored(e.target.checked)}
+                />{' '}
+                Print mirrored
+              </label>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={onePerLayer}
+                  onChange={(e) => setOnePerLayer(e.target.checked)}
+                />{' '}
+                Print one page per layer
+              </label>
+              <label style={{ display: 'block', marginLeft: 18 }}>
+                <input
+                  type="checkbox"
+                  disabled={!onePerLayer}
+                  checked={edgesAllPages}
+                  onChange={(e) => setEdgesAllPages(e.target.checked)}
+                />{' '}
+                Print board edges on all pages
+              </label>
+            </fieldset>
+            <fieldset>
+              <legend>Scale</legend>
+              <label style={{ marginRight: 10 }}>
+                <input
+                  type="radio"
+                  checked={scaleMode === '1:1'}
+                  onChange={() => setScaleMode('1:1')}
+                />{' '}
+                1:1
+              </label>
+              <label style={{ marginRight: 10 }}>
+                <input
+                  type="radio"
+                  checked={scaleMode === 'fit'}
+                  onChange={() => setScaleMode('fit')}
+                />{' '}
+                Fit to page
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  checked={scaleMode === 'custom'}
+                  onChange={() => setScaleMode('custom')}
+                />{' '}
+                Custom:{' '}
+                <input
+                  style={{ width: 50 }}
+                  value={customScale}
+                  onChange={(e) => setCustomScale(e.target.value)}
+                />
+              </label>
+            </fieldset>
+          </div>
+        </div>
+        {/* DIALOG_PRINT_GENERIC's button row: Page Setup… on the left, then
+            Print / Cancel (Print Preview is staged). */}
+        <div className="ze-modal-footer">
+          <button type="button" disabled style={{ marginRight: 'auto', opacity: 0.5 }}>
+            Page Setup...
+          </button>
+          <button type="button" className="primary" onClick={print}>
+            Print
+          </button>
+          <button type="button" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+        {menu && (
+          <div
+            style={{
+              position: 'fixed',
+              left: menu.x,
+              top: menu.y,
+              zIndex: 100,
+              background: '#2a2c30',
+              border: '1px solid #444',
+              borderRadius: 3,
+              fontSize: 12,
+            }}
+            onMouseLeave={() => setMenu(null)}
+          >
+            {[
+              ['Select Fab Layers', 'fab'],
+              ['Select all Copper Layers', 'allcu'],
+              ['Deselect all Copper Layers', 'nocu'],
+              ['Select all Layers', 'all'],
+              ['Deselect all Layers', 'none'],
+            ].map(([label, cmd]) => (
+              <div
+                key={cmd}
+                style={{ padding: '4px 12px', cursor: 'pointer' }}
+                onClick={() => menuCmd(cmd!)}
+              >
+                {label}
+              </div>
             ))}
           </div>
-          <div className="ze-muted" style={{ fontSize: 11, marginTop: 4 }}>
-            Right-click for layer selection commands.
-          </div>
-        </fieldset>
-        <div>
-          <fieldset>
-            <legend>Options</legend>
-            <label style={{ display: 'block' }}>
-              Output mode:{' '}
-              <select value={bw ? 'bw' : 'color'} onChange={(e) => setBw(e.target.value === 'bw')}>
-                <option value="color">Color</option>
-                <option value="bw">Black and white</option>
-              </select>
-            </label>
-            <label style={{ display: 'block' }}>
-              <input type="checkbox" checked={sheet} onChange={(e) => setSheet(e.target.checked)} />{' '}
-              Print drawing sheet
-            </label>
-            <label style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={useObjectsTab}
-                onChange={(e) => setUseObjectsTab(e.target.checked)}
-              />{' '}
-              Print according to objects tab of appearance manager
-            </label>
-            <label style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={background}
-                onChange={(e) => setBackground(e.target.checked)}
-              />{' '}
-              Print background color
-            </label>
-            <label
-              style={{ display: 'block', opacity: 0.5 }}
-              title="Staged: holes always print at real size"
-            >
-              Drill marks:{' '}
-              <select disabled value="real">
-                <option value="real">Real drill</option>
-              </select>
-            </label>
-            <label style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={mirrored}
-                onChange={(e) => setMirrored(e.target.checked)}
-              />{' '}
-              Print mirrored
-            </label>
-            <label style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={onePerLayer}
-                onChange={(e) => setOnePerLayer(e.target.checked)}
-              />{' '}
-              Print one page per layer
-            </label>
-            <label style={{ display: 'block', marginLeft: 18 }}>
-              <input
-                type="checkbox"
-                disabled={!onePerLayer}
-                checked={edgesAllPages}
-                onChange={(e) => setEdgesAllPages(e.target.checked)}
-              />{' '}
-              Print board edges on all pages
-            </label>
-          </fieldset>
-          <fieldset>
-            <legend>Scale</legend>
-            <label style={{ marginRight: 10 }}>
-              <input
-                type="radio"
-                checked={scaleMode === '1:1'}
-                onChange={() => setScaleMode('1:1')}
-              />{' '}
-              1:1
-            </label>
-            <label style={{ marginRight: 10 }}>
-              <input
-                type="radio"
-                checked={scaleMode === 'fit'}
-                onChange={() => setScaleMode('fit')}
-              />{' '}
-              Fit to page
-            </label>
-            <label>
-              <input
-                type="radio"
-                checked={scaleMode === 'custom'}
-                onChange={() => setScaleMode('custom')}
-              />{' '}
-              Custom:{' '}
-              <input
-                style={{ width: 50 }}
-                value={customScale}
-                onChange={(e) => setCustomScale(e.target.value)}
-              />
-            </label>
-          </fieldset>
-          <div className="ze-find-buttons">
-            <button type="button" className="primary" onClick={print}>
-              Print
-            </button>
-            <button type="button" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </div>
+        )}
       </div>
-      {menu && (
-        <div
-          style={{
-            position: 'fixed',
-            left: menu.x,
-            top: menu.y,
-            zIndex: 100,
-            background: '#2a2c30',
-            border: '1px solid #444',
-            borderRadius: 3,
-            fontSize: 12,
-          }}
-          onMouseLeave={() => setMenu(null)}
-        >
-          {[
-            ['Select Fab Layers', 'fab'],
-            ['Select all Copper Layers', 'allcu'],
-            ['Deselect all Copper Layers', 'nocu'],
-            ['Select all Layers', 'all'],
-            ['Deselect all Layers', 'none'],
-          ].map(([label, cmd]) => (
-            <div
-              key={cmd}
-              style={{ padding: '4px 12px', cursor: 'pointer' }}
-              onClick={() => menuCmd(cmd!)}
-            >
-              {label}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
