@@ -1627,7 +1627,13 @@ export function SchematicEditor({
   const runErcNow = useCallback(() => {
     setDoc((d) => {
       // The ERC severities + pin-conflict map come from Schematic Setup.
-      if (d) setErcResult(runErc(d, new Map(d.libSymbols.map((l) => [l.libId, l])), setup.erc));
+      if (d)
+        setErcResult(
+          runErc(d, new Map(d.libSymbols.map((l) => [l.libId, l])), setup.erc, {
+            // Formatting's connection grid feeds the off-grid endpoint test.
+            connectionGridIU: setup.formatting.connectionGridMils * IU_PER_MILS,
+          }),
+        );
       return d;
     });
   }, [setup.erc]);
