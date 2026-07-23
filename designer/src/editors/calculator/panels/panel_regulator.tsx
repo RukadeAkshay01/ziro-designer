@@ -138,6 +138,7 @@ export function PanelRegulator(): JSX.Element {
   const [form, setForm] = useState<RegForm | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  const [dataFileName, setDataFileName] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => saveRegulators(store), [store]);
@@ -293,6 +294,7 @@ export function PanelRegulator(): JSX.Element {
         if (!clean.length) throw new Error('no valid entries');
         setStore({ regulators: clean, selected: clean[0]!.name });
         applyRegulator(clean[0]!);
+        setDataFileName(file.name);
         setToast(`Loaded ${clean.length} regulator(s).`);
       } catch {
         setToast('Could not read that file (expected a regulators JSON array).');
@@ -308,18 +310,16 @@ export function PanelRegulator(): JSX.Element {
     unit: string,
   ): JSX.Element => (
     <div className="reg-mtm-row">
-      <label className="calc-radio">
-        <input
-          type="radio"
-          name="reg-solve"
-          checked={solve === id}
-          onChange={() => {
-            setSolve(id);
-            setResult(null);
-          }}
-        />
-        {label}
-      </label>
+      <input
+        type="radio"
+        name="reg-solve"
+        checked={solve === id}
+        onChange={() => {
+          setSolve(id);
+          setResult(null);
+        }}
+      />
+      <span className="reg-label">{label}</span>
       <input className="calc-input ro" readOnly value={row.min} />
       <input
         className={`calc-input${solve === id ? ' ro' : ''}`}
@@ -353,6 +353,7 @@ export function PanelRegulator(): JSX.Element {
             <span className="calc-field-label">Type:</span>
             <select
               className="calc-select"
+              style={{ flex: 1 }}
               value={type}
               onChange={(e) => {
                 setType(Number(e.target.value) as RegulatorType);
@@ -394,10 +395,17 @@ export function PanelRegulator(): JSX.Element {
                 ))}
               </select>
             </div>
+            <div style={{ margin: '6px 0 2px' }}>Regulators data file:</div>
             <div className="calc-field">
-              <span className="calc-field-label">Regulators data file:</span>
+              <input
+                className="calc-input"
+                style={{ flex: 1 }}
+                readOnly
+                value={dataFileName}
+                placeholder=""
+              />
               <button type="button" className="calc-btn" onClick={() => fileRef.current?.click()}>
-                Browse…
+                Browse
               </button>
               <button type="button" className="calc-btn" onClick={exportData}>
                 Export…
@@ -418,17 +426,24 @@ export function PanelRegulator(): JSX.Element {
               <button
                 type="button"
                 className="calc-btn"
+                style={{ flex: 1 }}
                 disabled={!current}
                 onClick={() => setForm(formFrom(current))}
               >
                 Edit Regulator
               </button>
-              <button type="button" className="calc-btn" onClick={() => setForm(formFrom(null))}>
+              <button
+                type="button"
+                className="calc-btn"
+                style={{ flex: 1 }}
+                onClick={() => setForm(formFrom(null))}
+              >
                 Add Regulator
               </button>
               <button
                 type="button"
                 className="calc-btn"
+                style={{ flex: 1 }}
                 disabled={!current}
                 onClick={() => setConfirmRemove(current?.name ?? null)}
               >
@@ -438,6 +453,7 @@ export function PanelRegulator(): JSX.Element {
           </Group>
 
           <div className="reg-mtm-header">
+            <span />
             <span />
             <span>min</span>
             <span>typ</span>
@@ -449,7 +465,8 @@ export function PanelRegulator(): JSX.Element {
           {radioRow(RegulatorSolve.VOUT, 'Vout:', rows.vout, setVout, 'V')}
 
           <div className="reg-mtm-row">
-            <span style={{ textAlign: 'right' }}>Vref:</span>
+            <span />
+            <span className="reg-label">Vref:</span>
             <input
               className="calc-input"
               value={vrefMin}
@@ -478,7 +495,8 @@ export function PanelRegulator(): JSX.Element {
           </div>
           {type === RegulatorType.THREE_TERMINAL && (
             <div className="reg-mtm-row">
-              <span style={{ textAlign: 'right' }}>Iadj:</span>
+              <span />
+              <span className="reg-label">Iadj:</span>
               <span />
               <input
                 className="calc-input"
@@ -500,7 +518,8 @@ export function PanelRegulator(): JSX.Element {
             </div>
           )}
           <div className="reg-mtm-row">
-            <span style={{ textAlign: 'right' }}>Overall tolerance:</span>
+            <span />
+            <span className="reg-label">Overall tolerance:</span>
             <input
               className="calc-input ro"
               readOnly
@@ -515,24 +534,29 @@ export function PanelRegulator(): JSX.Element {
             <span className="calc-unit">%</span>
           </div>
 
-          <Field
-            label="Resistor tolerance:"
-            value={resTol}
-            onChange={(v) => {
-              setResTol(v);
-              setResult(null);
-            }}
-            unit="%"
-            width={70}
-          />
           <div className="calc-field">
-            <span className="calc-field-label">Power Comment:</span>
+            <span>Resistor tolerance:</span>
+            <span style={{ flex: 1 }} />
             <input
               className="calc-input"
-              style={{ flex: 1 }}
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              style={{ width: 45 }}
+              value={resTol}
+              onChange={(e) => {
+                setResTol(e.target.value);
+                setResult(null);
+              }}
             />
+            <span className="calc-unit">%</span>
+          </div>
+          <div className="calc-field">
+            <span>Power Comment:</span>
+            <input
+              className="calc-input ro"
+              style={{ width: 200, textAlign: 'center' }}
+              readOnly
+              value={comment}
+            />
+            <span style={{ flex: 1 }} />
             <button type="button" className="calc-btn" onClick={copyComment}>
               Copy to Clipboard
             </button>

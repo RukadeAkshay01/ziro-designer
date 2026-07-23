@@ -319,12 +319,11 @@
   margin: 6px 0;
 }
 
+/* Plain bold centred formula text, as in KiCad's "Formula" static box. */
 .calc-formula {
-  border: 1px solid #55585e;
-  border-radius: 3px;
-  padding: 8px 12px;
+  padding: 2px 8px 6px;
   text-align: center;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* --- tables (spacing, board classes, corrosion, e-series) --- */
@@ -358,24 +357,33 @@
 }
 
 /* --- regulator panel layout (per the screenshot) --- */
-.reg-mtm-header {
+/* KiCad's 6-column wxFlexGridSizer: radio | label | min | typ | max | unit
+   (compact 4px row gap, labels left-aligned in their own column). */
+.reg-mtm-header,
+.reg-mtm-row {
   display: grid;
-  grid-template-columns: 150px 120px 120px 120px 60px;
-  gap: 10px;
+  grid-template-columns: 18px 118px 96px 96px 96px 34px;
+  gap: 4px 8px;
+  align-items: center;
+}
+
+.reg-mtm-header {
   text-align: center;
   font-weight: 600;
 }
 
 .reg-mtm-row {
-  display: grid;
-  grid-template-columns: 150px 120px 120px 120px 60px;
-  gap: 10px;
-  align-items: center;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 .reg-mtm-row .calc-input {
   width: auto;
+  min-width: 0;
+}
+
+.reg-mtm-row .reg-label {
+  text-align: left;
+  white-space: nowrap;
 }
 
 /* --- colour code bands --- */
