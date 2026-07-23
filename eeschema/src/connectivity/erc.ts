@@ -106,11 +106,14 @@ const selectableId = (id: string): string => {
 const stacked = (a: PinNode, b: PinNode): boolean =>
   a.symId === b.symId && a.at.x === b.at.x && a.at.y === b.at.y;
 
-/** Run the electrical rules check on a single sheet. */
+/** Run the electrical rules check on a single sheet. `connectionGridIU` is
+ *  SCHEMATIC_SETTINGS::m_ConnectionGridSize for the off-grid endpoint test
+ *  (0/absent disables it, as a degenerate grid would flag everything). */
 export function runErc(
   sch: Schematic,
   libById: Map<string, LibSymbol>,
   settings: ErcSettings = defaultErcSettings(),
+  opts: { connectionGridIU?: number } = {},
 ): ErcViolation[] {
   g_settings = settings;
   const out: ErcViolation[] = [];
@@ -364,6 +367,37 @@ export function runErc(
             ]),
           );
         }
+      }
+    }
+  }
+
+  // ERC_TESTER::TestOffGridEndpoints: wire/bus endpoints, bus-entry connection
+  // points and symbol pins must sit on the connection grid (Schematic Setup >
+  // Formatting, SCHEMATIC_SETTINGS::m_ConnectionGridSize). One marker per
+  // wire (start, else end) and per symbol (first off-grid pin), like upstream.
+  const grid = Math.round(opts.connectionGridIU ?? 0);
+  if (grid > 0) {
+    const MSG = 'Symbol pin or wire end off connection grid';
+    const off = (p: Vec2): boolean => Math.round(p.x) % grid !== 0 || Math.round(p.y) % grid !== 0;
+    sch.lines.forEach((l, i) => {
+      if (l.kind !== 'wire' && l.kind !== 'bus') return;
+      const lid = refId('line', l.uuid, i);
+      if (off(l.start)) out.push(violation('endpoint_off_grid', MSG, l.start, [lid]));
+      else if (off(l.end)) out.push(violation('endpoint_off_grid', MSG, l.end, [lid]));
+    });
+    sch.busEntries.forEach((e, i) => {
+      const eid = refId('busentry', e.uuid, i);
+      for (const p of [e.at, { x: e.at.x + e.size.x, y: e.at.y + e.size.y }]) {
+        if (off(p)) out.push(violation('endpoint_off_grid', MSG, p, [eid]));
+      }
+    });
+    const flagged = new Set<string>();
+    for (const p of pins) {
+      // NC-type pins are exempt (upstream skips ELECTRICAL_PINTYPE::PT_NC).
+      if (flagged.has(p.symId) || p.electricalType === 'no_connect') continue;
+      if (off(p.at)) {
+        out.push(violation('endpoint_off_grid', MSG, p.at, [p.id]));
+        flagged.add(p.symId);
       }
     }
   }

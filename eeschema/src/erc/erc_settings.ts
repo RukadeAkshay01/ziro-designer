@@ -94,7 +94,8 @@ export type ErcCode =
   | 'no_connect_connected'
   | 'no_connect_dangling'
   | 'label_not_connected'
-  | 'label_single_pin';
+  | 'label_single_pin'
+  | 'endpoint_off_grid';
 
 /** A violation's reported severity (an ignored rule is not emitted at all). */
 export type ErcSeverity = 'error' | 'warning';
@@ -111,6 +112,8 @@ export const ERC_ITEMS: { code: ErcCode; title: string }[] = [
   { code: 'no_connect_dangling', title: 'Unconnected "no connection" flag' },
   { code: 'label_not_connected', title: 'Label not connected to anything' },
   { code: 'label_single_pin', title: 'Label connected to only one pin' },
+  // Upstream lists this at the end of the Connections group (erc_settings.cpp).
+  { code: 'endpoint_off_grid', title: 'Symbol pin or wire end off connection grid' },
 ];
 
 /** ERC_SETTINGS default severities: error unless listed otherwise. */
@@ -124,6 +127,7 @@ export const DEFAULT_SEVERITIES: Record<ErcCode, ErcSeverityLevel> = {
   no_connect_dangling: 'warning',
   label_not_connected: 'error',
   label_single_pin: 'warning',
+  endpoint_off_grid: 'warning',
 };
 
 /** The full ERC configuration (ERC_SETTINGS). */
