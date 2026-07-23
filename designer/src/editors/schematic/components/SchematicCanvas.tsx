@@ -556,12 +556,13 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
   }, [activeTool, schematic, libById, onCommand]);
 
   // 'move' (M) translates only the selected items, leaving connected wires
-  // behind. 'drag' (G) keeps them attached: in H/V line mode it adds 90° bends
-  // (orthoMove); in free/45 mode the connected wire simply stretches.
+  // behind. 'drag' (G) keeps them attached: any non-free line mode adds
+  // orthogonal bends (SCH_MOVE_TOOL applies orthoLineDrag for 90° AND 45°);
+  // free mode lets the connected wire simply stretch.
   const buildMove = useCallback(
     (spec: MoveSpec, delta: Vec2): EditCommand => {
       if (moveKindRef.current === 'move') return moveItems(effSelRef.current, delta);
-      return lineMode === '90'
+      return lineMode !== 'free'
         ? orthoMove(schematic, spec, delta)
         : moveWithConnections(spec, delta);
     },

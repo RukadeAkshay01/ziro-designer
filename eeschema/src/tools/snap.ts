@@ -53,6 +53,19 @@ export function collectAnchors(
   sch.labels.forEach((l, i) => {
     if (!exclude?.has(refId('label', l.uuid, i))) pts.push(l.at);
   });
+  // GRID_CONNECTABLE also snaps to sheet pins, bus-entry ends and no-connects.
+  sch.sheets.forEach((sh, i) => {
+    if (!exclude?.has(refId('sheet', sh.uuid, i))) for (const p of sh.pins) pts.push(p.at);
+  });
+  sch.busEntries.forEach((be, i) => {
+    if (!exclude?.has(refId('busentry', be.uuid, i))) {
+      pts.push(be.at);
+      pts.push({ x: be.at.x + be.size.x, y: be.at.y + be.size.y });
+    }
+  });
+  sch.noConnects.forEach((nc, i) => {
+    if (!exclude?.has(refId('noconnect', nc.uuid, i))) pts.push(nc.at);
+  });
   return pts;
 }
 

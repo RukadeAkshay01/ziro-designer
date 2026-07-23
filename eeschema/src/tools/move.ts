@@ -103,6 +103,13 @@ function applyConnectedMove(
         end: me ? add(l.end, delta) : l.end,
       };
     });
+  // Riding labels stay at the same parametric spot on their carrier wire
+  // (SPECIAL_CASE_LABEL_INFO): translate rigidly with a fully-moved wire and
+  // slide proportionally along a stretching one.
+  const movedByUuid = new Map<string, SchLine>();
+  for (const l of lines) if (l.uuid !== undefined) movedByUuid.set(l.uuid, l);
+  const rideFor = new Map(spec.labelRides.map((r) => [r.id, r]));
+
   return {
     ...doc,
     symbols: doc.symbols.map((s, i) =>
@@ -114,9 +121,20 @@ function applyConnectedMove(
     noConnects: doc.noConnects.map((nc, i) =>
       spec.fullIds.has(refId('noconnect', nc.uuid, i)) ? moveNoConnect(nc, delta) : nc,
     ),
-    labels: doc.labels.map((l, i) =>
-      spec.fullIds.has(refId('label', l.uuid, i)) ? moveLabel(l, delta) : l,
-    ),
+    labels: doc.labels.map((l, i) => {
+      const id = refId('label', l.uuid, i);
+      if (spec.fullIds.has(id)) return moveLabel(l, delta);
+      const ride = rideFor.get(id);
+      const carrier = ride ? movedByUuid.get(ride.lineUuid) : undefined;
+      if (!ride || !carrier) return l;
+      return {
+        ...l,
+        at: {
+          x: Math.round(carrier.start.x + ride.t * (carrier.end.x - carrier.start.x)),
+          y: Math.round(carrier.start.y + ride.t * (carrier.end.y - carrier.start.y)),
+        },
+      };
+    }),
     sheets: doc.sheets.map((s, i) =>
       spec.fullIds.has(refId('sheet', s.uuid, i)) ? moveSheet(s, delta) : s,
     ),

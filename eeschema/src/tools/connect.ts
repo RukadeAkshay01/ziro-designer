@@ -46,6 +46,17 @@ export interface StubWire {
   fixed: Vec2;
 }
 
+/** An unselected label riding a moved wire: kept at the same parametric
+ *  position along the wire's body (KiCad's SPECIAL_CASE_LABEL_INFO). */
+export interface LabelRide {
+  /** The label's stable id. */
+  id: string;
+  /** The carrying wire's uuid. */
+  lineUuid: string;
+  /** Parametric position of the label anchor on start→end (0..1). */
+  t: number;
+}
+
 /** A plan for a connection-aware move: which items move whole, which wire ends drag. */
 export interface MoveSpec {
   /** Items (any kind) that move in their entirety. */
@@ -56,6 +67,8 @@ export interface MoveSpec {
   wireEnd: ReadonlySet<string>;
   /** New stub wires to insert, anchored at a fixed pin/junction not being moved. */
   newWires: readonly StubWire[];
+  /** Unselected labels riding a moved wire's body. */
+  labelRides: readonly LabelRide[];
 }
 
 const key = (p: Vec2): string => `${p.x},${p.y}`;
@@ -88,20 +101,62 @@ export function planMove(
   sch.labels.forEach((l, i) => {
     if (ids.has(refId('label', l.uuid, i))) points.add(key(l.at));
   });
+  // A selected sheet's pins and a selected bus entry's two ends are moved
+  // connection points too (getConnectedDragItems' candidate collection).
+  sch.sheets.forEach((sh, i) => {
+    if (ids.has(refId('sheet', sh.uuid, i))) for (const p of sh.pins) points.add(key(p.at));
+  });
+  sch.busEntries.forEach((be, i) => {
+    if (ids.has(refId('busentry', be.uuid, i))) {
+      points.add(key(be.at));
+      points.add(key({ x: be.at.x + be.size.x, y: be.at.y + be.size.y }));
+    }
+  });
+
+  const fullIds = new Set(ids);
+
+  // Unselected no-connect flags and bus entries connected at a moved point
+  // join the drag outright (SCH_NO_CONNECT_T / SCH_BUS_*_ENTRY_T branches);
+  // a dragged entry's far end carries its own connections along.
+  sch.noConnects.forEach((nc, i) => {
+    if (fullIds.has(refId('noconnect', nc.uuid, i))) return;
+    if (points.has(key(nc.at))) fullIds.add(refId('noconnect', nc.uuid, i));
+  });
+  sch.busEntries.forEach((be, i) => {
+    const id = refId('busentry', be.uuid, i);
+    if (fullIds.has(id)) return;
+    const end = { x: be.at.x + be.size.x, y: be.at.y + be.size.y };
+    if (points.has(key(be.at)) || points.has(key(end))) {
+      fullIds.add(id);
+      points.add(key(be.at));
+      points.add(key(end));
+    }
+  });
+
+  // An unselected junction at a moved point isolates the drag there: the
+  // neighbour wires stay put and only a stub to the junction is made
+  // (ptHasUnselectedJunction — the SCH_LINE_T branch breaks early).
+  const junctionPts = new Set<string>();
+  sch.junctions.forEach((j, i) => {
+    if (ids.has(refId('junction', j.uuid, i))) return;
+    const k = key(j.at);
+    if (points.has(k)) junctionPts.add(k);
+  });
 
   const wireStart = new Set<string>();
   const wireEnd = new Set<string>();
   sch.lines.forEach((l, i) => {
     const id = refId('line', l.uuid, i);
-    if (ids.has(id)) return; // already moving in full
-    if (points.has(key(l.start))) wireStart.add(id);
-    if (points.has(key(l.end))) wireEnd.add(id);
+    if (fullIds.has(id)) return; // already moving in full
+    if (points.has(key(l.start)) && !junctionPts.has(key(l.start))) wireStart.add(id);
+    if (points.has(key(l.end)) && !junctionPts.has(key(l.end))) wireEnd.add(id);
   });
 
-  // Fixed (unselected) symbol pins and junctions at a moved point each get one
-  // rubber-band stub (KiCad: `if (test->IsConnected(aPoint) && !newWire)` — a
-  // single new wire per point, regardless of how many fixed items touch it there).
-  const fixedPoints = new Set<string>();
+  // Fixed (unselected) symbol pins, junctions and sheet pins at a moved point
+  // each get one rubber-band stub (KiCad: `if (test->IsConnected(aPoint) &&
+  // !newWire)` — a single new wire per point, regardless of how many fixed
+  // items touch it there).
+  const fixedPoints = new Set<string>(junctionPts);
   sch.symbols.forEach((s, i) => {
     if (ids.has(refId('symbol', s.uuid, i))) return;
     for (const p of symbolPinPositions(s, libById.get(s.libId))) {
@@ -109,10 +164,12 @@ export function planMove(
       if (points.has(k)) fixedPoints.add(k);
     }
   });
-  sch.junctions.forEach((j, i) => {
-    if (ids.has(refId('junction', j.uuid, i))) return;
-    const k = key(j.at);
-    if (points.has(k)) fixedPoints.add(k);
+  sch.sheets.forEach((sh, i) => {
+    if (ids.has(refId('sheet', sh.uuid, i))) return;
+    for (const p of sh.pins) {
+      const k = key(p.at);
+      if (points.has(k)) fixedPoints.add(k);
+    }
   });
 
   const newWires: StubWire[] = [...fixedPoints].map((k) => {
@@ -120,5 +177,33 @@ export function planMove(
     return { uuid: newUuid(), fixed: { x: x!, y: y! } };
   });
 
-  return { fullIds: ids, wireStart, wireEnd, newWires };
+  // Unselected labels ride a moved wire: anywhere on a fully-moving wire's
+  // body, or on a stretching wire (KiCad hit-tests labels along the line and
+  // repositions them as it moves).
+  const onSpan = (p: Vec2, a: Vec2, b: Vec2): boolean => {
+    const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    if (cross !== 0) return false;
+    const dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
+    const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    return len2 > 0 && dot >= 0 && dot <= len2;
+  };
+  const paramOf = (p: Vec2, a: Vec2, b: Vec2): number => {
+    const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    return len2 === 0 ? 0 : ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2;
+  };
+  const labelRides: LabelRide[] = [];
+  sch.labels.forEach((l, i) => {
+    const id = refId('label', l.uuid, i);
+    if (fullIds.has(id)) return;
+    sch.lines.forEach((ln, li) => {
+      if (ln.uuid === undefined) return;
+      const lid = refId('line', ln.uuid, li);
+      const moving = fullIds.has(lid) || wireStart.has(lid) || wireEnd.has(lid);
+      if (!moving || !onSpan(l.at, ln.start, ln.end)) return;
+      if (labelRides.some((r) => r.id === id)) return; // one carrier per label
+      labelRides.push({ id, lineUuid: ln.uuid, t: paramOf(l.at, ln.start, ln.end) });
+    });
+  });
+
+  return { fullIds, wireStart, wireEnd, newWires, labelRides };
 }
