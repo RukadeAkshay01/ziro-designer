@@ -416,6 +416,90 @@ export function defaultNetClasses(): NetClassesData {
 }
 
 // ---------------------------------------------------------------------------
+// Effective netclass resolution (NET_SETTINGS::GetEffectiveNetClass).
+
+/** The schematic-relevant parameters of a resolved netclass. Unset fields are
+ *  undefined ('' colors and blank widths never made it in). */
+export interface EffectiveNetClass {
+  /** The class name; a multi-class merge is named `Effective for net: <net>`
+   *  like upstream's composite netclass. */
+  name: string;
+  /** `#rrggbb`, when any constituent sets a schematic color. */
+  color?: string;
+  wireWidthMils?: number;
+  busWidthMils?: number;
+  /** A LINE_STYLES name; always present (Default's style completes the set). */
+  lineStyle: string;
+}
+
+/** EDA_COMBINED_MATCHER::StartsWith with CTX_NETCLASS: a plain pattern is a
+ *  prefix match; `*` / `?` wildcards match per EDA_PATTERN_MATCH_WILDCARD. */
+export function netClassPatternMatches(pattern: string, netName: string): boolean {
+  if (!pattern) return false;
+  if (!/[*?]/.test(pattern)) return netName.startsWith(pattern);
+  const rx = new RegExp(
+    `^${pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.')}`,
+  );
+  return rx.test(netName);
+}
+
+/**
+ * NET_SETTINGS::GetEffectiveNetClass, over the dialog's netclass grid: collect
+ * every class whose pattern assignment matches the net, sort by priority
+ * (grid order; Default = lowest), then fill parameters from the lowest
+ * priority up so higher-priority classes win (makeEffectiveNetclass). The
+ * Default class completes any missing parameters; an empty net name resolves
+ * straight to Default.
+ */
+export function resolveEffectiveNetClass(netName: string, data: NetClassesData): EffectiveNetClass {
+  const dflt = data.classes[0] ?? blankNetClass('Default');
+  // Priority = grid position (the serializer writes it that way); Default last.
+  const priorityOf = (c: NetClass): number =>
+    c === dflt ? Number.MAX_SAFE_INTEGER : data.classes.indexOf(c) - 1;
+  const matched: NetClass[] = [];
+  if (netName) {
+    for (const a of data.assignments) {
+      if (!a.netClass) continue;
+      const cls = data.classes.find((c) => c.name === a.netClass);
+      if (!cls || matched.includes(cls)) continue;
+      if (netClassPatternMatches(a.pattern, netName)) matched.push(cls);
+    }
+  }
+  const constituents = matched.length > 0 ? [...matched] : [dflt];
+  if (!constituents.includes(dflt)) constituents.push(dflt); // complete params
+  constituents.sort((a, b) => priorityOf(a) - priorityOf(b) || a.name.localeCompare(b.name));
+  const eff: EffectiveNetClass = {
+    name:
+      matched.length === 0
+        ? dflt.name
+        : matched.length === 1
+          ? matched[0]!.name
+          : `Effective for net: ${netName}`,
+    lineStyle: 'Solid',
+  };
+  const num = (s: string): number | undefined => {
+    const v = Number.parseFloat(s);
+    return s.trim() !== '' && Number.isFinite(v) ? v : undefined;
+  };
+  // Lowest priority first, so higher-priority values overwrite.
+  for (let i = constituents.length - 1; i >= 0; i--) {
+    const c = constituents[i]!;
+    const wire = num(c.wireThickness);
+    const bus = num(c.busThickness);
+    if (wire !== undefined) eff.wireWidthMils = wire;
+    if (bus !== undefined) eff.busWidthMils = bus;
+    if (c.color) eff.color = c.color;
+    // The grid can't express an unset style (rows default to Solid), so only
+    // a non-Solid choice contributes — KiCad's HasLineStyle() equivalent.
+    if (c.lineStyle && c.lineStyle !== 'Solid') eff.lineStyle = c.lineStyle;
+  }
+  return eff;
+}
+
+// ---------------------------------------------------------------------------
 // Embedded files (PANEL_EMBEDDED_FILES).
 
 export interface EmbeddedFile {

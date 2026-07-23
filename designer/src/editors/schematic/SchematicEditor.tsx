@@ -129,7 +129,12 @@ import {
   type SchematicSetup,
 } from './dialogs/dialog_schematic_setup.js';
 import { findProjectPro, readSchematicSetup, writeSchematicSetupText } from './project_settings.js';
-import { IU_PER_MILS, junctionDotDiameterIU } from './schematic_settings.js';
+import {
+  IU_PER_MILS,
+  junctionDotDiameterIU,
+  resolveEffectiveNetClass,
+} from './schematic_settings.js';
+import { computeNetClassOverrides } from './net_overrides.js';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
@@ -973,6 +978,14 @@ export function SchematicEditor({
     [rootPro, onPersistFiles],
   );
 
+  // Per-item netclass render fallbacks (wire colour/width/style, junction
+  // clamp) for the current sheet — reuses the connectivity memo; undefined
+  // when no class carries a visual parameter.
+  const netOverrides = useMemo(
+    () => (doc ? computeNetClassOverrides(doc, libById, setup, netlist) : undefined),
+    [doc, libById, setup, netlist],
+  );
+
   // Drawing defaults shared by every output (screen, print, plot), derived
   // from Schematic Setup > Formatting the way SCH_RENDER_SETTINGS is seeded
   // from SCHEMATIC_SETTINGS upstream (eeschema_config.cpp).
@@ -998,17 +1011,18 @@ export function SchematicEditor({
     (opts: PlotOpts, themeId?: string) => {
       const printTheme =
         themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
-      // Junction dots, dash ratios and label offsets print at their Schematic
-      // Setup sizes, like the screen.
+      // Junction dots, dash ratios, label offsets and netclass visuals print
+      // at their Schematic Setup values, like the screen.
       const o: PlotOpts = {
         ...opts,
         ...drawingDefaults,
+        ...(netOverrides ? { netOverrides } : {}),
         ...(activeSheet ? { sheet: activeSheet } : {}),
       };
       if (doc) printSheet(doc, printTheme, o, outputBaseName());
       setPrintOpen(false);
     },
-    [doc, theme, outputBaseName, activeSheet, drawingDefaults],
+    [doc, theme, outputBaseName, activeSheet, drawingDefaults, netOverrides],
   );
 
   // Print Preview (DIALOG_PRINT's Apply / OnPrintPreview): render into a new tab
@@ -1020,11 +1034,12 @@ export function SchematicEditor({
       const o: PlotOpts = {
         ...opts,
         ...drawingDefaults,
+        ...(netOverrides ? { netOverrides } : {}),
         ...(activeSheet ? { sheet: activeSheet } : {}),
       };
       if (doc) printSheet(doc, printTheme, o, outputBaseName(), true);
     },
-    [doc, theme, outputBaseName, activeSheet, drawingDefaults],
+    [doc, theme, outputBaseName, activeSheet, drawingDefaults, netOverrides],
   );
 
   // Bulk Edit Symbol Fields: apply the changed cells per sheet — the current
@@ -1069,9 +1084,16 @@ export function SchematicEditor({
         ...(activeSheet ? { sheet: activeSheet } : {}),
       };
       const one = (d: Schematic, name: string): void => {
-        if (format === 'svg') plotSvg(d, plotTheme, o, name);
-        else if (format === 'png') void plotPng(d, plotTheme, o, name);
-        else void plotPdf(d, plotTheme, o, name);
+        // Netclass visuals resolve per sheet (each document has its own nets).
+        const nov = computeNetClassOverrides(
+          d,
+          new Map(d.libSymbols.map((l) => [l.libId, l])),
+          setup,
+        );
+        const od: PlotOpts = { ...o, ...(nov ? { netOverrides: nov } : {}) };
+        if (format === 'svg') plotSvg(d, plotTheme, od, name);
+        else if (format === 'png') void plotPng(d, plotTheme, od, name);
+        else void plotPdf(d, plotTheme, od, name);
       };
       if (allPages) {
         for (const [file, d] of liveDocs())
@@ -1079,7 +1101,7 @@ export function SchematicEditor({
       } else if (doc) one(doc, outputBaseName());
       setPlotOpen(false);
     },
-    [doc, theme, outputBaseName, liveDocs, activeSheet, drawingDefaults],
+    [doc, theme, outputBaseName, liveDocs, activeSheet, drawingDefaults, setup],
   );
   useEffect(() => {
     // Changed search settings restart the scan (upstream m_foundItemHighlight reset).
@@ -1684,6 +1706,8 @@ export function SchematicEditor({
       // Junction-dot size, dash ratios and label/pin text offsets from
       // Schematic Setup > Formatting (SCH_RENDER_SETTINGS seeding).
       ...drawingDefaults,
+      // Wire colour/width/style + junction clamp from the resolved netclasses.
+      ...(netOverrides ? { netOverrides } : {}),
       selectionThicknessMils: es.selection.thickness,
       highlightThicknessMils: es.selection.highlight_thickness,
       grid: {
@@ -1709,7 +1733,7 @@ export function SchematicEditor({
         },
       },
     }),
-    [es, activeSheet, setup, drawingDefaults],
+    [es, activeSheet, setup, drawingDefaults, netOverrides],
   );
 
   const inputPrefs = useMemo<InputPrefs>(
@@ -2579,8 +2603,10 @@ export function SchematicEditor({
     if (!ref) return [];
     const code = netlist?.netByItem.get(id);
     const net = code !== undefined ? netlist?.nets.find((n) => n.code === code) : undefined;
-    return getMsgPanelItems(doc, libById, ref, fmt, net?.name ?? null);
-  }, [doc, selection, libById, netlist, fmt]);
+    // Resolved Netclass (NET_SETTINGS::GetEffectiveNetClass) for the net row.
+    const ncName = net ? resolveEffectiveNetClass(net.name, setup.netClasses).name : null;
+    return getMsgPanelItems(doc, libById, ref, fmt, net?.name ?? null, ncName);
+  }, [doc, selection, libById, netlist, fmt, setup.netClasses]);
 
   // Parse a distance typed into the grid, in the current units, back to IU.
   const parseDist = (text: string): number | null => {

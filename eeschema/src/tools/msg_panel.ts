@@ -68,6 +68,9 @@ export function getMsgPanelItems(
   ref: ItemRef,
   fmt: (iu: number) => string,
   netName?: string | null,
+  /** The net's resolved netclass name (NET_SETTINGS::GetEffectiveNetClass);
+   *  falls back to 'Default' when the caller has no netclass model. */
+  netClassName?: string | null,
 ): MsgPanelItem[] {
   const indexOf = <T>(arr: readonly T[], id: (t: T, i: number) => string): number => {
     for (let i = 0; i < arr.length; i++) if (id(arr[i]!, i) === ref.id) return i;
@@ -122,7 +125,7 @@ export function getMsgPanelItems(
       ];
       if (netName && l.kind !== 'bus') {
         rows.push({ upper: 'Connection Name', lower: netName });
-        rows.push({ upper: 'Resolved Netclass', lower: 'Default' });
+        rows.push({ upper: 'Resolved Netclass', lower: netClassName || 'Default' });
       }
       return rows;
     }

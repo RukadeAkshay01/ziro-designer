@@ -198,6 +198,13 @@ export interface RenderOpts {
   /** Pin decoration size in IU (m_PinSymbolSize; default 25 mil). 0 keeps
    *  KiCad's per-pin fallback: the pin's own text sizes ÷ 2. */
   pinSymbolSizeIU?: number;
+  /** Per-item netclass fallbacks (SCH_LINE::GetLineColor/GetPenWidth/
+   *  GetEffectiveLineStyle, SCH_JUNCTION::getEffectiveShape): applied only
+   *  where the item carries no stroke of its own. */
+  netOverrides?: {
+    lines: ReadonlyMap<string, { color?: string; widthIU?: number; dash?: string }>;
+    junctions: ReadonlyMap<string, number>;
+  };
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -245,6 +252,8 @@ let g_gapRatio = 3;
 let g_textOffsetRatio = 0.15;
 let g_labelSizeRatio = 0.375; // DEFAULT_LABEL_SIZE_RATIO (box expansion)
 let g_pinSymbolSize = 0.635 * MM; // m_PinSymbolSize (25 mil); 0 = per-pin fallback
+// Netclass fallbacks for the current render (unset = no netclass visuals).
+let g_netOverrides: RenderOpts['netOverrides'];
 const _GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
@@ -347,6 +356,7 @@ export function renderSchematic(
     opts.pinSymbolSizeIU !== undefined && opts.pinSymbolSizeIU >= 0
       ? opts.pinSymbolSizeIU
       : PIN_SYMBOL_SIZE;
+  g_netOverrides = opts.netOverrides;
   // The stroke font draws ~{...} overbars at the settings ratio (m_OverbarHeight).
   setOverbarHeightRatio(opts.overbarHeightRatio);
   const libById = new Map<string, LibSymbol>();
@@ -432,8 +442,10 @@ export function renderSchematic(
     // circle radius), not a bigger filled disc.
     ctx.strokeStyle = HALO_COLOR;
     sch.junctions.forEach((j, i) => {
-      if (!hl(refId('junction', j.uuid, i))) return;
-      const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+      const jid = refId('junction', j.uuid, i);
+      if (!hl(jid)) return;
+      const d =
+        j.diameter > 0 ? j.diameter : (g_netOverrides?.junctions.get(jid) ?? g_junctionDiam);
       if (d <= 1) return; // settings size "None": nothing to halo
       ctx.lineWidth = shadowWidth;
       ctx.beginPath();
@@ -460,26 +472,38 @@ export function renderSchematic(
     if (!inView(minX, minY, maxX, maxY)) return;
 
     const on = hl(refId('line', line.uuid, i));
-    const width = line.stroke && line.stroke.width > 0 ? line.stroke.width : g_defaultPen;
+    // Netclass fallbacks apply only where the wire/bus carries no stroke of
+    // its own (SCH_LINE::GetPenWidth / GetLineColor / GetEffectiveLineStyle).
+    const nc =
+      line.kind === 'wire' || line.kind === 'bus'
+        ? g_netOverrides?.lines.get(refId('line', line.uuid, i))
+        : undefined;
+    const width =
+      line.stroke && line.stroke.width > 0 ? line.stroke.width : (nc?.widthIU ?? g_defaultPen);
     // An explicit stroke colour overrides the layer colour for wires and buses
     // too (SCH_PAINTER::getRenderColor honours SCH_LINE::GetLineColor()).
     ctx.strokeStyle = on
       ? theme.netHighlight
       : line.stroke?.color
         ? cssColor(line.stroke.color)
-        : line.kind === 'bus'
-          ? theme.bus
-          : line.kind === 'wire'
-            ? theme.wire
-            : theme.noteLine;
+        : nc?.color
+          ? nc.color
+          : line.kind === 'bus'
+            ? theme.bus
+            : line.kind === 'wire'
+              ? theme.wire
+              : theme.noteLine;
     ctx.lineWidth = width;
-    setDash(ctx, line.stroke?.type, width);
+    const dashType =
+      line.stroke?.type && line.stroke.type !== 'default'
+        ? line.stroke.type
+        : (nc?.dash ?? line.stroke?.type);
+    setDash(ctx, dashType, width);
     ctx.beginPath();
     ctx.moveTo(pts[0]!.x, pts[0]!.y);
     for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k]!.x, pts[k]!.y);
     ctx.stroke();
-    if (line.stroke?.type && line.stroke.type !== 'default' && line.stroke.type !== 'solid')
-      ctx.setLineDash([]);
+    if (dashType && dashType !== 'default' && dashType !== 'solid') ctx.setLineDash([]);
   });
 
   // Wire-to-bus entries: a 45-degree stub from `at` to `at + size`, drawn on the
@@ -529,15 +553,13 @@ export function renderSchematic(
   // overrides the layer colour (SCH_JUNCTION::GetJunctionColor).
   sch.junctions.forEach((j, i) => {
     if (!inView(j.at.x, j.at.y, j.at.x, j.at.y)) return;
-    // Diameter 0 = "use schematic settings"; a settings size of ≤1 IU is the
+    const jid = refId('junction', j.uuid, i);
+    // Diameter 0 = "use schematic settings" (clamped to ≥170% of the net's
+    // wire width when a netclass sets one); a settings size of ≤1 IU is the
     // "None" choice — the junction exists but draws no dot (sch_junction.cpp).
-    const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+    const d = j.diameter > 0 ? j.diameter : (g_netOverrides?.junctions.get(jid) ?? g_junctionDiam);
     if (d <= 1) return;
-    ctx.fillStyle = hl(refId('junction', j.uuid, i))
-      ? theme.netHighlight
-      : j.color
-        ? cssColor(j.color)
-        : theme.junction;
+    ctx.fillStyle = hl(jid) ? theme.netHighlight : j.color ? cssColor(j.color) : theme.junction;
     ctx.beginPath();
     ctx.arc(j.at.x, j.at.y, d / 2, 0, Math.PI * 2);
     ctx.fill();
@@ -1418,8 +1440,9 @@ function drawSelectionShadows(
 
   // Junctions: a slightly larger filled disc under the dot.
   sch.junctions.forEach((j, i) => {
-    if (!selection.has(refId('junction', j.uuid, i))) return;
-    const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+    const jid = refId('junction', j.uuid, i);
+    if (!selection.has(jid)) return;
+    const d = j.diameter > 0 ? j.diameter : (g_netOverrides?.junctions.get(jid) ?? g_junctionDiam);
     if (d <= 1) return; // settings size "None": no dot to underlay
     const r = d / 2 + width / 2;
     ctx.beginPath();

@@ -46,6 +46,8 @@ export interface PlotOpts {
   overbarHeightRatio?: number;
   /** Pin decoration size in IU (m_PinSymbolSize; 0 = per-pin fallback). */
   pinSymbolSizeIU?: number;
+  /** Per-item netclass fallbacks for the plotted sheet (RenderOpts shape). */
+  netOverrides?: RenderOpts['netOverrides'];
 }
 
 /** An all-black-on-white theme for monochrome output (KiCad's B&W plot). */
@@ -116,6 +118,7 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     labelSizeRatio: opts.labelSizeRatio,
     overbarHeightRatio: opts.overbarHeightRatio,
     pinSymbolSizeIU: opts.pinSymbolSizeIU,
+    netOverrides: opts.netOverrides,
     selectionThicknessMils: 0,
     highlightThicknessMils: 0,
     grid: { show: false, sizeIU: 12700, style: 'dots', lineWidthPx: 1, minSpacingPx: 10 },
