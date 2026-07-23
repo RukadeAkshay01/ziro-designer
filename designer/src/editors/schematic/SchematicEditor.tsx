@@ -96,7 +96,7 @@ import {
   type LineMode,
   type PendingLabel,
 } from './components/SchematicCanvas.js';
-import { LabelDialog } from './components/LabelDialog.js';
+import { LabelDialog, type LabelFormat } from './components/LabelDialog.js';
 import { SymbolPropertiesDialog } from './components/SymbolPropertiesDialog.js';
 import { ErcDialog } from './components/ErcDialog.js';
 import {
@@ -1692,12 +1692,27 @@ export function SchematicEditor({
   }, [doc, runCommand]);
 
   const commitLabelEdit = useCallback(
-    (text: string, shape: LabelShape) => {
+    (text: string, shape: LabelShape, format: LabelFormat) => {
       setLabelEdit((le) => {
         if (!le || !doc) return null;
         const orig = doc.labels[le.index];
-        if (orig && (orig.text !== text || (le.shape !== undefined && orig.shape !== shape))) {
-          const next = le.shape !== undefined ? { ...orig, text, shape } : { ...orig, text };
+        if (!orig) return null;
+        const effects = {
+          hidden: false,
+          ...orig.effects,
+          bold: format.bold || undefined,
+          italic: format.italic || undefined,
+          fontSize: [format.sizeIU, format.sizeIU] as [number, number],
+        };
+        const changed =
+          orig.text !== text ||
+          (le.shape !== undefined && orig.shape !== shape) ||
+          !!orig.effects?.bold !== format.bold ||
+          !!orig.effects?.italic !== format.italic ||
+          (orig.effects?.fontSize?.[0] ?? 12700) !== format.sizeIU;
+        if (changed) {
+          const next =
+            le.shape !== undefined ? { ...orig, text, shape, effects } : { ...orig, text, effects };
           runCommand(replaceLabel(le.index, next));
         }
         return null;
@@ -2434,6 +2449,15 @@ export function SchematicEditor({
     return ref ? schPropertiesFor(doc, libById, ref) : [];
   }, [doc, selection, libById]);
 
+  // Existing net/label names for the label dialog's completion list
+  // (DIALOG_LABEL_PROPERTIES pre-loads its combo with the sheet's net names).
+  const labelSuggestions = useMemo<string[]>(() => {
+    if (!doc) return [];
+    const names = new Set<string>();
+    for (const l of doc.labels) if (l.kind !== 'text' && l.text) names.add(l.text);
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [doc]);
+
   // Parse a distance typed into the grid, in the current units, back to IU.
   const parseDist = (text: string): number | null => {
     const n = Number(text.trim());
@@ -2935,8 +2959,16 @@ export function SchematicEditor({
       {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && !labelEdit && (
         <LabelDialog
           kind={LABEL_TOOL_KINDS[activeTool]!}
-          onOk={(text: string, shape: LabelShape) =>
-            setPendingLabel({ kind: LABEL_TOOL_KINDS[activeTool]!, text, shape })
+          suggestions={labelSuggestions}
+          onOk={(text: string, shape: LabelShape, format: LabelFormat) =>
+            setPendingLabel({
+              kind: LABEL_TOOL_KINDS[activeTool]!,
+              text,
+              shape,
+              bold: format.bold,
+              italic: format.italic,
+              fontSize: format.sizeIU,
+            })
           }
           onCancel={() => setActiveTool('select')}
         />
@@ -2948,6 +2980,12 @@ export function SchematicEditor({
           kind={labelEdit.kind}
           initialText={labelEdit.text}
           initialShape={labelEdit.shape}
+          initialFormat={{
+            bold: !!doc?.labels[labelEdit.index]?.effects?.bold,
+            italic: !!doc?.labels[labelEdit.index]?.effects?.italic,
+            sizeIU: doc?.labels[labelEdit.index]?.effects?.fontSize?.[0] ?? 12700,
+          }}
+          suggestions={labelSuggestions}
           onOk={commitLabelEdit}
           onCancel={() => setLabelEdit(null)}
         />

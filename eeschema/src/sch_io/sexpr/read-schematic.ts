@@ -105,7 +105,7 @@ function readFill(node: SList): Fill | undefined {
   return fill;
 }
 
-function readEffects(node: SList): TextEffects | undefined {
+export function readEffects(node: SList): TextEffects | undefined {
   const e = childNamed(node, 'effects');
   if (!e) return undefined;
   const font = childNamed(e, 'font');

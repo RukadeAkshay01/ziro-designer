@@ -97,3 +97,132 @@ export function danglingPinPositions(sch: Schematic, libById: Map<string, LibSym
   }
   return out;
 }
+
+// ----- wire-end / label dangling (SCH_LINE / SCH_LABEL_BASE UpdateDanglingState) --
+
+/** DANGLING_END_T, the connectable end-point types KiCad indexes by position. */
+type EndType =
+  | 'wire'
+  | 'bus'
+  | 'junction'
+  | 'pin'
+  | 'label'
+  | 'wire_entry'
+  | 'sheet_label'
+  | 'no_connect';
+
+interface EndEntry {
+  type: EndType;
+  /** Object identity of the owning item, for the `item.GetItem() == this` skip. */
+  owner: unknown;
+}
+
+/** All pin points including hidden ones — invisible power pins still connect
+ *  (SCH_SYMBOL::GetEndPoints adds every pin). */
+function allPinsWorld(sym: SchSymbol, lib: LibSymbol | undefined): Vec2[] {
+  if (!lib) return [];
+  const t = symbolTransform(sym.angle, sym.mirror);
+  const out: Vec2[] = [];
+  for (const u of lib.units) {
+    if (
+      (u.unit !== 0 && u.unit !== sym.unit) ||
+      (u.bodyStyle !== 0 && u.bodyStyle !== sym.bodyStyle)
+    )
+      continue;
+    for (const pin of u.pins) out.push(localToWorld(sym.at, t, pin.at));
+  }
+  return out;
+}
+
+/** The DANGLING_END_ITEM list, grouped by position (aItemListByPos). */
+function endEntriesByPos(sch: Schematic, libById: Map<string, LibSymbol>): Map<string, EndEntry[]> {
+  const map = new Map<string, EndEntry[]>();
+  const add = (p: Vec2, type: EndType, owner: unknown): void => {
+    const k = key(p);
+    const arr = map.get(k);
+    if (arr) arr.push({ type, owner });
+    else map.set(k, [{ type, owner }]);
+  };
+  for (const l of sch.lines) {
+    if (l.kind !== 'wire' && l.kind !== 'bus') continue;
+    add(l.start, l.kind, l);
+    add(l.end, l.kind, l);
+  }
+  for (const j of sch.junctions) add(j.at, 'junction', j);
+  for (const s of sch.symbols)
+    for (const p of allPinsWorld(s, libById.get(s.libId))) add(p, 'pin', s);
+  for (const l of sch.labels) if (l.kind !== 'text') add(l.at, 'label', l);
+  for (const sh of sch.sheets) for (const p of sh.pins) add(p.at, 'sheet_label', sh);
+  for (const nc of sch.noConnects) add(nc.at, 'no_connect', nc);
+  for (const be of sch.busEntries) {
+    // Our entries are SCH_BUS_WIRE_ENTRY (WIRE_ENTRY_END at both ends).
+    add(be.at, 'wire_entry', be);
+    add({ x: be.at.x + be.size.x, y: be.at.y + be.size.y }, 'wire_entry', be);
+  }
+  return map;
+}
+
+export interface DanglingWireEnd {
+  pos: Vec2;
+  /** The wire's explicit stroke width in IU, 0 = layer default. */
+  strokeWidth: number;
+}
+
+/**
+ * Dangling wire endpoints — where KiCad draws the small square
+ * (drawDanglingIndicator). Per SCH_LINE::UpdateDanglingState, a wire end is
+ * connected by any co-located end item except a bus end (or bus-bus entry
+ * end); only wires are reported since KiCad never draws bus squares.
+ */
+export function danglingWireEnds(
+  sch: Schematic,
+  libById: Map<string, LibSymbol>,
+): DanglingWireEnd[] {
+  const byPos = endEntriesByPos(sch, libById);
+  const out: DanglingWireEnd[] = [];
+  for (const l of sch.lines) {
+    if (l.kind !== 'wire') continue;
+    for (const p of [l.start, l.end]) {
+      const entries = byPos.get(key(p)) ?? [];
+      const connected = entries.some((e) => e.owner !== l && e.type !== 'bus');
+      if (!connected) out.push({ pos: p, strokeWidth: l.stroke?.width ?? 0 });
+    }
+  }
+  return out;
+}
+
+/**
+ * Dangling label anchors (SCH_LABEL_BASE::UpdateDanglingState): connected by
+ * an exact-position pin / label / sheet pin / no-connect, or by lying anywhere
+ * on a wire or bus segment. Plain graphic text is not connectable.
+ */
+export function danglingLabelAnchors(
+  sch: Schematic,
+  libById: Map<string, LibSymbol>,
+): { pos: Vec2; kind: string }[] {
+  const byPos = endEntriesByPos(sch, libById);
+  const segs = sch.lines.filter((l) => l.kind === 'wire' || l.kind === 'bus');
+  const out: { pos: Vec2; kind: string }[] = [];
+  for (const l of sch.labels) {
+    if (l.kind === 'text') continue;
+    const entries = byPos.get(key(l.at)) ?? [];
+    let connected = entries.some(
+      (e) =>
+        e.owner !== l &&
+        (e.type === 'pin' ||
+          e.type === 'label' ||
+          e.type === 'sheet_label' ||
+          e.type === 'no_connect'),
+    );
+    if (!connected) {
+      for (const w of segs) {
+        if (onSegment(l.at, w.start, w.end)) {
+          connected = true;
+          break;
+        }
+      }
+    }
+    if (!connected) out.push({ pos: l.at, kind: l.kind });
+  }
+  return out;
+}

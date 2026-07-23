@@ -46,3 +46,36 @@ describe('replaceLabel', () => {
     expect(undone.labels[idx]!.text).toBe('NET1');
   });
 });
+
+describe('writeLabel formatting/orientation patches', () => {
+  it('bold + text size edits serialize into the (effects (font …)) node', () => {
+    const doc = load();
+    const orig = doc.labels.find((l) => l.uuid === 'loc-1')!;
+    const idx = doc.labels.indexOf(orig);
+    const after = replaceLabel(idx, {
+      ...orig,
+      effects: { hidden: false, ...orig.effects, bold: true, fontSize: [25400, 25400] },
+    }).apply(doc);
+    const text = serializeSchematic(after);
+    expect(text).toContain('(bold yes)');
+    expect(text).toContain('(size 2.54 2.54)');
+  });
+
+  it('an orientation edit updates the (at x y angle) argument', () => {
+    const doc = load();
+    const orig = doc.labels.find((l) => l.uuid === 'loc-1')!;
+    const idx = doc.labels.indexOf(orig);
+    const after = replaceLabel(idx, { ...orig, angle: 90 }).apply(doc);
+    expect(serializeSchematic(after)).toContain('(at 50 50 90)');
+  });
+
+  it('an untouched label round-trips byte-stable despite the new patches', () => {
+    const doc = load();
+    const before = serializeSchematic(doc);
+    const orig = doc.labels.find((l) => l.uuid === 'glb-1')!;
+    const idx = doc.labels.indexOf(orig);
+    // Identity replace: nothing semantically changed, nothing should move.
+    const after = replaceLabel(idx, { ...orig }).apply(doc);
+    expect(serializeSchematic(after)).toBe(before);
+  });
+});

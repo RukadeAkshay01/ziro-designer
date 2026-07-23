@@ -17,7 +17,7 @@
 import { head, isList, list, atom, str, type SList, type SNode } from '@ziroeda/sexpr/src/index.js';
 import { arg, childNamed, numArg } from '@ziroeda/sexpr/src/query.js';
 import { iuToMM, mmToIU } from '@ziroeda/common/src/eda_units.js';
-import { readField } from './read-schematic.js';
+import { readEffects, readField } from './read-schematic.js';
 import type {
   Schematic,
   SchSymbol,
@@ -495,10 +495,18 @@ function writeSheet(sh: SchSheet): SList {
 
 function writeLabel(l: SchLabel): SList {
   let node = patchAt(setItem(l.source, 1, str(l.text)), l.at);
+  // Orientation is the third `(at x y angle)` argument.
+  node = mapChild(node, 'at', (at) => setItem(at, 3, atom(String(l.angle))));
   // Global/hierarchical labels carry a `(shape …)`; patch it in place when
   // present so a shape edit round-trips (local labels/text have no shape).
   if (l.shape !== undefined && childNamed(node, 'shape')) {
     node = mapChild(node, 'shape', () => list(atom('shape'), atom(l.shape!)));
+  }
+  // Formatting edits (bold/italic/size/justify) patch the `(effects …)` node
+  // against the source's parsed effects, keeping everything else byte-stable.
+  if (l.effects && childNamed(node, 'effects')) {
+    const orig = readEffects(l.source);
+    node = mapChild(node, 'effects', (e) => patchEffects(e, l.effects!, orig));
   }
   return node;
 }

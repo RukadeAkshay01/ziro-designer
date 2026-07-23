@@ -23,6 +23,9 @@ import {
   refId,
   symbolBodyBBox,
   danglingPinPositions,
+  danglingWireEnds,
+  danglingLabelAnchors,
+  type DanglingWireEnd,
   fieldShownText,
   fieldBoundingBox,
   fieldDrawRotation,
@@ -127,14 +130,24 @@ function fieldDrawsFor(
   return g_fieldDraws;
 }
 
-// Cache the dangling-pin set by document identity so it isn't recomputed on every
-// pan/zoom (the schematic object is stable between edits).
+// Cache the dangling sets (pins, wire ends, labels) by document identity so
+// they aren't recomputed on every pan/zoom (the schematic object is stable
+// between edits).
+interface DanglingSets {
+  pins: readonly Vec2[];
+  wireEnds: readonly DanglingWireEnd[];
+  labels: readonly { pos: Vec2; kind: string }[];
+}
 let g_dangleSch: Schematic | null = null;
-let g_dangle: readonly Vec2[] = [];
-function danglingFor(sch: Schematic, libById: Map<string, LibSymbol>): readonly Vec2[] {
+let g_dangle: DanglingSets = { pins: [], wireEnds: [], labels: [] };
+function danglingFor(sch: Schematic, libById: Map<string, LibSymbol>): DanglingSets {
   if (sch !== g_dangleSch) {
     g_dangleSch = sch;
-    g_dangle = danglingPinPositions(sch, libById);
+    g_dangle = {
+      pins: danglingPinPositions(sch, libById),
+      wireEnds: danglingWireEnds(sch, libById),
+      labels: danglingLabelAnchors(sch, libById),
+    };
   }
   return g_dangle;
 }
@@ -636,14 +649,44 @@ export function renderSchematic(
   // connection (drawPinDanglingIndicator). Cached by document identity so it isn't
   // recomputed on every pan/zoom, and culled to the visible rect.
   const dangling = danglingFor(sch, libById);
-  if (dangling.length > 0) {
+  if (dangling.pins.length > 0) {
     ctx.strokeStyle = brighten(theme.pin, 0.3);
     ctx.lineWidth = g_defaultPen / 3;
-    for (const p of dangling) {
+    for (const p of dangling.pins) {
       if (!inView(p.x, p.y, p.x, p.y)) continue;
       ctx.beginPath();
       ctx.arc(p.x, p.y, TARGET_PIN_RADIUS, 0, Math.PI * 2);
       ctx.stroke();
+    }
+  }
+
+  // Dangling wire ends and label anchors get the small square
+  // (drawDanglingIndicator): half-side = line width + DANGLING_SYMBOL_SIZE/2
+  // (6 mil), stroked at the dangling-indicator thickness (default pen / 3) in
+  // the item's colour Brightened(0.3) so it reads over a junction dot.
+  const MIL6 = 1524; // 6 mil in IU
+  if (dangling.wireEnds.length > 0 || dangling.labels.length > 0) {
+    ctx.lineWidth = g_defaultPen / 3;
+    ctx.setLineDash([]);
+    ctx.strokeStyle = brighten(theme.wire, 0.3);
+    for (const d of dangling.wireEnds) {
+      if (!inView(d.pos.x, d.pos.y, d.pos.x, d.pos.y)) continue;
+      const w = d.strokeWidth > 0 ? d.strokeWidth : g_defaultPen;
+      const r = w + MIL6;
+      ctx.strokeRect(d.pos.x - r, d.pos.y - r, r * 2, r * 2);
+    }
+    // Labels pass aWidth = DANGLING_SYMBOL_SIZE/2, so their square is 24 mil.
+    const rLabel = MIL6 + MIL6;
+    for (const d of dangling.labels) {
+      if (!inView(d.pos.x, d.pos.y, d.pos.x, d.pos.y)) continue;
+      const color =
+        d.kind === 'global_label'
+          ? theme.globalLabel
+          : d.kind === 'hierarchical_label'
+            ? theme.hierLabel
+            : theme.label;
+      ctx.strokeStyle = brighten(color, 0.3);
+      ctx.strokeRect(d.pos.x - rLabel, d.pos.y - rLabel, rLabel * 2, rLabel * 2);
     }
   }
 }
