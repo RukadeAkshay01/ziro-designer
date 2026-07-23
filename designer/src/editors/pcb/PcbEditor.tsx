@@ -93,6 +93,19 @@ import '../../ui/shell.css';
 
 const MM = 10000;
 
+// KICURSOR::BULLSEYE (stock wxCURSOR_BULLSEYE): concentric rings with a centre
+// dot, drawn with a white halo so it reads on the dark board. Hotspot centred.
+const BULLSEYE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
+  "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'>" +
+    "<g fill='none'>" +
+    "<circle cx='12' cy='12' r='9' stroke='white' stroke-width='3.5'/>" +
+    "<circle cx='12' cy='12' r='4.5' stroke='white' stroke-width='3.5'/>" +
+    "<circle cx='12' cy='12' r='9' stroke='black' stroke-width='1.5'/>" +
+    "<circle cx='12' cy='12' r='4.5' stroke='black' stroke-width='1.5'/>" +
+    "<circle cx='12' cy='12' r='1.2' fill='black' stroke='white' stroke-width='0.8'/>" +
+    '</g></svg>',
+)}") 12 12, crosshair`;
+
 // pcb_painter.cpp getColor: a selected item is drawn in its layer colour
 // Brightened(0.8) (per channel c·0.2 + 0.8), i.e. pushed 80% toward white.
 const SELECT_BRIGHTEN = 0.8;
@@ -668,8 +681,10 @@ export function PcbEditor({
   const [netColorMode, setNetColorMode] = useState<'all' | 'ratsnest' | 'off'>('ratsnest');
   const [ratsnestMode, setRatsnestMode] = useState<'all' | 'visible' | 'off'>('all');
   const [netOptsOpen, setNetOptsOpen] = useState(false);
-  // Footprints whose local ratsnest is forced on (PCB_ACTIONS::localRatsnestTool).
-  const [localRats, setLocalRats] = useState<ReadonlySet<number>>(new Set());
+  // Pads whose local ratsnest is forced on, keyed `fp:pad` — the tool works at
+  // PAD level (BOARD_INSPECTION_TOOL::LocalRatsnestTool toggles
+  // PAD::SetLocalRatsnestVisible; a footprint click sets all its pads).
+  const [localRats, setLocalRats] = useState<ReadonlySet<string>>(new Set());
   const [selFilter, setSelFilter] = useState<Set<string>>(
     new Set(PCB_FILTER_CATS.map((c) => c.key)),
   );
@@ -1403,7 +1418,7 @@ export function PcbEditor({
     // cursor. crosshairSmall = an 80px cross (default), crosshairFull = full
     // screen lines, crosshair45 = a big diagonal X. Drawn topmost.
     const cur = cursorRef.current;
-    if (cur) {
+    if (cur && activeToolRef.current !== 'localRatsnestTool') {
       const snapped = snapToGrid(cur);
       const px = snapped.x * sx + v.tx;
       const py = snapped.y * v.scale + v.ty;
@@ -2753,24 +2768,37 @@ export function PcbEditor({
             }
           }
         } else if (activeToolRef.current === 'localRatsnestTool') {
-          // PCB_ACTIONS::localRatsnestTool: clicking a footprint toggles its
-          // ratsnest on while the global ratsnest is hidden.
+          // BOARD_INSPECTION_TOOL::LocalRatsnestTool: try a PAD under the
+          // cursor first (PadFilter), then a FOOTPRINT; clicking empty space
+          // clears every local override back to the global ratsnest setting.
           const w = worldAt(e.clientX, e.clientY);
           const brd = boardRef.current;
           if (w && brd) {
-            // A footprint hit, or any of its children (pad / text) — the
-            // heuristics prefer the pad, but the tool acts on the footprint.
-            const fpHit = boardHitCandidates(brd, w, tolOf())
-              .map((id) => parseBoardItemId(id))
-              .find((r) => r?.kind === 'footprint' || r?.kind === 'pad' || r?.kind === 'fptext');
-            if (fpHit) {
-              setLocalRats((prev) => {
-                const next = new Set(prev);
-                if (next.has(fpHit.index)) next.delete(fpHit.index);
-                else next.add(fpHit.index);
-                return next;
-              });
-            }
+            const refs = boardHitCandidates(brd, w, tolOf()).map((id) => parseBoardItemId(id));
+            const padHit2 = refs.find((r) => r?.kind === 'pad');
+            const fpHit = refs.find((r) => r?.kind === 'footprint');
+            setLocalRats((prev) => {
+              const next = new Set(prev);
+              if (padHit2) {
+                const key = `${padHit2.index}:${padHit2.sub ?? 0}`;
+                if (next.has(key)) next.delete(key);
+                else next.add(key);
+              } else if (fpHit) {
+                const fp = brd.footprints[fpHit.index];
+                if (fp && fp.pads.length > 0) {
+                  // enable = !firstPad.GetLocalRatsnestVisible()
+                  const enable = !next.has(`${fpHit.index}:0`);
+                  fp.pads.forEach((_, pi) => {
+                    const key = `${fpHit.index}:${pi}`;
+                    if (enable) next.add(key);
+                    else next.delete(key);
+                  });
+                }
+              } else {
+                next.clear();
+              }
+              return next;
+            });
           }
         } else if (DRAW_SHAPE_TOOLS[activeToolRef.current]) {
           const w = worldAt(e.clientX, e.clientY);
@@ -3263,9 +3291,10 @@ export function PcbEditor({
       const anyCuVisible = [...visible].some((l) => /\.Cu$/.test(l));
       const layerOn = (l: string): boolean => (l === 'through' ? anyCuVisible : visible.has(l));
       const localNets = new Set<number>(forcedLocalNets);
-      for (const fi of localRats) {
-        const fp = brd.footprints[fi];
-        if (fp) for (const pad of fp.pads) if (pad.net && pad.net > 0) localNets.add(pad.net);
+      for (const key of localRats) {
+        const [fi, pi] = key.split(':').map(Number);
+        const pad = brd.footprints[fi ?? -1]?.pads[pi ?? -1];
+        if (pad?.net && pad.net > 0) localNets.add(pad.net);
       }
       const globalOn = objects.ratsnest && ratsnestMode !== 'off';
       const list: { e: RatsnestEdge; color: string }[] = [];
@@ -4115,7 +4144,13 @@ export function PcbEditor({
           <canvas
             ref={canvasRef}
             // Hide the native pointer; KiCad draws its own crosshair on the canvas.
-            style={{ position: 'absolute', inset: 0, cursor: 'none' }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              // The picker tools show a real cursor (KICURSOR::BULLSEYE for the
+              // local ratsnest tool); everything else uses the GAL crosshair.
+              cursor: activeTool === 'localRatsnestTool' ? BULLSEYE_CURSOR : 'none',
+            }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
