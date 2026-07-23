@@ -85,6 +85,7 @@ import {
   type ErcViolation,
   type SheetTreeNode,
   type ItemRef,
+  describeItem,
 } from '@ziroeda/eeschema';
 import {
   SchematicCanvas,
@@ -369,6 +370,14 @@ export function SchematicEditor({
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hit: ItemRef | null } | null>(
     null,
   );
+  // Clarify Selection (SCH_SELECTION_TOOL::doSelectionMenu): an ambiguous
+  // click lists every candidate; picking a row selects it.
+  const [clarify, setClarify] = useState<{
+    x: number;
+    y: number;
+    items: ItemRef[];
+    additive: boolean;
+  } | null>(null);
   // Editing an existing label's text/shape (DIALOG_LABEL_PROPERTIES).
   const [labelEdit, setLabelEdit] = useState<{
     index: number;
@@ -2609,6 +2618,7 @@ export function SchematicEditor({
             onImagePlaced={onImagePlaced}
             grabRequest={grabRequest}
             onContextMenuRequest={onContextMenuRequest}
+            onClarify={(x, y, items, additive) => setClarify({ x, y, items, additive })}
             onZoomArea={(box) => {
               controller.current?.zoomToBox(box);
               setActiveTool('select');
@@ -2637,6 +2647,20 @@ export function SchematicEditor({
               y={ctxMenu.y}
               items={buildContextMenu()}
               onClose={() => setCtxMenu(null)}
+            />
+          )}
+          {clarify && doc && (
+            <ContextMenu
+              x={clarify.x}
+              y={clarify.y}
+              items={clarify.items.map((ref) => ({
+                label: describeItem(doc, libById, ref),
+                action: () => {
+                  onSelect(ref.id, clarify.additive);
+                  setClarify(null);
+                },
+              }))}
+              onClose={() => setClarify(null)}
             />
           )}
           {ercResult !== null && (

@@ -54,6 +54,7 @@ import {
   type PastePayload,
   type ErcViolation,
   type ItemRef,
+  collectAndGuess,
 } from '@ziroeda/eeschema';
 import {
   renderSchematic,
@@ -332,6 +333,9 @@ interface Props {
    *  context menu): `hit` is the already-hit-tested item under the cursor.
    *  The editor updates the selection and pops the menu at the client point. */
   onContextMenuRequest?: (clientX: number, clientY: number, hit: ItemRef | null) => void;
+  /** An ambiguous click (several candidates after GuessSelectionCandidates):
+   *  the editor pops the Clarify Selection menu at the client point. */
+  onClarify?: (clientX: number, clientY: number, candidates: ItemRef[], additive: boolean) => void;
 }
 
 type Mode = 'idle' | 'pan' | 'dragzoom' | 'move' | 'box' | 'lasso';
@@ -378,6 +382,7 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
     grabRequest,
     onZoomArea,
     onContextMenuRequest,
+    onClarify,
   },
   ref,
 ): JSX.Element {
@@ -441,6 +446,8 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
 
   // Box-selection drag (KiCad selectMultiple): origin/end in world coordinates.
   const boxHitRef = useRef<string | null>(null);
+  // Ambiguous-press candidates awaiting the Clarify Selection menu.
+  const clarifyRef = useRef<ItemRef[] | null>(null);
   const boxOriginRef = useRef<Vec2 | null>(null);
   const boxEndRef = useRef<Vec2 | null>(null);
   const boxModifiersRef = useRef({ additive: false, subtractive: false });
@@ -1259,10 +1266,14 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       } else {
         // Empty canvas (or SELECT-mode drag): start a KiCad drag-box selection
         // (left-to-right = window select, right-to-left = greedy). A no-drag
-        // click selects the pressed item, or clears the selection.
+        // click selects the pressed item, or clears the selection. An
+        // ambiguous press collects every candidate for the Clarify menu
+        // (SCH_SELECTION_TOOL::SelectPoint → GuessSelectionCandidates).
         (e.target as Element).setPointerCapture(e.pointerId);
         modeRef.current = 'box';
-        boxHitRef.current = hit ? hit.id : null;
+        const cands = hit ? collectAndGuess(schematic, libById, world, (6 * dpr()) / vp.scale) : [];
+        boxHitRef.current = cands[0]?.id ?? (hit ? hit.id : null);
+        clarifyRef.current = cands.length > 1 ? cands : null;
         boxOriginRef.current = world;
         boxEndRef.current = world;
         boxModifiersRef.current = {
@@ -1494,11 +1505,16 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         if (bo && be && movedPx > 4) {
           const { additive, subtractive } = boxModifiersRef.current;
           onSelectBox?.(boxSelect(schematic, libById, bo, be), additive, subtractive);
+        } else if (clarifyRef.current && onClarify) {
+          // Several candidates under the click: pop the Clarify Selection
+          // menu instead of guessing (SCH_SELECTION_TOOL::doSelectionMenu).
+          onClarify(e.clientX, e.clientY, clarifyRef.current, e.shiftKey);
         } else {
           // A plain click in SELECT mode selects the pressed item, else clears.
           onSelect(boxHitRef.current, e.shiftKey);
         }
         boxHitRef.current = null;
+        clarifyRef.current = null;
         boxOriginRef.current = null;
         boxEndRef.current = null;
       } else if (modeRef.current === 'pan' && !panMovedRef.current) {
@@ -1511,7 +1527,18 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
       panLastRef.current = null;
       if (!committedMove) draw();
     },
-    [activeTool, schematic, libById, onCommand, buildMove, onSelect, onSelectBox, onZoomArea, draw],
+    [
+      activeTool,
+      schematic,
+      libById,
+      onCommand,
+      buildMove,
+      onSelect,
+      onClarify,
+      onSelectBox,
+      onZoomArea,
+      draw,
+    ],
   );
 
   const onDoubleClick = useCallback(
