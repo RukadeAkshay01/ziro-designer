@@ -13,10 +13,11 @@
  * stay separate" bug); junction/no-connect de-duplication is a separate concern.
  */
 
-import type { Schematic, SchLine, SchJunction, Vec2 } from '../types.js';
+import type { Schematic, SchLine, SchJunction, Vec2, LibSymbol } from '../types.js';
 import { makeWireWithUuid, makeBus, makeJunction, newUuid } from './build.js';
 import { pruneGroupMembers } from './sch_group_tool.js';
 import type { EditCommand } from './command.js';
+import { isExplicitJunction, isExplicitJunctionNeeded } from './junction_helpers.js';
 
 const eq = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
 
@@ -152,27 +153,6 @@ function dirKey(dx: number, dy: number): string {
   return `${dx / g},${dy / g}`;
 }
 
-/**
- * Whether a junction dot is needed at `p` (ignoring existing junctions), ported
- * from KiCad's JUNCTION_HELPERS::AnalyzePoint: count the distinct directions wires
- * leave `p` — an endpoint there contributes one direction, a wire passing through
- * contributes two (both ways). Three or more distinct directions is a junction, so
- * collinear overlaps (2 directions) and L-corners are not, but tees and crosses are.
- */
-function junctionNeeded(lines: readonly SchLine[], p: Vec2): boolean {
-  const dirs = new Set<string>();
-  for (const l of lines) {
-    if (l.kind !== 'wire') continue; // buses use separate bus junctions
-    if (eq(l.start, p)) dirs.add(dirKey(l.end.x - p.x, l.end.y - p.y));
-    else if (eq(l.end, p)) dirs.add(dirKey(l.start.x - p.x, l.start.y - p.y));
-    else if (onSegInterior(p, l.start, l.end)) {
-      dirs.add(dirKey(l.end.x - p.x, l.end.y - p.y));
-      dirs.add(dirKey(l.start.x - p.x, l.start.y - p.y));
-    }
-  }
-  return dirs.size >= 3;
-}
-
 /** True if any junction or third-wire endpoint sits strictly inside span [s,e]. */
 function vertexInside(
   lines: readonly SchLine[],
@@ -197,7 +177,10 @@ function vertexInside(
  * wires that are not separated by a junction/vertex. Wires are kept whole through a
  * tee (KiCad does not split them); a junction marks the connection instead.
  */
-export function mergeColinearWires(sch: Schematic): Schematic {
+export function mergeColinearWires(
+  sch: Schematic,
+  libById?: ReadonlyMap<string, LibSymbol>,
+): Schematic {
   let lines: SchLine[] = sch.lines.slice();
   const junctions: SchJunction[] = sch.junctions.slice();
   let changed = true;
@@ -206,6 +189,10 @@ export function mergeColinearWires(sch: Schematic): Schematic {
     changed = true;
     any = true;
   };
+  // The evolving document the junction predicates analyze (pins, sheet pins,
+  // bus entries and labels come from `sch`; lines/junctions are the working
+  // copies).
+  const current = (): Schematic => ({ ...sch, lines, junctions });
 
   while (changed) {
     changed = false;
@@ -220,8 +207,11 @@ export function mergeColinearWires(sch: Schematic): Schematic {
       continue;
     }
 
-    // 2. Junctions: add where needed, remove where no longer needed (auto-managed).
-    const ji = junctions.findIndex((j) => !junctionNeeded(lines, j.at));
+    // 2. Junctions: add where needed, remove where no longer legitimate —
+    //    SCH_SCREEN::IsExplicitJunction, which accounts for pins, buses, bus
+    //    entries and labels, so a dot where a pin meets mid-wire or three
+    //    buses tee survives.
+    const ji = junctions.findIndex((j) => !isExplicitJunction(current(), libById, j.at));
     if (ji >= 0) {
       junctions.splice(ji, 1);
       mark();
@@ -230,9 +220,9 @@ export function mergeColinearWires(sch: Schematic): Schematic {
     const need = new Set(junctions.map((j) => `${j.at.x},${j.at.y}`));
     let added = false;
     for (const l of lines) {
-      if (l.kind !== 'wire') continue;
+      if (l.kind !== 'wire' && l.kind !== 'bus') continue;
       for (const p of [l.start, l.end]) {
-        if (!need.has(`${p.x},${p.y}`) && junctionNeeded(lines, p)) {
+        if (!need.has(`${p.x},${p.y}`) && isExplicitJunctionNeeded(current(), libById, p)) {
           junctions.push(makeJunction(p));
           need.add(`${p.x},${p.y}`);
           added = true;
@@ -288,12 +278,15 @@ export function mergeColinearWires(sch: Schematic): Schematic {
  * of the edit's commit. Undo restores the exact pre-edit document (a snapshot,
  * like KiCad's PICKED_ITEMS_LIST), since a merge is not reversible field-by-field.
  */
-export function withCleanup(cmd: EditCommand): EditCommand {
+export function withCleanup(
+  cmd: EditCommand,
+  libById?: ReadonlyMap<string, LibSymbol>,
+): EditCommand {
   return {
     label: cmd.label,
     // Post-commit cleanup: colinear wire merge, then group-member pruning so
     // deleting items drops them from any group (empty groups stop serializing).
-    apply: (doc) => pruneGroupMembers(mergeColinearWires(cmd.apply(doc))),
+    apply: (doc) => pruneGroupMembers(mergeColinearWires(cmd.apply(doc), libById)),
     invert: (before) => restoreTo(before, cmd.label),
   };
 }

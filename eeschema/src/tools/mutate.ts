@@ -27,6 +27,7 @@ import type { Orientation } from '@ziroeda/common/src/transform.js';
 import { refId } from './hittest.js';
 import { makeSymbol } from './build.js';
 import type { EditCommand } from './command.js';
+import { isExplicitJunctionNeeded } from './junction_helpers.js';
 
 /** A batch of items to add or restore, grouped by kind. */
 export interface ItemsBatch {
@@ -307,32 +308,16 @@ export function replaceTable(index: number, next: SchTable): EditCommand {
   };
 }
 
-const eq = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
-
-/** Is `p` strictly between the endpoints of segment a–b (on the segment, not at an end)? */
-function onSegmentInterior(p: Vec2, a: Vec2, b: Vec2): boolean {
-  if (eq(p, a) || eq(p, b)) return false;
-  const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
-  if (cross !== 0) return false; // not collinear
-  const dot = (p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y);
-  const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
-  return dot > 0 && dot < len2;
-}
-
 /**
- * Whether a junction dot belongs at `p`, given the wires present. True when three
- * or more wire ends meet there, or a wire end lands on another wire's interior
- * (a tee). Returns false if a junction already exists at `p`.
+ * Whether a junction dot belongs at `p` and none exists yet
+ * (SCH_SCREEN::IsExplicitJunctionNeeded via JUNCTION_HELPERS::AnalyzePoint —
+ * counts distinct exit directions of wires/buses plus pins, sheet pins, bus
+ * entries and labels; see junction_helpers.ts).
  */
-export function needsJunction(sch: Schematic, p: Vec2): boolean {
-  if (sch.junctions.some((j) => eq(j.at, p))) return false;
-  let ends = 0;
-  let interiors = 0;
-  for (const l of sch.lines) {
-    if (l.kind !== 'wire') continue;
-    if (eq(l.start, p)) ends++;
-    if (eq(l.end, p)) ends++;
-    if (onSegmentInterior(p, l.start, l.end)) interiors++;
-  }
-  return ends >= 3 || (interiors >= 1 && ends >= 1);
+export function needsJunction(
+  sch: Schematic,
+  p: Vec2,
+  libById?: ReadonlyMap<string, LibSymbol>,
+): boolean {
+  return isExplicitJunctionNeeded(sch, libById, p);
 }

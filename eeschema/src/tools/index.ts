@@ -7,6 +7,7 @@ export * from './ortho.js';
 export * from './transform.js';
 export * from './snap.js';
 export * from './cleanup.js';
+export * from './junction_helpers.js';
 export * from './build.js';
 export * from './build-graphics.js';
 export * from './mutate.js';

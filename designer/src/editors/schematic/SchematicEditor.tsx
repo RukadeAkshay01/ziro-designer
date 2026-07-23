@@ -566,9 +566,12 @@ export function SchematicEditor({
 
   // Every edit runs through KiCad's post-commit cleanup (colinear wire merge),
   // as part of the same undoable step (SCHEMATIC::CleanUp / RecalculateConnections).
-  const runCommand = useCallback((cmd: EditCommand) => {
-    setDoc((d) => (d ? history.current.execute(d, withCleanup(cmd)) : d));
-  }, []);
+  const runCommand = useCallback(
+    (cmd: EditCommand) => {
+      setDoc((d) => (d ? history.current.execute(d, withCleanup(cmd, libById)) : d));
+    },
+    [libById],
+  );
 
   const undo = useCallback(() => setDoc((d) => (d ? (history.current.undo(d) ?? d) : d)), []);
   const redo = useCallback(() => setDoc((d) => (d ? (history.current.redo(d) ?? d) : d)), []);
@@ -763,7 +766,7 @@ export function SchematicEditor({
         if (!histories.current.has(parentFile)) histories.current.set(parentFile, new History());
         project.current.docs.set(
           parentFile,
-          histories.current.get(parentFile)!.execute(parentDoc, withCleanup(cmd)),
+          histories.current.get(parentFile)!.execute(parentDoc, withCleanup(cmd, libById)),
         );
         onProjectChange?.([
           { name: parentFile, text: serializeSchematic(project.current.docs.get(parentFile)!) },
@@ -771,7 +774,7 @@ export function SchematicEditor({
         forcePageRefresh((n) => n + 1);
       }
     },
-    [currentPath, currentFile, doc, flatSheets, liveDocs, runCommand, onProjectChange],
+    [currentPath, currentFile, doc, flatSheets, liveDocs, runCommand, onProjectChange, libById],
   );
 
   // Find / Find and Replace (SCH_FIND_REPLACE_TOOL): modeless dialog state
@@ -902,7 +905,7 @@ export function SchematicEditor({
           if (!histories.current.has(file)) histories.current.set(file, new History());
           const updated = histories.current
             .get(file)!
-            .execute(target, withCleanup(setPageSettingsCommand(merged)));
+            .execute(target, withCleanup(setPageSettingsCommand(merged), libById));
           project.current.docs.set(file, updated);
           try {
             changedFiles.push({ name: file, text: serializeSchematic(updated) });
@@ -914,7 +917,7 @@ export function SchematicEditor({
       }
       setPageSettingsOpen(false);
     },
-    [runCommand, currentFile, onProjectChange, onPersistFiles],
+    [runCommand, currentFile, onProjectChange, onPersistFiles, libById],
   );
 
   // A base file name for a printed/plotted output (KiCad names plots after the
@@ -953,7 +956,7 @@ export function SchematicEditor({
         const target = project.current.docs.get(file);
         if (!target) continue;
         if (!histories.current.has(file)) histories.current.set(file, new History());
-        const next = histories.current.get(file)!.execute(target, withCleanup(cmd));
+        const next = histories.current.get(file)!.execute(target, withCleanup(cmd, libById));
         project.current.docs.set(file, next);
         try {
           changedFiles.push({ name: file, text: serializeSchematic(next) });
@@ -964,7 +967,7 @@ export function SchematicEditor({
       if (changedFiles.length) onProjectChange?.(changedFiles);
       setFieldsTableOpen(false);
     },
-    [currentFile, runCommand, onProjectChange],
+    [currentFile, runCommand, onProjectChange, libById],
   );
 
   // Plot (DIALOG_PLOT_SCHEMATIC): write the chosen file format for download.
@@ -1287,7 +1290,9 @@ export function SchematicEditor({
         if (!histories.current.has(file)) histories.current.set(file, new History());
         project.current.docs.set(
           file,
-          histories.current.get(file)!.execute(target, withCleanup(replaceCommand(searchData))),
+          histories.current
+            .get(file)!
+            .execute(target, withCleanup(replaceCommand(searchData), libById)),
         );
       }
     }
@@ -1295,7 +1300,7 @@ export function SchematicEditor({
     findCursor.current = -1;
     lastMatch.current = null;
     setFindStatus('');
-  }, [searchData, runCommand, currentFile]);
+  }, [searchData, runCommand, currentFile, libById]);
 
   // KiCad's Properties action: symbols have a full properties dialog; a text box
   // reopens its text editor (double-click = edit).

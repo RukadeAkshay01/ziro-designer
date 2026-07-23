@@ -284,9 +284,6 @@ export function finishWires(
 
   const lines = simplified.map((s) => (kind === 'bus' ? makeBus(s.a, s.b) : makeWire(s.a, s.b)));
 
-  // Junctions are a wire concept; buses don't auto-junction.
-  if (kind === 'bus') return addItems({ lines });
-
   const withLines = addItems({ lines }).apply(sch);
 
   // Candidate junction spots: the new segments' own ends, plus any existing
@@ -311,7 +308,7 @@ export function finishWires(
   const junctions: Vec2[] = [];
   for (const p of candidates) {
     if (junctions.some((q) => eq(p, q))) continue;
-    if (needsJunction(withLines, p)) junctions.push(p);
+    if (needsJunction(withLines, p, libById)) junctions.push(p);
   }
 
   return addItems({ lines, junctions: junctions.map((p) => makeJunction(p)) });
