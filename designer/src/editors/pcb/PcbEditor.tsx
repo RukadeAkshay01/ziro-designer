@@ -93,19 +93,6 @@ import '../../ui/shell.css';
 
 const MM = 10000;
 
-// KICURSOR::BULLSEYE (stock wxCURSOR_BULLSEYE): concentric rings with a centre
-// dot, drawn with a white halo so it reads on the dark board. Hotspot centred.
-const BULLSEYE_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
-  "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'>" +
-    "<g fill='none'>" +
-    "<circle cx='12' cy='12' r='9' stroke='white' stroke-width='3.5'/>" +
-    "<circle cx='12' cy='12' r='4.5' stroke='white' stroke-width='3.5'/>" +
-    "<circle cx='12' cy='12' r='9' stroke='black' stroke-width='1.5'/>" +
-    "<circle cx='12' cy='12' r='4.5' stroke='black' stroke-width='1.5'/>" +
-    "<circle cx='12' cy='12' r='1.2' fill='black' stroke='white' stroke-width='0.8'/>" +
-    '</g></svg>',
-)}") 12 12, crosshair`;
-
 // pcb_painter.cpp getColor: a selected item is drawn in its layer colour
 // Brightened(0.8) (per channel c·0.2 + 0.8), i.e. pushed 80% toward white.
 const SELECT_BRIGHTEN = 0.8;
@@ -4147,9 +4134,11 @@ export function PcbEditor({
             style={{
               position: 'absolute',
               inset: 0,
-              // The picker tools show a real cursor (KICURSOR::BULLSEYE for the
-              // local ratsnest tool); everything else uses the GAL crosshair.
-              cursor: activeTool === 'localRatsnestTool' ? BULLSEYE_CURSOR : 'none',
+              // Picker tools show a real cursor: KICURSOR::BULLSEYE resolves
+              // to the stock wxCURSOR_BULLSEYE on GTK (IsStockCursorOk), which
+              // is the SYSTEM crosshair cursor — the same one CSS 'crosshair'
+              // uses, so the web cursor matches desktop KiCad exactly.
+              cursor: activeTool === 'localRatsnestTool' ? 'crosshair' : 'none',
             }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
