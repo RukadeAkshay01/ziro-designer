@@ -16,7 +16,7 @@ import {
   RegulatorType,
   solveRegulator,
 } from '@ziroeda/pcb_calculator';
-import { Field, Group, Modal, copyText, fmt, parseNum } from '../fields.js';
+import { Field, Group, Modal, copyText, parseNum } from '../fields.js';
 
 const STORAGE_KEY = 'ziro.calculator.regulators';
 
@@ -114,6 +114,10 @@ const formFrom = (r: RegulatorData | null): RegForm => ({
   iadjMax: String((r?.iadjMax ?? 100e-6) * 1e6),
 });
 
+/** KiCad PANEL_REGULATOR::round_to + "%g" display (default step 0.001). */
+const roundTo = (v: number, precision = 0.001): string =>
+  Number.isFinite(v) ? String(Number((Math.round(v / precision) * precision).toPrecision(12))) : '';
+
 export function PanelRegulator(): JSX.Element {
   const [store, setStore] = useState<Stored>(loadRegulators);
   const [type, setType] = useState<RegulatorType>(RegulatorType.THREE_TERMINAL);
@@ -156,26 +160,39 @@ export function PanelRegulator(): JSX.Element {
   };
 
   const calculate = (): void => {
-    setResult(
-      solveRegulator({
-        type,
-        solve,
-        r1Typ: parseNum(r1) * 1000,
-        r2Typ: parseNum(r2) * 1000,
-        voutTyp: parseNum(vout),
-        vrefMin: parseNum(vrefMin),
-        vrefTyp: parseNum(vrefTyp),
-        vrefMax: parseNum(vrefMax),
-        iadjTyp: parseNum(iadjTyp) * 1e-6,
-        iadjMax: parseNum(iadjMax) * 1e-6,
-        resTolPct: parseNum(resTol),
-      }),
-    );
+    const r = solveRegulator({
+      type,
+      solve,
+      r1Typ: parseNum(r1) * 1000,
+      r2Typ: parseNum(r2) * 1000,
+      voutTyp: parseNum(vout),
+      vrefMin: parseNum(vrefMin),
+      vrefTyp: parseNum(vrefTyp),
+      vrefMax: parseNum(vrefMax),
+      iadjTyp: parseNum(iadjTyp) * 1e-6,
+      iadjMax: parseNum(iadjMax) * 1e-6,
+      resTolPct: parseNum(resTol),
+    });
+    setResult(r);
+    if (!r.error) {
+      // KiCad writes every typ cell back (rounded) and auto-fills the power
+      // comment as "<typ>V [<min>V ... <max>V]" with 0.01 rounding.
+      setR1(roundTo(r.r1.typ / 1000));
+      setR2(roundTo(r.r2.typ / 1000));
+      setVout(roundTo(r.vout.typ));
+      setComment(
+        `${roundTo(r.vout.typ, 0.01)}V [${roundTo(r.vout.min, 0.01)}V ... ${roundTo(
+          r.vout.max,
+          0.01,
+        )}V]`,
+      );
+    }
   };
 
   const rows = useMemo(() => {
-    const r = result;
-    const kk = (v: number): string => fmt(v / 1000);
+    const r = result && !result.error ? result : null;
+    // KiCad rounds after scaling to kΩ (round_to default 0.001, "%g" display).
+    const kk = (v: number): string => roundTo(v / 1000);
     return {
       r1: {
         min: r ? kk(r.r1.min) : '',
@@ -188,9 +205,9 @@ export function PanelRegulator(): JSX.Element {
         max: r ? kk(r.r2.max) : '',
       },
       vout: {
-        min: r ? fmt(r.vout.min) : '',
-        typ: solve === RegulatorSolve.VOUT && r ? fmt(r.vout.typ) : vout,
-        max: r ? fmt(r.vout.max) : '',
+        min: r ? roundTo(r.vout.min) : '',
+        typ: solve === RegulatorSolve.VOUT && r ? roundTo(r.vout.typ) : vout,
+        max: r ? roundTo(r.vout.max) : '',
       },
     };
   }, [result, solve, r1, r2, vout]);
@@ -244,20 +261,12 @@ export function PanelRegulator(): JSX.Element {
   };
 
   const copyComment = (): void => {
-    const r = result;
-    const text =
-      comment ||
-      (r && !r.error
-        ? `Vout = ${fmt(r.vout.typ)} V (${fmt(r.tolNegPct, 3)}% … +${fmt(
-            r.tolPosPct,
-            3,
-          )}%), R1 = ${fmt(r.r1.typ)} Ω, R2 = ${fmt(r.r2.typ)} Ω`
-        : '');
-    if (!text) {
+    // KiCad copies the power-comment field verbatim.
+    if (!comment) {
       setToast('Nothing to copy yet — press Calculate first.');
       return;
     }
-    setToast(copyText(text) ? 'Copied to clipboard.' : 'Copy failed.');
+    setToast(copyText(comment) ? 'Copied to clipboard.' : 'Copy failed.');
   };
 
   const exportData = (): void => {
@@ -495,13 +504,13 @@ export function PanelRegulator(): JSX.Element {
             <input
               className="calc-input ro"
               readOnly
-              value={result && !result.error ? fmt(result.tolNegPct, 3) : ''}
+              value={result && !result.error ? roundTo(result.tolNegPct, 0.01) : ''}
             />
             <span />
             <input
               className="calc-input ro"
               readOnly
-              value={result && !result.error ? `+${fmt(result.tolPosPct, 3)}` : ''}
+              value={result && !result.error ? roundTo(result.tolPosPct, 0.01) : ''}
             />
             <span className="calc-unit">%</span>
           </div>
