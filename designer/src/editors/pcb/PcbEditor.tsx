@@ -43,6 +43,7 @@ import {
   groupContaining,
   setBoardItemsLocked,
   isBoardItemLocked,
+  setBoardPageSettings,
   serializeBoard,
   buildRatsnest,
   addBoardShape,
@@ -65,6 +66,9 @@ import {
 import { MenuBar, type Menu } from '../../ui/MenuBar.js';
 import { Toolbar } from '../../ui/Toolbar.js';
 import { DialogPcbFind, DEFAULT_PCB_FIND, type PcbFindOptions } from './dialogs/dialog_find.js';
+import { DialogPageSettings } from '../schematic/dialogs/dialog_page_settings.js';
+import { DialogPcbPrint } from './dialogs/dialog_print_pcb.js';
+import { DialogPcbPlot } from './dialogs/dialog_plot_pcb.js';
 import {
   buildScene,
   buildDrawSteps,
@@ -773,6 +777,10 @@ export function PcbEditor({
     dims: ClassDims;
   } | null>(null);
   // Pending "Add Text" dialog: where the text will be placed.
+  // Page Settings / Print dialogs (DIALOG_PAGES_SETTINGS / DIALOG_PRINT_PCBNEW).
+  const [pageDlgOpen, setPageDlgOpen] = useState(false);
+  const [printDlgOpen, setPrintDlgOpen] = useState(false);
+  const [plotDlgOpen, setPlotDlgOpen] = useState(false);
   // Find dialog (DIALOG_FIND): query, options, hit cursor + status line.
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
@@ -3397,6 +3405,15 @@ export function PcbEditor({
       case 'rotateCW':
         rotateSel(false);
         break;
+      case 'pageSettings':
+        setPageDlgOpen(true);
+        break;
+      case 'print':
+        setPrintDlgOpen(true);
+        break;
+      case 'plot':
+        setPlotDlgOpen(true);
+        break;
       case 'mirrorV':
         mirrorSel('v');
         break;
@@ -4943,6 +4960,51 @@ export function PcbEditor({
         </>
       )}
 
+      {pageDlgOpen && board && (
+        <DialogPageSettings
+          value={{
+            paper: board.paper ?? 'A4',
+            title: board.titleBlock?.title ?? '',
+            date: board.titleBlock?.date ?? '',
+            rev: board.titleBlock?.rev ?? '',
+            company: board.titleBlock?.company ?? '',
+            comments: Array.from({ length: 9 }, (_, i) => board.titleBlock?.comments?.[i] ?? ''),
+          }}
+          sheetCount={1}
+          sheetNumber={1}
+          onOk={(next) => {
+            const brd = boardRef.current;
+            if (brd)
+              commitBoard(
+                setBoardPageSettings(brd, {
+                  paper: next.paper,
+                  title: next.title,
+                  date: next.date,
+                  rev: next.rev,
+                  company: next.company,
+                  comments: next.comments,
+                }),
+              );
+            setPageDlgOpen(false);
+          }}
+          onCancel={() => setPageDlgOpen(false)}
+        />
+      )}
+      {printDlgOpen && board && (
+        <DialogPcbPrint
+          board={board}
+          visibleLayers={visible}
+          drawOpts={drawOpts}
+          onClose={() => setPrintDlgOpen(false)}
+        />
+      )}
+      {plotDlgOpen && board && (
+        <DialogPcbPlot
+          board={board}
+          visibleLayers={visible}
+          onClose={() => setPlotDlgOpen(false)}
+        />
+      )}
       {findOpen && (
         <DialogPcbFind
           query={findQuery}

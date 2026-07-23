@@ -216,7 +216,14 @@ export interface Board {
   version: number;
   thickness?: number;
   paper?: string;
-  titleBlock?: { title?: string; date?: string; rev?: string; company?: string };
+  titleBlock?: {
+    title?: string;
+    date?: string;
+    rev?: string;
+    company?: string;
+    /** `(comment N "text")` lines, index 0 = comment 1. */
+    comments?: string[];
+  };
   layers: PcbLayerDef[];
   /** net code -> name, from the top-level `(net N "name")` declarations. */
   nets: Map<number, string>;
