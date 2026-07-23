@@ -374,7 +374,10 @@ export function PanelRegulator(): JSX.Element {
           </Group>
         </div>
 
-        <div className="calc-col" style={{ flex: 1 }}>
+        {/* KiCad's right column is only as wide as the parameter grid, so the
+            stretch-spacer items (tolerance input, Copy, Reset) align to the
+            grid's right edge — not the page edge. */}
+        <div className="calc-col" style={{ flex: '0 0 auto', width: 530 }}>
           <Group title="Regulator">
             <div className="calc-field">
               <select
@@ -570,13 +573,14 @@ export function PanelRegulator(): JSX.Element {
             </button>
             {toast && <span className="calc-toast">{toast}</span>}
           </div>
-        </div>
-      </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button type="button" className="calc-btn" onClick={resetDefaults}>
-          Reset to Defaults
-        </button>
+          {/* KiCad: bottom-right of the right column, after a stretch spacer. */}
+          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+            <button type="button" className="calc-btn" onClick={resetDefaults}>
+              Reset to Defaults
+            </button>
+          </div>
+        </div>
       </div>
 
       {form && (
