@@ -52,7 +52,7 @@ function saveRegulators(s: Stored): void {
 function RegulatorDrawing({ type }: { type: RegulatorType }): JSX.Element {
   const three = type === RegulatorType.THREE_TERMINAL;
   return (
-    <svg className="calc-svg" width="300" height="240" viewBox="0 0 300 240">
+    <svg className="calc-svg" width="330" height="264" viewBox="0 0 300 240">
       <g stroke="#4a86c5" fill="none" strokeWidth="1.5">
         <rect x="70" y="30" width="120" height="80" />
         <circle cx="20" cy="40" r="4" />
@@ -270,19 +270,6 @@ export function PanelRegulator(): JSX.Element {
     setToast(copyText(comment) ? 'Copied to clipboard.' : 'Copy failed.');
   };
 
-  const exportData = (): void => {
-    const blob = new Blob([JSON.stringify(store.regulators, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'regulators.json';
-    a.click();
-    URL.revokeObjectURL(url);
-    setToast('Exported regulators.json.');
-  };
-
   const importData = (file: File): void => {
     void file.text().then((txt) => {
       try {
@@ -348,9 +335,12 @@ export function PanelRegulator(): JSX.Element {
   return (
     <div>
       <div className="calc-row">
-        <div className="calc-col" style={{ maxWidth: 340 }}>
+        {/* bSizeLeftpReg: fixed 400px column; the Type choice stretches
+            across it (proportion 1), the drawing centres, and the Formula
+            box expands to the column width. */}
+        <div className="calc-col" style={{ flex: '0 0 400px', width: 400, minWidth: 400 }}>
           <label className="calc-field">
-            <span className="calc-field-label">Type:</span>
+            <span>Type:</span>
             <select
               className="calc-select"
               style={{ flex: 1 }}
@@ -364,7 +354,9 @@ export function PanelRegulator(): JSX.Element {
               <option value={RegulatorType.STANDARD}>Standard Type</option>
             </select>
           </label>
-          <RegulatorDrawing type={type} />
+          <div style={{ alignSelf: 'center', margin: '10px 0' }}>
+            <RegulatorDrawing type={type} />
+          </div>
           <Group title="Formula">
             <div className="calc-formula">
               {type === RegulatorType.THREE_TERMINAL
@@ -409,9 +401,6 @@ export function PanelRegulator(): JSX.Element {
               />
               <button type="button" className="calc-btn" onClick={() => fileRef.current?.click()}>
                 Browse
-              </button>
-              <button type="button" className="calc-btn" onClick={exportData}>
-                Export…
               </button>
               <input
                 ref={fileRef}
@@ -568,7 +557,12 @@ export function PanelRegulator(): JSX.Element {
           {result?.error && <div className="calc-error">{result.error}</div>}
 
           <div style={{ marginTop: 12, display: 'flex', alignItems: 'center' }}>
-            <button type="button" className="calc-btn primary" onClick={calculate}>
+            <button
+              type="button"
+              className="calc-btn primary"
+              style={{ minWidth: 120 }}
+              onClick={calculate}
+            >
               Calculate
             </button>
             {toast && <span className="calc-toast">{toast}</span>}
