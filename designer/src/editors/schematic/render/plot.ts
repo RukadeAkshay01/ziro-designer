@@ -44,6 +44,8 @@ export interface PlotOpts {
    *  FONT_METRICS m_OverbarHeight), so plots match the screen. */
   labelSizeRatio?: number;
   overbarHeightRatio?: number;
+  /** Pin decoration size in IU (m_PinSymbolSize; 0 = per-pin fallback). */
+  pinSymbolSizeIU?: number;
 }
 
 /** An all-black-on-white theme for monochrome output (KiCad's B&W plot). */
@@ -113,6 +115,7 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     textOffsetRatio: opts.textOffsetRatio,
     labelSizeRatio: opts.labelSizeRatio,
     overbarHeightRatio: opts.overbarHeightRatio,
+    pinSymbolSizeIU: opts.pinSymbolSizeIU,
     selectionThicknessMils: 0,
     highlightThicknessMils: 0,
     grid: { show: false, sizeIU: 12700, style: 'dots', lineWidthPx: 1, minSpacingPx: 10 },

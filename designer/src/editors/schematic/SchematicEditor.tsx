@@ -963,6 +963,8 @@ export function SchematicEditor({
       labelSizeRatio: setup.formatting.labelSizeRatio / 100,
       // Overbar offset is stored as the raw ratio (1.23), not percent.
       overbarHeightRatio: setup.formatting.overbarOffsetRatio,
+      // 0 mils is meaningful: KiCad's per-pin text-size fallback.
+      pinSymbolSizeIU: setup.formatting.pinSymbolSizeMils * IU_PER_MILS,
     }),
     [setup],
   );

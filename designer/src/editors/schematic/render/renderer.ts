@@ -195,6 +195,9 @@ export interface RenderOpts {
   /** Overbar Y offset as a multiple of text size (FONT_METRICS
    *  m_OverbarHeight; default 1.23). */
   overbarHeightRatio?: number;
+  /** Pin decoration size in IU (m_PinSymbolSize; default 25 mil). 0 keeps
+   *  KiCad's per-pin fallback: the pin's own text sizes ÷ 2. */
+  pinSymbolSizeIU?: number;
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -241,6 +244,7 @@ let g_dashRatio = 12;
 let g_gapRatio = 3;
 let g_textOffsetRatio = 0.15;
 let g_labelSizeRatio = 0.375; // DEFAULT_LABEL_SIZE_RATIO (box expansion)
+let g_pinSymbolSize = 0.635 * MM; // m_PinSymbolSize (25 mil); 0 = per-pin fallback
 const _GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
@@ -338,6 +342,11 @@ export function renderSchematic(
     opts.textOffsetRatio !== undefined && opts.textOffsetRatio >= 0 ? opts.textOffsetRatio : 0.15;
   g_labelSizeRatio =
     opts.labelSizeRatio !== undefined && opts.labelSizeRatio >= 0 ? opts.labelSizeRatio : 0.375;
+  // 0 is meaningful (per-pin fallback), so only undefined restores the default.
+  g_pinSymbolSize =
+    opts.pinSymbolSizeIU !== undefined && opts.pinSymbolSizeIU >= 0
+      ? opts.pinSymbolSizeIU
+      : PIN_SYMBOL_SIZE;
   // The stroke font draws ~{...} overbars at the settings ratio (m_OverbarHeight).
   setOverbarHeightRatio(opts.overbarHeightRatio);
   const libById = new Map<string, LibSymbol>();
@@ -1679,12 +1688,13 @@ function drawLibUnit(
     // text in the body instead).
     const NUM = pin.numberSize ?? DEFAULT_TEXT;
     const NAME = pin.nameSize ?? DEFAULT_TEXT;
-    // externalPinDecoSize / internalPinDecoSize: the fixed m_PinSymbolSize
-    // (25 mil, SCH_RENDER_SETTINGS) whenever it is set — per-pin text sizes
-    // are only the m_PinSymbolSize == 0 fallback, which never applies here.
-    const radius = PIN_SYMBOL_SIZE;
+    // externalPinDecoSize / internalPinDecoSize (sch_painter.cpp): the
+    // Schematic Setup m_PinSymbolSize when set; a value of 0 falls back to the
+    // pin's own text sizes (number/2 for external decorations — negation
+    // bubble, polarity slopes — and name/2, else number/2, for the clock).
+    const radius = g_pinSymbolSize > 0 ? g_pinSymbolSize : NUM / 2;
     const diam = radius * 2;
-    const clockSize = PIN_SYMBOL_SIZE;
+    const clockSize = g_pinSymbolSize > 0 ? g_pinSymbolSize : NAME !== 0 ? NAME / 2 : NUM / 2;
 
     const endLocal = pinBodyEnd(pin.at, pin.angle, pin.length);
     const pos = localToWorld(origin, t, pin.at); // connection point (tip)
