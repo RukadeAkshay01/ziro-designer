@@ -270,6 +270,19 @@ export function PanelRegulator(): JSX.Element {
     setToast(copyText(comment) ? 'Copied to clipboard.' : 'Copy failed.');
   };
 
+  const exportData = (): void => {
+    const blob = new Blob([JSON.stringify(store.regulators, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'regulators.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    setToast('Exported regulators.json.');
+  };
+
   const importData = (file: File): void => {
     void file.text().then((txt) => {
       try {

@@ -54,10 +54,12 @@ export function convertOutputSize(
   return mm ? (pixels / mm) * 25.4 : 0;
 }
 
-/** Format an output-size value for a text field: integer DPI, trimmed decimals otherwise. */
+/**
+ * Format an output-size value for a text field, with KiCad's exact precision
+ * (`formatOutputSize`): mm `%.1f`, inch `%.2f`, DPI a rounded integer.
+ */
 export function formatOutputSize(size: number, unit: SizeUnit): string {
-  if (!Number.isFinite(size)) return '0';
+  if (!Number.isFinite(size)) size = 0;
   if (unit === 'dpi') return String(Math.round(size));
-  const s = size.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
-  return s === '' || s === '-0' ? '0' : s;
+  return unit === 'mm' ? size.toFixed(1) : size.toFixed(2);
 }

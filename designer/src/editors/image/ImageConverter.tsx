@@ -8,8 +8,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { MenuBar, type Menu } from '../../ui/MenuBar.js';
-import { pngDpi } from '../drawingsheet/wksBitmap.js';
+import { MenuBar, type Menu, type MenuItem } from '../../ui/MenuBar.js';
+import { PreferencesDialog } from '../../prefs/PreferencesDialog.js';
+import { imageMeta } from './imageMeta.js';
+import {
+  loadBitmap2CmpSettings,
+  loadRecentImages,
+  pushRecentImage,
+  saveBitmap2CmpSettings,
+  saveRecentImages,
+  type RecentImage,
+} from './bitmap2cmpSettings.js';
 import {
   convert,
   grayToMono,
@@ -49,12 +58,39 @@ const FORMATS: { id: OutputFormat; label: string }[] = [
 
 const DEFAULT_DPI = 300; // KiCad's DEFAULT_DPI when the image carries no resolution
 
+// OUTPUT_FMT_ID ↔ our format ids, following LoadSettings' switch: symbol and
+// symbol-paste both select the Symbol radio; anything unknown means footprint.
+const FORMAT_BY_ID: Record<number, OutputFormat> = {
+  0: 'symbol',
+  1: 'symbol',
+  2: 'footprint',
+  3: 'postscript',
+  4: 'drawingsheet',
+};
+const ID_BY_FORMAT: Record<OutputFormat, number> = {
+  symbol: 0,
+  footprint: 2,
+  postscript: 3,
+  drawingsheet: 4,
+};
+
+const bytesToDataUrl = (bytes: Uint8Array, type: string): string => {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${type || 'image/png'};base64,${btoa(bin)}`;
+};
+
 interface Loaded {
+  /** File name without extension — used as the download file stem. */
   name: string;
+  /** Full file name, shown in the title bar (KiCad's UpdateTitle). */
+  fullName: string;
   w: number;
   h: number;
   bpp: number;
-  originalDPI: number;
+  originalDPIX: number;
+  originalDPIY: number;
   original: ImageData;
   gray: GrayImage;
 }
@@ -63,18 +99,42 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
+  // BITMAP2CMP_SETTINGS: units, threshold, negative, format and layer survive
+  // restarts (LoadSettings); the aspect-ratio lock always starts locked.
+  const [cfg] = useState(loadBitmap2CmpSettings);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [tab, setTab] = useState<Tab>('bw');
-  const [unit, setUnit] = useState<SizeUnit>('mm');
-  const [outX, setOutX] = useState('0');
-  const [outY, setOutY] = useState('0');
+  const [unit, setUnit] = useState<SizeUnit>(() => SIZE_UNITS[cfg.units]?.id ?? 'mm');
+  const [outX, setOutX] = useState(() => formatOutputSize(0, SIZE_UNITS[cfg.units]?.id ?? 'mm'));
+  const [outY, setOutY] = useState(() => formatOutputSize(0, SIZE_UNITS[cfg.units]?.id ?? 'mm'));
   const [lock, setLock] = useState(true);
-  const [threshold, setThreshold] = useState(50); // slider 0..100, KiCad default 50
-  const [negative, setNegative] = useState(false);
-  const [format, setFormat] = useState<OutputFormat>('symbol');
-  const [layerIdx, setLayerIdx] = useState(0);
-  const [status, setStatus] = useState('Load a source image to begin.');
+  const [threshold, setThreshold] = useState(() =>
+    Math.min(100, Math.max(0, Math.round(cfg.threshold))),
+  );
+  const [negative, setNegative] = useState(cfg.negative);
+  const [format, setFormat] = useState<OutputFormat>(FORMAT_BY_ID[cfg.last_format] ?? 'footprint');
+  const [layerIdx, setLayerIdx] = useState(() =>
+    cfg.last_mod_layer >= 0 && cfg.last_mod_layer < OUTLINE_LAYERS.length ? cfg.last_mod_layer : 0,
+  );
+  const [recent, setRecent] = useState<RecentImage[]>(loadRecentImages);
+  const [convertedName, setConvertedName] = useState(cfg.converted_file_name);
+  // KiCad's status bar starts empty and shows the loaded file (OnLoadFile).
+  const [status, setStatus] = useState('');
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
+
+  // SaveSettings: persist the panel state whenever it changes.
+  useEffect(() => {
+    saveBitmap2CmpSettings({
+      bitmap_file_name: loaded?.fullName ?? cfg.bitmap_file_name,
+      converted_file_name: convertedName,
+      units: SIZE_UNITS.findIndex((u) => u.id === unit),
+      threshold,
+      negative,
+      last_format: ID_BY_FORMAT[format],
+      last_mod_layer: layerIdx,
+    });
+  }, [cfg, loaded, convertedName, unit, threshold, negative, format, layerIdx]);
 
   // The 1-bit bitmap shared by the Black & White preview and every export.
   // KiCad binarizes at threshold/max of the greyscale (0..255).
@@ -114,27 +174,63 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
         bmp.close();
         const original = cx.getImageData(0, 0, w, h);
         const gray = imageToGray(original.data, w, h);
-        const dpi = /\.png$/i.test(file.name) ? pngDpi(bytes) : DEFAULT_DPI;
+        const meta = imageMeta(bytes);
         setLoaded({
           name: file.name.replace(/\.[^.]+$/, '') || 'LOGO',
+          fullName: file.name,
           w,
           h,
-          bpp: 24,
-          originalDPI: dpi,
+          bpp: meta.bpp,
+          originalDPIX: meta.dpiX,
+          originalDPIY: meta.dpiY,
           original,
           gray,
         });
         // Seed the output size from the image at its native PPI (current unit).
-        setOutX(formatOutputSize(initialOutputSize(w, dpi, unit), unit));
-        setOutY(formatOutputSize(initialOutputSize(h, dpi, unit), unit));
+        setOutX(formatOutputSize(initialOutputSize(w, meta.dpiX, unit), unit));
+        setOutY(formatOutputSize(initialOutputSize(h, meta.dpiY, unit), unit));
         setTab('bw');
-        setStatus(`Loaded ${file.name} — ${w} × ${h} px @ ${dpi} PPI`);
+        // KiCad shows the opened file in the status bar (OnLoadFile) and
+        // records it in the file history (UpdateFileHistory).
+        setStatus(file.name);
+        setRecent((prev) => {
+          const next = pushRecentImage(prev, {
+            name: file.name,
+            data: bytesToDataUrl(bytes, file.type),
+          });
+          saveRecentImages(next);
+          return next;
+        });
       } catch (e) {
         setStatus(`Could not load image: ${(e as Error).message}`);
       }
     },
     [unit],
   );
+
+  const openRecent = useCallback(
+    async (r: RecentImage) => {
+      const blob = await (await fetch(r.data)).blob();
+      await loadFile(new File([blob], r.name, { type: blob.type }));
+    },
+    [loadFile],
+  );
+
+  // Frame hotkeys: Ctrl+O opens an image (ACTIONS::open), Ctrl+, preferences.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        fileInputRef.current?.click();
+      } else if (e.key === ',') {
+        e.preventDefault();
+        setPrefsOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const onPick = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const f = e.target.files?.[0];
@@ -144,7 +240,11 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     const f = e.dataTransfer.files?.[0];
-    if (f && /^image\//.test(f.type || '')) void loadFile(f);
+    if (!f || !/^image\//.test(f.type || '')) return;
+    // DROP_FILE::OnDropFiles asks before replacing an already-loaded image.
+    if (loaded && !window.confirm('There is already a file loaded. Do you want to replace it?'))
+      return;
+    void loadFile(f);
   };
 
   // ---- Output Size box (KiCad's IMAGE_SIZE behaviour) ----
@@ -170,23 +270,38 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
     setOutY(text);
     if (!lock) return;
     const v = Number(text) || 0;
-    const x = unit === 'dpi' ? (numY ? (numX * v) / numY : v) : v * aspect;
+    // DPI mode reproduces OnSizeChangeY verbatim: the ratio is computed against
+    // the X size, so the locked X ends up set to the newly typed value.
+    const x = unit === 'dpi' ? v : v * aspect;
     setOutX(formatOutputSize(x, unit));
+  };
+  const toggleLock = (on: boolean): void => {
+    setLock(on);
+    // ToggleAspectRatioLock: re-locking snaps Y back into ratio with X (in DPI
+    // mode OnSizeChangeX's ratio against X is 1, so Y stays as it is).
+    if (on && unit !== 'dpi') setOutY(formatOutputSize(numX / aspect, unit));
   };
 
   const dpiX = loaded ? outputDpi(numX, loaded.w, unit) : DEFAULT_DPI;
   const dpiY = loaded ? outputDpi(numY, loaded.h, unit) : DEFAULT_DPI;
 
-  const buildOutput = useCallback(() => {
-    if (!loaded || !mono) return null;
-    return convert(mono, {
-      format,
-      layer: OUTLINE_LAYERS[layerIdx]!.id,
-      dpiX: dpiX > 0 ? dpiX : DEFAULT_DPI,
-      dpiY: dpiY > 0 ? dpiY : DEFAULT_DPI,
-      name: loaded.name || 'LOGO',
-    });
-  }, [loaded, mono, format, layerIdx, dpiX, dpiY]);
+  const buildOutput = useCallback(
+    (paste = false) => {
+      if (!loaded || !mono) return null;
+      // KiCad names the emitted symbol/footprint "LOGO" (BITMAPCONV_INFO's
+      // m_CmpName is fixed); only the download file takes the image's name.
+      return convert(mono, {
+        format,
+        layer: OUTLINE_LAYERS[layerIdx]!.id,
+        dpiX: dpiX > 0 ? dpiX : DEFAULT_DPI,
+        dpiY: dpiY > 0 ? dpiY : DEFAULT_DPI,
+        name: 'LOGO',
+        fileStem: loaded.name || 'LOGO',
+        paste,
+      });
+    },
+    [loaded, mono, format, layerIdx, dpiX, dpiY],
+  );
 
   const exportToFile = (): void => {
     const out = buildOutput();
@@ -200,10 +315,13 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
     a.download = out.filename;
     a.click();
     URL.revokeObjectURL(url);
+    setConvertedName(out.filename); // BITMAP2CMP_SETTINGS m_ConvertedFileName
     setStatus(`Exported ${out.filename}`);
   };
   const exportToClipboard = async (): Promise<void> => {
-    const out = buildOutput();
+    // OnExportToClipboard: a symbol copies as SYMBOL_PASTE_FMT — the bare
+    // symbol fragment, ready to paste into an open schematic.
+    const out = buildOutput(format === 'symbol');
     if (!out) {
       setStatus('Load a source image before exporting.');
       return;
@@ -216,15 +334,39 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
     }
   };
 
+  // doReCreateMenuBar: File (Open… / Open Recent / Quit), Preferences
+  // (Preferences… / language list), then the standard Help menu.
+  const recentItems: MenuItem[] =
+    recent.length > 0
+      ? [
+          ...recent.map((r) => ({ label: r.name, action: () => void openRecent(r) })),
+          { sep: true },
+          {
+            label: 'Clear Recent Files',
+            action: () => {
+              setRecent([]);
+              saveRecentImages([]);
+            },
+          },
+        ]
+      : [{ label: '(empty)', disabled: true, action: () => {} }];
+
   const menus: Menu[] = [
     {
       label: 'File',
       items: [
-        { label: 'Load Source Image…', action: () => fileInputRef.current?.click() },
-        { label: 'Export to File…', action: exportToFile, disabled: !loaded },
-        { label: 'Export to Clipboard', action: () => void exportToClipboard(), disabled: !loaded },
+        { label: 'Open…', shortcut: 'Ctrl+O', action: () => fileInputRef.current?.click() },
+        { label: 'Open Recent', submenu: recentItems },
         { sep: true },
-        { label: 'Close', action: onExitToHome },
+        { label: 'Close Image Converter', action: onExitToHome },
+      ],
+    },
+    {
+      label: 'Preferences',
+      items: [
+        { label: 'Preferences…', shortcut: 'Ctrl+,', action: () => setPrefsOpen(true) },
+        { sep: true },
+        { label: 'Set Language', submenu: [{ label: 'English', disabled: true }] },
       ],
     },
     {
@@ -237,7 +379,15 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
 
   return (
     <div className="imgc-frame ze-app">
-      <MenuBar menus={menus} title="Image Converter" />
+      <MenuBar
+        menus={menus}
+        leftSlot={
+          <div className="ze-home-link" onClick={onExitToHome} title="Back to project manager">
+            ⌂ ZiroEDA
+          </div>
+        }
+        title={loaded ? `${loaded.fullName} — Image Converter` : 'Image Converter'}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -280,19 +430,20 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
         <div className="imgc-side">
           <fieldset className="imgc-group">
             <legend>Image Information</legend>
+            {/* KiCad's labels read "0000" until the first image is loaded. */}
             <div className="imgc-info">
               <span className="k">Image size:</span>
-              <span className="v">{loaded ? loaded.w : 0}</span>
-              <span className="v">{loaded ? loaded.h : 0}</span>
+              <span className="v">{loaded ? loaded.w : '0000'}</span>
+              <span className="v">{loaded ? loaded.h : '0000'}</span>
               <span className="u">pixels</span>
 
               <span className="k">Image PPI:</span>
-              <span className="v">{loaded ? loaded.originalDPI : 0}</span>
-              <span className="v">{loaded ? loaded.originalDPI : 0}</span>
+              <span className="v">{loaded ? loaded.originalDPIX : '0000'}</span>
+              <span className="v">{loaded ? loaded.originalDPIY : '0000'}</span>
               <span className="u">PPI</span>
 
               <span className="k">BPP:</span>
-              <span className="v">{loaded ? loaded.bpp : 0}</span>
+              <span className="v">{loaded ? loaded.bpp : '0000'}</span>
               <span className="v" />
               <span className="u">bits</span>
             </div>
@@ -338,7 +489,11 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
               </select>
             </div>
             <label className="imgc-check">
-              <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={lock}
+                onChange={(e) => toggleLock(e.target.checked)}
+              />
               Lock height / width ratio
             </label>
           </fieldset>
@@ -353,6 +508,7 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
                 max={100}
                 value={threshold}
                 disabled={!loaded}
+                title="Adjust the level to convert the greyscale picture to a black and white picture."
                 onChange={(e) => setThreshold(Number(e.target.value))}
               />
               <span className="imgc-slider-val">{threshold}</span>
@@ -420,12 +576,12 @@ export function ImageConverter({ onExitToHome }: { onExitToHome: () => void }): 
         </div>
       </div>
 
+      {/* KiCad's single-field status bar (CreateStatusBar(1, ...)). */}
       <div className="imgc-statusbar">
         <span className="cell grow">{status}</span>
-        <span className="cell">
-          {loaded ? `Output DPI: ${Math.round(dpiX)} × ${Math.round(dpiY)}` : 'No image'}
-        </span>
       </div>
+
+      {prefsOpen && <PreferencesDialog onClose={() => setPrefsOpen(false)} />}
 
       {aboutOpen && (
         <div className="imgc-modal-backdrop" onMouseDown={() => setAboutOpen(false)}>
