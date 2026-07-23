@@ -1677,6 +1677,62 @@ export function setBoardItemsLocked(
   };
 }
 
+// ----- page settings (DIALOG_PAGES_SETTINGS) ----------------------------------
+
+/** The page settings the dialog edits (paper token + title block fields). */
+export interface BoardPageSettings {
+  /** `"A4"`, `"A4 portrait"`, or `"User <w> <h>"` (mm) — the schematic token. */
+  paper: string;
+  title: string;
+  date: string;
+  rev: string;
+  company: string;
+  /** Up to 9 comment lines; empty ones are dropped. */
+  comments: readonly string[];
+}
+
+/**
+ * Apply the Page Settings dialog result: rebuild the `(paper …)` and
+ * `(title_block …)` source nodes (replace-or-append, like the schematic's
+ * page_settings command) and mirror the typed model fields.
+ */
+export function setBoardPageSettings(board: Board, s: BoardPageSettings): Board {
+  const parts = s.paper.split(/\s+/);
+  const paperItems: SNode[] = [atom('paper'), str(parts[0] ?? 'A4')];
+  if (parts[0] === 'User' && parts.length >= 3) paperItems.push(atom(parts[1]!), atom(parts[2]!));
+  else if (parts[1] === 'portrait') paperItems.push(atom('portrait'));
+
+  const tb: SNode[] = [atom('title_block')];
+  if (s.title) tb.push(list(atom('title'), str(s.title)));
+  if (s.date) tb.push(list(atom('date'), str(s.date)));
+  if (s.rev) tb.push(list(atom('rev'), str(s.rev)));
+  if (s.company) tb.push(list(atom('company'), str(s.company)));
+  s.comments.forEach((c, i) => {
+    if (c) tb.push(list(atom('comment'), atom(String(i + 1)), str(c)));
+  });
+
+  let source = patchChild(board.source, 'paper', { kind: 'list', items: paperItems });
+  source =
+    tb.length > 1
+      ? patchChild(source, 'title_block', { kind: 'list', items: tb })
+      : removeChild(source, 'title_block');
+  return {
+    ...board,
+    paper: s.paper,
+    titleBlock:
+      tb.length > 1
+        ? {
+            title: s.title || undefined,
+            date: s.date || undefined,
+            rev: s.rev || undefined,
+            company: s.company || undefined,
+            comments: s.comments.some((c) => c) ? [...s.comments] : undefined,
+          }
+        : undefined,
+    source,
+  };
+}
+
 // ----- mirror (EDIT_TOOL::Mirror) ---------------------------------------------
 
 /**

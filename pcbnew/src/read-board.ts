@@ -479,15 +479,29 @@ export function readBoard(root: SList): Board {
   if (head(root) !== 'kicad_pcb') throw new Error('not a kicad_pcb document');
   const board: Board = {
     version: numberField(root, 'version') ?? 0,
-    paper: stringField(root, 'paper'),
+    // Full token ("A4", "A4 portrait", "User 200 150") so the Page Settings
+    // dialog round-trips orientation and custom sizes; consumers split on
+    // whitespace and use the first word for the size lookup.
+    paper: (() => {
+      const p = childNamed(root, 'paper');
+      return p ? args(p).join(' ') : undefined;
+    })(),
     titleBlock: (() => {
       const tb = childNamed(root, 'title_block');
       if (!tb) return undefined;
+      // `(comment N "text")` rows; index 0 = comment 1.
+      const comments: string[] = [];
+      for (const c of childrenNamed(tb, 'comment')) {
+        const n = numArg(c, 0);
+        const text = arg(c, 1);
+        if (n !== undefined && text !== undefined) comments[n - 1] = text;
+      }
       return {
         title: stringField(tb, 'title'),
         date: stringField(tb, 'date'),
         rev: stringField(tb, 'rev'),
         company: stringField(tb, 'company'),
+        comments: comments.length > 0 ? comments : undefined,
       };
     })(),
     layers: [],

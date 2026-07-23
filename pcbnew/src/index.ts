@@ -67,10 +67,18 @@ export {
   boardUuidIndex,
   setBoardItemsLocked,
   isBoardItemLocked,
+  setBoardPageSettings,
+  type BoardPageSettings,
   type BoardItemKind,
   type BoardItemRef,
   type BoardBBox,
 } from './edit-board.js';
+export {
+  plotGerberLayer,
+  plotExcellonDrill,
+  gerberProtelExtension,
+  gerberFileFunction,
+} from './plot_gerber.js';
 export {
   serializeBoard,
   writeBoardNode,
