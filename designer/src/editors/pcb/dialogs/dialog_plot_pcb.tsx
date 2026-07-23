@@ -70,73 +70,80 @@ export function DialogPcbPlot({ board, visibleLayers, onClose }: Props): JSX.Ele
   };
 
   return (
-    <div className="ze-find-dialog" onMouseDown={(e) => e.stopPropagation()}>
-      <div className="ze-modal-header">
-        Plot
-        <span className="x" onClick={onClose}>
-          ✕
-        </span>
-      </div>
-      <div className="ze-find-body" style={{ display: 'flex', gap: 12 }}>
-        <fieldset style={{ minWidth: 190 }}>
-          <legend>Include Layers</legend>
-          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-            {layerNames.map((l) => (
-              <label key={l} style={{ display: 'block' }}>
-                <input type="checkbox" checked={checked.has(l)} onChange={() => toggle(l)} /> {l}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-        <div style={{ minWidth: 260 }}>
-          <label style={{ display: 'block', marginBottom: 6 }}>
-            Plot format:{' '}
-            <select value="gerber">
-              <option value="gerber">Gerber</option>
-              <option disabled>Postscript</option>
-              <option disabled>SVG</option>
-              <option disabled>DXF</option>
-              <option disabled>PDF</option>
-              <option disabled>PNG</option>
-            </select>
-          </label>
-          <fieldset>
-            <legend>Gerber Options</legend>
-            <label style={{ display: 'block' }}>
-              <input
-                type="checkbox"
-                checked={protel}
-                onChange={(e) => setProtel(e.target.checked)}
-              />{' '}
-              Use Protel filename extensions
-            </label>
-            <label style={{ display: 'block', opacity: 0.5 }} title="Job files are staged">
-              <input type="checkbox" disabled /> Generate Gerber job file
-            </label>
-            <label style={{ display: 'block' }}>
-              Coordinate format:{' '}
-              <select disabled value="46">
-                <option value="46">4.6, unit mm</option>
+    <div className="ze-modal-backdrop" onMouseDown={onClose}>
+      <div className="ze-modal" style={{ width: 540 }} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="ze-modal-header">
+          Plot
+          <span className="x" onClick={onClose}>
+            ✕
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 12, padding: 12 }}>
+          <fieldset style={{ minWidth: 190 }}>
+            <legend>Include Layers</legend>
+            <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+              {layerNames.map((l) => (
+                <label key={l} style={{ display: 'block' }}>
+                  <input type="checkbox" checked={checked.has(l)} onChange={() => toggle(l)} /> {l}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <div style={{ minWidth: 260 }}>
+            <label style={{ display: 'block', marginBottom: 6 }}>
+              Plot format:{' '}
+              <select value="gerber">
+                <option value="gerber">Gerber</option>
+                <option disabled>Postscript</option>
+                <option disabled>SVG</option>
+                <option disabled>DXF</option>
+                <option disabled>PDF</option>
+                <option disabled>PNG</option>
               </select>
             </label>
-            <label style={{ display: 'block', opacity: 0.5 }}>
-              <input type="checkbox" checked disabled /> Use extended X2 format (recommended)
-            </label>
-          </fieldset>
-          <div className="ze-muted" style={{ fontSize: 11, margin: '6px 0' }}>
-            Stroked text on plotted layers is staged; verify output in the Gerber Viewer.
+            <fieldset>
+              <legend>Gerber Options</legend>
+              <label style={{ display: 'block' }}>
+                <input
+                  type="checkbox"
+                  checked={protel}
+                  onChange={(e) => setProtel(e.target.checked)}
+                />{' '}
+                Use Protel filename extensions
+              </label>
+              <label style={{ display: 'block', opacity: 0.5 }} title="Job files are staged">
+                <input type="checkbox" disabled /> Generate Gerber job file
+              </label>
+              <label style={{ display: 'block' }}>
+                Coordinate format:{' '}
+                <select disabled value="46">
+                  <option value="46">4.6, unit mm</option>
+                </select>
+              </label>
+              <label style={{ display: 'block', opacity: 0.5 }}>
+                <input type="checkbox" checked disabled /> Use extended X2 format (recommended)
+              </label>
+            </fieldset>
+            <div className="ze-muted" style={{ fontSize: 11, margin: '6px 0' }}>
+              Stroked text on plotted layers is staged; verify output in the Gerber Viewer.
+            </div>
           </div>
-          <div className="ze-find-buttons">
-            <button type="button" className="primary" onClick={plot}>
-              Plot
-            </button>
-            <button type="button" onClick={drill}>
-              Generate Drill Files...
-            </button>
-            <button type="button" onClick={onClose}>
-              Close
-            </button>
-          </div>
+        </div>
+        {/* DIALOG_PLOT's button row: Run DRC… on the left (staged), then
+            Plot / Generate Drill Files… / Close. */}
+        <div className="ze-modal-footer">
+          <button type="button" disabled style={{ marginRight: 'auto', opacity: 0.5 }}>
+            Run DRC...
+          </button>
+          <button type="button" className="primary" onClick={plot}>
+            Plot
+          </button>
+          <button type="button" onClick={drill}>
+            Generate Drill Files...
+          </button>
+          <button type="button" onClick={onClose}>
+            Close
+          </button>
         </div>
       </div>
     </div>
