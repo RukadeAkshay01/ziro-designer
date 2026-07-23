@@ -19,6 +19,7 @@ import type {
   LabelKind,
   LabelShape,
   LibSymbol,
+  TextEffects,
   Vec2,
 } from '../types.js';
 import type { Orientation } from '@ziroeda/common/src/transform.js';
@@ -96,6 +97,11 @@ export function makeBus(start: Vec2, end: Vec2): SchLine {
 export interface LabelOptions {
   shape?: LabelShape;
   angle?: number;
+  /** Formatting from the label dialog (DIALOG_LABEL_PROPERTIES). */
+  bold?: boolean;
+  italic?: boolean;
+  /** Text size in IU (both dimensions); default 1.27 mm. */
+  fontSize?: number;
 }
 
 /**
@@ -113,15 +119,18 @@ export function makeLabel(
   const angle = opts.angle ?? 0;
   const hasShape = kind === 'global_label' || kind === 'hierarchical_label';
   const shape: LabelShape = opts.shape ?? 'bidirectional';
+  const sizeIU = opts.fontSize ?? 12700;
   const justify =
     kind === 'label'
       ? list(atom('justify'), atom('left'), atom('bottom'))
       : list(atom('justify'), atom('left'));
-  const effects = list(
-    atom('effects'),
-    list(atom('font'), list(atom('size'), atom('1.27'), atom('1.27'))),
-    justify,
-  );
+  const fontItems: SList['items'] = [
+    atom('font'),
+    list(atom('size'), atom(mm(sizeIU)), atom(mm(sizeIU))),
+  ];
+  if (opts.bold) fontItems.push(list(atom('bold'), atom('yes')));
+  if (opts.italic) fontItems.push(list(atom('italic'), atom('yes')));
+  const effects = list(atom('effects'), { kind: 'list', items: fontItems }, justify);
   const items: SList['items'] = [atom(kind), str(text)];
   if (hasShape) items.push(list(atom('shape'), atom(shape)));
   items.push(
@@ -129,17 +138,22 @@ export function makeLabel(
     effects,
     list(atom('uuid'), str(uuid)),
   );
+  const modelEffects: {
+    -readonly [K in keyof TextEffects]?: TextEffects[K];
+  } & { hidden: boolean } = {
+    hidden: false,
+    fontSize: [sizeIU, sizeIU],
+    justify: kind === 'label' ? ['left', 'bottom'] : ['left'],
+  };
+  if (opts.bold) modelEffects.bold = true;
+  if (opts.italic) modelEffects.italic = true;
   const label: { -readonly [K in keyof SchLabel]: SchLabel[K] } = {
     kind,
     text,
     at,
     angle,
     uuid,
-    effects: {
-      hidden: false,
-      fontSize: [12700, 12700],
-      justify: kind === 'label' ? ['left', 'bottom'] : ['left'],
-    },
+    effects: modelEffects,
     source: { kind: 'list', items },
   };
   if (hasShape) label.shape = shape;

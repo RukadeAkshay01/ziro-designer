@@ -245,6 +245,10 @@ export interface PendingLabel {
   kind: LabelKind;
   text: string;
   shape: LabelShape;
+  /** Formatting from the label dialog (bold/italic/size in IU). */
+  bold?: boolean;
+  italic?: boolean;
+  fontSize?: number;
 }
 
 export interface CanvasController {
@@ -635,6 +639,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
         labels: [
           makeLabel(pendingLabel.kind, pendingLabel.text, snap(cursorRef.current), {
             shape: pendingLabel.shape,
+            bold: pendingLabel.bold,
+            italic: pendingLabel.italic,
+            fontSize: pendingLabel.fontSize,
           }),
         ],
       }).apply(doc);
@@ -1140,6 +1147,9 @@ export const SchematicCanvas = forwardRef<CanvasController, Props>(function Sche
               labels: [
                 makeLabel(pendingLabel.kind, pendingLabel.text, snap(world), {
                   shape: pendingLabel.shape,
+                  bold: pendingLabel.bold,
+                  italic: pendingLabel.italic,
+                  fontSize: pendingLabel.fontSize,
                 }),
               ],
             }),
