@@ -32,6 +32,9 @@ export interface PlotOpts {
   dpi?: number;
   /** Pen width (IU) for zero-width strokes ("Minimum line width"). */
   defaultPenIU?: number;
+  /** Effective junction-dot diameter (IU) from the schematic settings
+   *  (SCHEMATIC_SETTINGS::GetJunctionSize()), so plots match the screen. */
+  junctionDiameterIU?: number;
 }
 
 /** An all-black-on-white theme for monochrome output (KiCad's B&W plot). */
@@ -95,6 +98,7 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     showDrawingSheet: opts.drawingSheet,
     ...(opts.sheet ? { drawingSheet: opts.sheet } : {}),
     defaultPenIU: opts.defaultPenIU,
+    junctionDiameterIU: opts.junctionDiameterIU,
     selectionThicknessMils: 0,
     highlightThicknessMils: 0,
     grid: { show: false, sizeIU: 12700, style: 'dots', lineWidthPx: 1, minSpacingPx: 10 },
@@ -479,21 +483,30 @@ function round(v: number): number {
 // ----- Print (browser) -------------------------------------------------------
 
 /** Open the browser print flow for the rendered sheet (SCH_PRINTOUT). */
-export function printSheet(sch: Schematic, base: Theme, opts: PlotOpts, title: string): void {
+export function printSheet(
+  sch: Schematic,
+  base: Theme,
+  opts: PlotOpts,
+  title: string,
+  preview = false,
+): void {
   // Colour output prints as-is; B&W forces the monochrome theme. The print
-  // window sizes the image to the page and calls print() once it has loaded.
+  // window sizes the image to the page. "Print" auto-opens the browser print
+  // flow on load; "Print Preview" (KiCad's Apply) just shows the rendered page
+  // so the user can review it and print from the browser when ready.
   const canvas = renderSheetToCanvas(sch, opts.color ? base : KICAD_CLASSIC, opts, 300);
   const dataUrl = canvas.toDataURL('image/png');
   const page = pageIU(sch);
   const landscape = page.w >= page.h;
   const win = window.open('', '_blank');
   if (!win) return;
+  const onload = preview ? 'window.focus();' : 'window.focus();window.print();';
   win.document.write(
     `<!doctype html><html><head><title>${escText(title)}</title>` +
       `<style>@page { size: ${landscape ? 'landscape' : 'portrait'}; margin: 0; }` +
       `html,body { margin: 0; padding: 0; }` +
       `img { display: block; width: 100%; height: auto; }</style></head>` +
-      `<body><img src="${dataUrl}" onload="window.focus();window.print();"/></body></html>`,
+      `<body><img src="${dataUrl}" onload="${onload}"/></body></html>`,
   );
   win.document.close();
 }

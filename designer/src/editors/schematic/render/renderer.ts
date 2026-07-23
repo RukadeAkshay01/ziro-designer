@@ -177,6 +177,10 @@ export interface RenderOpts {
   /** Pen width (IU) for zero-width strokes — the plot dialog's "Minimum line
    *  width" (default pen thickness). Unset = KiCad's 6-mil default. */
   defaultPenIU?: number;
+  /** Effective junction-dot diameter (IU) for junctions with no explicit
+   *  diameter (SCHEMATIC_SETTINGS::GetJunctionSize()). A value ≤ 1 means the
+   *  user chose "None" — no dot is drawn. Unset = DEFAULT_JUNCTION_DIAM. */
+  junctionDiameterIU?: number;
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -210,9 +214,13 @@ export const DEFAULT_RENDER_OPTS: RenderOpts = {
 
 const MM = 10000; // IU per mm
 const DEFAULT_LINE_WIDTH = 0.1524 * MM; // ~6 mil, KiCad default
+const DEFAULT_JUNCTION_DIAM = 0.9144 * MM; // 36 mil (eeschema/default_values.h)
 // The pen for zero-width strokes; plot/print override it per render via
 // RenderOpts.defaultPenIU (KiCad's plot "minimum line width" setting).
 let g_defaultPen = DEFAULT_LINE_WIDTH;
+// The junction-dot diameter for diameter-0 junctions, from Schematic Setup >
+// Formatting (SCH_JUNCTION::getEffectiveShape falls back to settings size).
+let g_junctionDiam = DEFAULT_JUNCTION_DIAM;
 const _GRID = 1.27 * MM; // 50 mil
 
 function libUnitMatches(u: LibSymbolUnit, unit: number, bodyStyle: number): boolean {
@@ -294,6 +302,10 @@ export function renderSchematic(
 ): void {
   g_defaultPen =
     opts.defaultPenIU && opts.defaultPenIU > 0 ? opts.defaultPenIU : DEFAULT_LINE_WIDTH;
+  g_junctionDiam =
+    opts.junctionDiameterIU && opts.junctionDiameterIU > 0
+      ? opts.junctionDiameterIU
+      : DEFAULT_JUNCTION_DIAM;
   const libById = new Map<string, LibSymbol>();
   for (const lib of sch.libSymbols) libById.set(lib.libId, lib);
 
@@ -378,7 +390,8 @@ export function renderSchematic(
     ctx.strokeStyle = HALO_COLOR;
     sch.junctions.forEach((j, i) => {
       if (!hl(refId('junction', j.uuid, i))) return;
-      const d = j.diameter > 0 ? j.diameter : 0.9 * MM;
+      const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+      if (d <= 1) return; // settings size "None": nothing to halo
       ctx.lineWidth = shadowWidth;
       ctx.beginPath();
       ctx.arc(j.at.x, j.at.y, d / 2, 0, Math.PI * 2);
@@ -473,12 +486,15 @@ export function renderSchematic(
   // overrides the layer colour (SCH_JUNCTION::GetJunctionColor).
   sch.junctions.forEach((j, i) => {
     if (!inView(j.at.x, j.at.y, j.at.x, j.at.y)) return;
+    // Diameter 0 = "use schematic settings"; a settings size of ≤1 IU is the
+    // "None" choice — the junction exists but draws no dot (sch_junction.cpp).
+    const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+    if (d <= 1) return;
     ctx.fillStyle = hl(refId('junction', j.uuid, i))
       ? theme.netHighlight
       : j.color
         ? cssColor(j.color)
         : theme.junction;
-    const d = j.diameter > 0 ? j.diameter : 0.9 * MM;
     ctx.beginPath();
     ctx.arc(j.at.x, j.at.y, d / 2, 0, Math.PI * 2);
     ctx.fill();
@@ -1360,7 +1376,9 @@ function drawSelectionShadows(
   // Junctions: a slightly larger filled disc under the dot.
   sch.junctions.forEach((j, i) => {
     if (!selection.has(refId('junction', j.uuid, i))) return;
-    const r = (j.diameter > 0 ? j.diameter : 0.9 * MM) / 2 + width / 2;
+    const d = j.diameter > 0 ? j.diameter : g_junctionDiam;
+    if (d <= 1) return; // settings size "None": no dot to underlay
+    const r = d / 2 + width / 2;
     ctx.beginPath();
     ctx.arc(j.at.x, j.at.y, r, 0, Math.PI * 2);
     ctx.fill();

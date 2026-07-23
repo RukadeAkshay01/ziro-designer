@@ -128,6 +128,8 @@ import {
   defaultSchematicSetup,
   type SchematicSetup,
 } from './dialogs/dialog_schematic_setup.js';
+import { findProjectPro, readSchematicSetup, writeSchematicSetupText } from './project_settings.js';
+import { IU_PER_MILS, junctionDotDiameterIU } from './schematic_settings.js';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
@@ -954,11 +956,32 @@ export function SchematicEditor({
     (opts: PlotOpts, themeId?: string) => {
       const printTheme =
         themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
-      const o = activeSheet ? { ...opts, sheet: activeSheet } : opts;
+      // Junction dots print at their Schematic Setup size, like the screen.
+      const o: PlotOpts = {
+        ...opts,
+        junctionDiameterIU: junctionDotDiameterIU(setup),
+        ...(activeSheet ? { sheet: activeSheet } : {}),
+      };
       if (doc) printSheet(doc, printTheme, o, outputBaseName());
       setPrintOpen(false);
     },
-    [doc, theme, outputBaseName, activeSheet],
+    [doc, theme, outputBaseName, activeSheet, setup],
+  );
+
+  // Print Preview (DIALOG_PRINT's Apply / OnPrintPreview): render into a new tab
+  // without auto-printing, and keep the dialog open so options can be adjusted.
+  const doPreview = useCallback(
+    (opts: PlotOpts, themeId?: string) => {
+      const printTheme =
+        themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
+      const o: PlotOpts = {
+        ...opts,
+        junctionDiameterIU: junctionDotDiameterIU(setup),
+        ...(activeSheet ? { sheet: activeSheet } : {}),
+      };
+      if (doc) printSheet(doc, printTheme, o, outputBaseName(), true);
+    },
+    [doc, theme, outputBaseName, activeSheet, setup],
   );
 
   // Bulk Edit Symbol Fields: apply the changed cells per sheet — the current
@@ -997,7 +1020,11 @@ export function SchematicEditor({
   const doPlot = useCallback(
     (format: PlotFormat, opts: PlotOpts, allPages: boolean, themeId?: string) => {
       const plotTheme = themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
-      const o = activeSheet ? { ...opts, sheet: activeSheet } : opts;
+      const o: PlotOpts = {
+        ...opts,
+        junctionDiameterIU: junctionDotDiameterIU(setup),
+        ...(activeSheet ? { sheet: activeSheet } : {}),
+      };
       const one = (d: Schematic, name: string): void => {
         if (format === 'svg') plotSvg(d, plotTheme, o, name);
         else if (format === 'png') void plotPng(d, plotTheme, o, name);
@@ -1009,7 +1036,7 @@ export function SchematicEditor({
       } else if (doc) one(doc, outputBaseName());
       setPlotOpen(false);
     },
-    [doc, theme, outputBaseName, liveDocs, activeSheet],
+    [doc, theme, outputBaseName, liveDocs, activeSheet, setup],
   );
   useEffect(() => {
     // Changed search settings restart the scan (upstream m_foundItemHighlight reset).
@@ -1147,6 +1174,9 @@ export function SchematicEditor({
     // drop any in-session sheet override for the freshly opened project.
     setRawFiles(initialProject ?? []);
     setSheetOverride(null);
+    // Hydrate the Schematic Setup from the project's .kicad_pro (SCHEMATIC/ERC/
+    // NET_SETTINGS live in the project file, like KiCad's project load).
+    setSetup(readSchematicSetup(initialProject ?? [], rootPro ?? undefined));
     // rootPro is a dep so switching the active project (same folder, different
     // .kicad_pro) reloads with the newly-pinned root sheet.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1602,6 +1632,9 @@ export function SchematicEditor({
       // Default pen for zero-width strokes = Schematic Setup > Formatting's
       // "Default line width" (SCHEMATIC_SETTINGS::m_DefaultLineWidth), mils→IU.
       defaultPenIU: mmToIU((setup.formatting.defaultLineWidthMils * 25.4) / 1000),
+      // Junction-dot size from Formatting's choice × Default-netclass wire
+      // width (SCHEMATIC_SETTINGS::GetJunctionSize); ≤1 IU = "None", no dots.
+      junctionDiameterIU: junctionDotDiameterIU(setup),
       selectionThicknessMils: es.selection.thickness,
       highlightThicknessMils: es.selection.highlight_thickness,
       grid: {
@@ -1627,7 +1660,7 @@ export function SchematicEditor({
         },
       },
     }),
-    [es, activeSheet],
+    [es, activeSheet, setup],
   );
 
   const inputPrefs = useMemo<InputPrefs>(
@@ -2841,11 +2874,8 @@ export function SchematicEditor({
           {printOpen && (
             <DialogPrint
               onPrint={doPrint}
+              onPreview={doPreview}
               themeId={es.appearance.color_theme}
-              onPageSetup={() => {
-                setPrintOpen(false);
-                setPageSettingsOpen(true);
-              }}
               onClose={() => setPrintOpen(false)}
             />
           )}
@@ -2879,6 +2909,21 @@ export function SchematicEditor({
               value={setup}
               onOk={(next) => {
                 setSetup(next);
+                // Commit to the project's .kicad_pro (SCHEMATIC_SETTINGS /
+                // ERC_SETTINGS / NET_SETTINGS all live there), preserving every
+                // key the dialog does not own — same flow as the drawing-sheet
+                // reference in applyPageSettings.
+                setRawFiles((prev) => {
+                  const pro = findProjectPro(prev, rootPro ?? undefined);
+                  if (!pro) return prev;
+                  const updated = writeSchematicSetupText(pro.text, next);
+                  if (updated === null || updated === pro.text) return prev;
+                  const changed = { name: pro.name, text: updated };
+                  // Persist now (not via the debounced autosave) so a reopen
+                  // straight after OK reads the new settings back.
+                  onPersistFiles?.([changed]);
+                  return prev.map((f) => (f.name === pro.name ? changed : f));
+                });
                 setSetupOpen(false);
               }}
               onCancel={() => setSetupOpen(false)}
@@ -3025,6 +3070,13 @@ export function SchematicEditor({
       {LABEL_TOOL_KINDS[activeTool] && !pendingLabel && !labelEdit && (
         <LabelDialog
           kind={LABEL_TOOL_KINDS[activeTool]!}
+          // New labels/text default to Schematic Setup > Formatting's text size
+          // (DIALOG_LABEL_PROPERTIES seeds from m_DefaultTextSize).
+          initialFormat={{
+            bold: false,
+            italic: false,
+            sizeIU: setup.formatting.defaultTextSizeMils * IU_PER_MILS,
+          }}
           suggestions={labelSuggestions}
           onOk={(text: string, shape: LabelShape, format: LabelFormat) =>
             setPendingLabel({
