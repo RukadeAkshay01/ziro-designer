@@ -1,5 +1,5 @@
 /**
- * "Transmission Lines" panel — analysis/synthesis for the eight line types.
+ * "Transmission Lines" panel — analysis/synthesis for the nine line types.
  * Counterpart: KiCad `calculator_panels/panel_transline.cpp`.
  *
  * Every physical dimension has a per-field unit selector (mm/mil/inch/µm…) and
@@ -15,6 +15,8 @@ import {
   RELATIVE_DIELECTRIC_CONSTANTS,
   coaxAnalyze,
   coaxSynthesize,
+  coupledStriplineAnalyze,
+  coupledStriplineSynthesize,
   coplanarAnalyze,
   coplanarSynthesize,
   coupledMicrostripAnalyze,
@@ -32,22 +34,25 @@ import { Field, FREQ_UNITS, Group, LEN_UNITS, NumField, fmt, parseNum } from '..
 
 type LineType =
   | 'microstrip'
+  | 'c_microstrip'
+  | 'stripline'
+  | 'c_stripline'
   | 'cpw'
   | 'gcpw'
   | 'rectwaveguide'
   | 'coax'
-  | 'c_microstrip'
-  | 'stripline'
   | 'twistedpair';
 
 const LINE_TYPES: { id: LineType; name: string }[] = [
+  // KiCad master's order (panel_transline.cpp tltype_list).
   { id: 'microstrip', name: 'Microstrip Line' },
+  { id: 'c_microstrip', name: 'Coupled Microstrip Lines' },
+  { id: 'stripline', name: 'Stripline' },
+  { id: 'c_stripline', name: 'Coupled Stripline' },
   { id: 'cpw', name: 'Coplanar Waveguide' },
   { id: 'gcpw', name: 'Coplanar Waveguide with Ground Plane' },
   { id: 'rectwaveguide', name: 'Rectangular Waveguide' },
   { id: 'coax', name: 'Coaxial Line' },
-  { id: 'c_microstrip', name: 'Coupled Microstrip Lines' },
-  { id: 'stripline', name: 'Stripline' },
   { id: 'twistedpair', name: 'Twisted Pair' },
 ];
 
@@ -111,6 +116,14 @@ const PHYS_FIELDS: Record<LineType, PhysField[]> = {
   stripline: [
     L('w', 'Strip width (W):', 0.7),
     L('h', 'Ground spacing (B):', 1.6),
+    L('t', 'Strip thickness (T):', 0.035, 'µm'),
+    L('l', 'Line length (L):', 50),
+  ],
+  c_stripline: [
+    L('w', 'Line width (W):', 0.2),
+    L('s', 'Gap width (S):', 0.2),
+    L('h', 'Height of substrate (H):', 0.2),
+    L('a', 'Offset to nearest ground (a, 0 = centered):', 0),
     L('t', 'Strip thickness (T):', 0.035, 'µm'),
     L('l', 'Line length (L):', 50),
   ],
@@ -180,6 +193,8 @@ export function PanelTransline(): JSX.Element {
   const [sub, setSub] = useState({ ...SUBSTRATE_DEFAULTS });
   const [phys, setPhys] = useState<Record<string, number>>(() => defaults('microstrip'));
   const [z0, setZ0] = useState('50');
+  // Odd-mode impedance target — used by the coupled stripline (KiCad Zodd).
+  const [zOdd, setZOdd] = useState('50');
   const [angle, setAngle] = useState('90');
   const [result, setResult] = useState<TranslineAnalysis | null>(null);
   const [error, setError] = useState('');
@@ -194,6 +209,7 @@ export function PanelTransline(): JSX.Element {
     setResult(null);
     setError('');
     setZ0(t === 'c_microstrip' ? '100' : t === 'twistedpair' ? '120' : '50');
+    setZOdd('50');
   };
 
   const el = () => ({
@@ -250,6 +266,36 @@ export function PanelTransline(): JSX.Element {
             e,
           );
           break;
+        case 'c_stripline': {
+          const cr = coupledStriplineAnalyze(
+            {
+              widthM: v('w'),
+              gapM: v('s'),
+              heightM: v('h'),
+              offsetAM: v('a'),
+              thicknessM: v('t'),
+              lengthM: v('l'),
+            },
+            e,
+          );
+          r = {
+            z0: Math.sqrt(cr.z0Even * cr.z0Odd),
+            epsEff: cr.epsEffEven,
+            angleDeg: cr.angleDeg,
+            conductorLossDb: 0.5 * (cr.attenCondEvenDb + cr.attenCondOddDb),
+            dielectricLossDb: 0.5 * (cr.attenDielEvenDb + cr.attenDielOddDb),
+            skinDepthM: cr.skinDepthM,
+            extra: {
+              z0Even: cr.z0Even,
+              z0Odd: cr.z0Odd,
+              zDiff: cr.zDiff,
+              zComm: cr.zComm,
+              coupling: cr.couplingK,
+            },
+          };
+          setZOdd(fmt(cr.z0Odd, 5));
+          break;
+        }
         case 'twistedpair':
           r = twistedPairAnalyze(
             { dinM: v('din'), doutM: v('dout'), twistsPerM: v('twists'), lengthM: v('l') },
@@ -258,7 +304,8 @@ export function PanelTransline(): JSX.Element {
           break;
       }
       setResult(r);
-      setZ0(fmt(type === 'c_microstrip' ? (r.extra?.zDiff ?? r.z0) : r.z0, 5));
+      if (type === 'c_stripline') setZ0(fmt(r.extra?.z0Even ?? r.z0, 5));
+      else setZ0(fmt(type === 'c_microstrip' ? (r.extra?.zDiff ?? r.z0) : r.z0, 5));
       setAngle(fmt(r.angleDeg, 5));
     } catch {
       setError('Analysis failed — check the input values.');
@@ -335,6 +382,29 @@ export function PanelTransline(): JSX.Element {
           angTarget,
         );
         if (s) next = { ...phys, w: s.widthM, l: s.lengthM };
+        break;
+      }
+      case 'c_stripline': {
+        // Joint (W, S) Newton solve for the Zeven/Zodd targets (KiCad default path).
+        const zOddTarget = parseNum(zOdd);
+        if (!(zOddTarget > 0)) {
+          setError('Enter a positive odd-mode impedance.');
+          return;
+        }
+        const s = coupledStriplineSynthesize(
+          {
+            widthM: v('w'),
+            gapM: v('s'),
+            heightM: v('h'),
+            offsetAM: v('a'),
+            thicknessM: v('t'),
+            lengthM: v('l'),
+          },
+          e,
+          zTarget,
+          zOddTarget,
+        );
+        if (s) next = { ...phys, w: s.widthM, s: s.gapM };
         break;
       }
       case 'twistedpair': {
@@ -457,11 +527,25 @@ export function PanelTransline(): JSX.Element {
 
         <Group title="Electrical parameters">
           <Field
-            label={isDiff ? 'Differential impedance (Zd):' : 'Characteristic impedance (Z0):'}
+            label={
+              type === 'c_stripline'
+                ? 'Even-mode impedance (Zeven):'
+                : isDiff
+                  ? 'Differential impedance (Zd):'
+                  : 'Characteristic impedance (Z0):'
+            }
             value={z0}
             onChange={setZ0}
             unit="Ω"
           />
+          {type === 'c_stripline' && (
+            <Field
+              label="Odd-mode impedance (Zodd):"
+              value={zOdd}
+              onChange={setZOdd}
+              unit="Ω"
+            />
+          )}
           <Field label="Electrical length:" value={angle} onChange={setAngle} unit="°" />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="button" className="calc-btn primary" onClick={analyze}>

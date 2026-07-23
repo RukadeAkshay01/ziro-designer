@@ -25,4 +25,5 @@ export * from './transline/coplanar.js';
 export * from './transline/coax.js';
 export * from './transline/rectwaveguide.js';
 export * from './transline/stripline.js';
+export * from './transline/c_stripline.js';
 export * from './transline/twistedpair.js';
