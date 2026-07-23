@@ -303,6 +303,10 @@ export function SchematicEditor({
       return null;
     }
   }, []);
+  // Unsaved-changes flag ('*' in the title until the autosave hand-off; Save
+  // greys when clean) — same affordance as the PCB editor / KiCad's title.
+  const [dirty, setDirty] = useState(false);
+  const dirtySkipRef = useRef(true);
 
   const [doc, setDoc] = useState<Schematic | null>(initial);
   // Multi-sheet project: every parsed document by basename, the root file, and a
@@ -1443,7 +1447,24 @@ export function SchematicEditor({
 
   const promptOpen = useCallback(() => fileInputRef.current?.click(), []);
 
+  // Doc edits mark the title dirty; the flag clears after the app's coalesced
+  // autosave window (1.2 s) has taken the change. Mount / file switches skip.
+  useEffect(() => {
+    dirtySkipRef.current = true;
+  }, [currentFile]);
+  useEffect(() => {
+    if (dirtySkipRef.current) {
+      dirtySkipRef.current = false;
+      return;
+    }
+    setDirty(true);
+    const id = setTimeout(() => setDirty(false), 1600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc]);
+
   const save = useCallback(() => {
+    setDirty(false);
     setDoc((d) => {
       if (!d) return d;
       const text = serializeSchematic(d);
@@ -2561,7 +2582,11 @@ export function SchematicEditor({
         }
         title={
           <>
-            <b>{projectName || 'No project'}</b>&nbsp;—&nbsp;Schematic Editor
+            <b>
+              {dirty ? '*' : ''}
+              {projectName || 'No project'}
+            </b>
+            &nbsp;—&nbsp;Schematic Editor
           </>
         }
       />
@@ -2569,7 +2594,7 @@ export function SchematicEditor({
       <Toolbar
         entries={TOP_TOOLBAR}
         orientation="horizontal"
-        disabledIds={navDisabled}
+        disabledIds={dirty ? navDisabled : new Set([...(navDisabled ?? []), 'save'])}
         onActivate={onTopAction}
       />
 
