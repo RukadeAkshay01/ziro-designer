@@ -27,65 +27,20 @@ export default defineConfig({
     siteTitle: "Ziro Designer",
 
     nav: [
-      { text: "Documentation", link: "/", activeMatch: "^/(interface|quick-start|schematic|pcb|tools)?$|^/(schematic|pcb|tools)/" },
-      { text: "Design Notes", link: "/design/collaboration", activeMatch: "/design/" },
+      { text: "Documentation", link: "/" },
       { text: "ziroeda.com", link: "https://www.ziroeda.com" },
       { text: "Launch App", link: "https://www.ziroeda.com" },
     ],
 
-    // One top-level group with the sections nested under it, so they render as
-    // a tight, uniform list of collapsible items (the reference's structure).
-    sidebar: [
-      {
-        text: "Documentation",
-        collapsed: false,
-        items: [
-          {
-            text: "Introduction",
-            collapsed: false,
-            items: [
-              { text: "Introduction to Ziro Designer", link: "/" },
-              { text: "The Interface", link: "/interface" },
-              { text: "Quick Start", link: "/quick-start" },
-            ],
-          },
-          {
-            text: "Schematic Capture",
-            collapsed: true,
-            items: [
-              { text: "Overview", link: "/schematic/" },
-              { text: "Drawing a Schematic", link: "/schematic/drawing" },
-              { text: "Symbols & Libraries", link: "/schematic/symbols" },
-            ],
-          },
-          {
-            text: "PCB Layout",
-            collapsed: true,
-            items: [
-              { text: "Overview", link: "/pcb/" },
-              { text: "Placing Footprints", link: "/pcb/placement" },
-              { text: "Routing & Vias", link: "/pcb/routing" },
-            ],
-          },
-          {
-            text: "Tools",
-            collapsed: true,
-            items: [
-              { text: "Gerber Viewer", link: "/tools/gerber-viewer" },
-              { text: "Calculators", link: "/tools/calculators" },
-              { text: "Image Converter", link: "/tools/image-converter" },
-            ],
-          },
-          {
-            text: "Design Notes",
-            collapsed: true,
-            items: [
-              { text: "Real-time Collaboration", link: "/design/collaboration" },
-            ],
-          },
-        ],
-      },
-    ],
+    // Content is authored from scratch. Add sections here as pages are created,
+    // nesting them under one top group so they render as a tight, uniform list
+    // of collapsible items. Example:
+    //   sidebar: [{ text: "Documentation", items: [
+    //     { text: "Introduction", collapsed: false, items: [
+    //       { text: "Overview", link: "/introduction/" },
+    //     ]},
+    //   ]}],
+    sidebar: [],
 
     outline: { level: [2, 3], label: "On this page" },
 
