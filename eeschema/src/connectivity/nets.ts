@@ -82,6 +82,11 @@ export interface BusNet {
   items: string[];
   /** Expanded member net names (empty when unlabelled/unparsable). */
   members: string[];
+  /** Every bus label on the subgraph; `port` marks hierarchical labels
+   *  (upstream's label-vs-port distinction for bus-to-bus conflicts). */
+  labels: { id: string; text: string; port: boolean }[];
+  /** Wire-to-bus entry refIds attached to this bus. */
+  entryIds: string[];
 }
 
 export interface Netlist {
@@ -156,7 +161,7 @@ export function enumeratePins(sch: Schematic, libById: Map<string, LibSymbol>): 
 }
 
 /** True if point p lies on the segment a-b (exact, integer IU coordinates). */
-function onSegment(p: Vec2, a: Vec2, b: Vec2): boolean {
+export function onSegment(p: Vec2, a: Vec2, b: Vec2): boolean {
   const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
   if (cross !== 0) return false;
   return (
@@ -225,7 +230,7 @@ export function computeNetlist(
 
   // Labels: priority/name by kind. A bus label (vector/group syntax) sitting
   // on a bus names the bus subgraph instead of driving a wire net.
-  const busLabels: { id: string; at: Vec2; text: string; priority: Priority }[] = [];
+  const busLabels: { id: string; at: Vec2; text: string; priority: Priority; port: boolean }[] = [];
   sch.labels.forEach((l, i) => {
     if (l.kind === 'text') return; // free text is not a net driver
     const priority =
@@ -235,7 +240,13 @@ export function computeNetlist(
           ? Priority.HierLabel
           : Priority.LocalLabel;
     if (isBusLabel(l.text) && onAnyBus(l.at)) {
-      busLabels.push({ id: refId('label', l.uuid, i), at: l.at, text: l.text, priority });
+      busLabels.push({
+        id: refId('label', l.uuid, i),
+        at: l.at,
+        text: l.text,
+        priority,
+        port: l.kind === 'hierarchical_label',
+      });
       return;
     }
     nodes.push({
@@ -373,12 +384,16 @@ export function computeNetlist(
   };
   const busInfo = new Map<
     string,
-    { label: { text: string; priority: Priority } | null; labelIds: string[]; entryIds: string[] }
+    {
+      label: { text: string; priority: Priority } | null;
+      labels: { id: string; text: string; port: boolean }[];
+      entryIds: string[];
+    }
   >();
   const infoFor = (root: string): NonNullable<ReturnType<typeof busInfo.get>> => {
     let inf = busInfo.get(root);
     if (!inf) {
-      inf = { label: null, labelIds: [], entryIds: [] };
+      inf = { label: null, labels: [], entryIds: [] };
       busInfo.set(root, inf);
     }
     return inf;
@@ -388,7 +403,7 @@ export function computeNetlist(
     const root = busRootOfPoint(bl.at);
     if (!root) continue;
     const inf = infoFor(root);
-    inf.labelIds.push(bl.id);
+    inf.labels.push({ id: bl.id, text: bl.text, port: bl.port });
     if (!inf.label || bl.priority > inf.label.priority)
       inf.label = { text: bl.text, priority: bl.priority };
   }
@@ -420,8 +435,10 @@ export function computeNetlist(
     const busItems = busNodes.filter((b) => busUf.find(b.id) === root).map((b) => b.id);
     buses.push({
       name: inf.label?.text ?? '',
-      items: [...busItems, ...inf.labelIds, ...inf.entryIds],
+      items: [...busItems, ...inf.labels.map((l) => l.id), ...inf.entryIds],
       members,
+      labels: inf.labels,
+      entryIds: inf.entryIds,
     });
     if (members.length === 0) continue;
     const memberSet = new Set(members);

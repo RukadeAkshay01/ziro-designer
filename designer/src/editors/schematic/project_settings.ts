@@ -117,6 +117,9 @@ const SEVERITY_KEYS: readonly (readonly [ErcCode, string])[] = [
   ['label_not_connected', 'label_dangling'],
   ['label_single_pin', 'isolated_pin_label'],
   ['endpoint_off_grid', 'endpoint_off_grid'],
+  ['net_not_bus_member', 'net_not_bus_member'],
+  ['bus_to_net_conflict', 'bus_to_net_conflict'],
+  ['bus_to_bus_conflict', 'bus_to_bus_conflict'],
 ];
 
 /** Symbol-unit-notation index -> (subpart_id_separator, subpart_first_id).

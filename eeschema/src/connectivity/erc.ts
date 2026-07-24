@@ -30,7 +30,8 @@
 
 import type { Schematic, LibSymbol, Vec2 } from '../types.js';
 import { refId } from '../tools/hittest.js';
-import { computeNetlist, enumeratePins, type PinNode } from './nets.js';
+import { computeNetlist, enumeratePins, onSegment, type PinNode } from './nets.js';
+import { expandBusLabel, isBusLabel } from './bus.js';
 import {
   OK,
   WAR,
@@ -403,6 +404,111 @@ export function runErc(
         out.push(violation('endpoint_off_grid', MSG, p.at, [p.id]));
         flagged.add(p.symId);
       }
+    }
+  }
+
+  // ----- Bus rules (CONNECTION_GRAPH::ercCheckBus*) ------------------------
+  const busLines = sch.lines
+    .map((l, i) => ({ l, id: refId('line', l.uuid, i) }))
+    .filter((x) => x.l.kind === 'bus');
+  const netByCode = new Map(netlist.nets.map((n) => [n.code, n]));
+
+  // bus_to_net_conflict (ERCE_BUS_TO_NET_CONFLICT): a wire endpoint sitting
+  // directly on a bus (no entry), or a bus-syntax label driving a wire net.
+  sch.lines.forEach((l, i) => {
+    if (l.kind !== 'wire') return;
+    const wid = refId('line', l.uuid, i);
+    for (const p of [l.start, l.end]) {
+      const bus = busLines.find((b) => onSegment(p, b.l.start, b.l.end));
+      if (bus) {
+        out.push(
+          violation('bus_to_net_conflict', 'Invalid connection between bus and net items', p, [
+            wid,
+            bus.id,
+          ]),
+        );
+        break; // one marker per wire, like the off-grid test
+      }
+    }
+  });
+  for (const [lid, l] of labelIds) {
+    if (!isBusLabel(l.text)) continue;
+    // Bus labels on a bus were routed to the bus graph; one still in the wire
+    // netlist is a bus label attached to net items — but only when the net
+    // has other items (upstream needs a net item AND a bus item; a floating
+    // bus label is just unconnected).
+    const code = netlist.netByItem.get(lid);
+    const net = code !== undefined ? netByCode.get(code) : undefined;
+    if (net && net.items.length > 1) {
+      out.push(
+        violation('bus_to_net_conflict', 'Invalid connection between bus and net items', l.at, [
+          lid,
+        ]),
+      );
+    }
+  }
+
+  // net_not_bus_member (ERCE_BUS_ENTRY_CONFLICT): a net attached to a bus via
+  // an entry, whose resolved name is not one of the bus's members. Power-pin /
+  // global-label driven nets are exempt, and unnamed (auto-named) nets are
+  // left to the unconnected checks, like upstream.
+  const globalLabelNets = new Set<number>();
+  for (const [lid, l] of labelIds) {
+    if (l.kind === 'global_label') {
+      const code = netlist.netByItem.get(lid);
+      if (code !== undefined) globalLabelNets.add(code);
+    }
+  }
+  const powerNets = new Set<number>();
+  for (const p of pins) {
+    if (!p.isPowerSymbol) continue;
+    const code = netlist.netByItem.get(p.id);
+    if (code !== undefined) powerNets.add(code);
+  }
+  const entryById = new Map(
+    sch.busEntries.map((e, i) => [refId('busentry', e.uuid, i), e] as const),
+  );
+  for (const bus of netlist.buses) {
+    if (bus.members.length === 0) continue;
+    const memberSet = new Set(bus.members);
+    const busLineId = bus.items.find((id) => busLines.some((b) => b.id === id));
+    for (const entryId of bus.entryIds) {
+      const code = netlist.netByItem.get(entryId);
+      if (code === undefined) continue;
+      if (globalLabelNets.has(code) || powerNets.has(code)) continue;
+      const net = netByCode.get(code);
+      if (!net || net.name.startsWith('Net-')) continue; // undriven: incomplete
+      if (memberSet.has(net.name)) continue;
+      const entry = entryById.get(entryId);
+      out.push(
+        violation(
+          'net_not_bus_member',
+          `Net ${net.name} is graphically connected to bus ${bus.name} but is not a member of that bus`,
+          entry?.at ?? { x: 0, y: 0 },
+          busLineId ? [entryId, busLineId] : [entryId],
+        ),
+      );
+    }
+  }
+
+  // bus_to_bus_conflict (ERCE_BUS_TO_BUS_CONFLICT): a bus label and a bus
+  // port (hierarchical label) on the same bus that share no members.
+  for (const bus of netlist.buses) {
+    const label = bus.labels.find((l) => !l.port);
+    const port = bus.labels.find((l) => l.port);
+    if (!label || !port) continue;
+    const a = new Set(expandBusLabel(label.text, opts.busAliases)?.members ?? []);
+    const bMembers = expandBusLabel(port.text, opts.busAliases)?.members ?? [];
+    if (!bMembers.some((m) => a.has(m))) {
+      const l = labelIds.get(label.id);
+      out.push(
+        violation(
+          'bus_to_bus_conflict',
+          'Buses are graphically connected but share no bus members',
+          l?.at ?? { x: 0, y: 0 },
+          [label.id, port.id],
+        ),
+      );
     }
   }
 

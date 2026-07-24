@@ -95,7 +95,10 @@ export type ErcCode =
   | 'no_connect_dangling'
   | 'label_not_connected'
   | 'label_single_pin'
-  | 'endpoint_off_grid';
+  | 'endpoint_off_grid'
+  | 'net_not_bus_member'
+  | 'bus_to_net_conflict'
+  | 'bus_to_bus_conflict';
 
 /** A violation's reported severity (an ignored rule is not emitted at all). */
 export type ErcSeverity = 'error' | 'warning';
@@ -114,6 +117,16 @@ export const ERC_ITEMS: { code: ErcCode; title: string }[] = [
   { code: 'label_single_pin', title: 'Label connected to only one pin' },
   // Upstream lists this at the end of the Connections group (erc_settings.cpp).
   { code: 'endpoint_off_grid', title: 'Symbol pin or wire end off connection grid' },
+  // Conflicts group (bus rules; titles from erc_item.cpp).
+  {
+    code: 'net_not_bus_member',
+    title: 'Net is graphically connected to a bus but not a bus member',
+  },
+  { code: 'bus_to_net_conflict', title: 'Invalid connection between bus and net items' },
+  {
+    code: 'bus_to_bus_conflict',
+    title: 'Buses are graphically connected but share no bus members',
+  },
 ];
 
 /** ERC_SETTINGS default severities: error unless listed otherwise. */
@@ -128,6 +141,9 @@ export const DEFAULT_SEVERITIES: Record<ErcCode, ErcSeverityLevel> = {
   label_not_connected: 'error',
   label_single_pin: 'warning',
   endpoint_off_grid: 'warning',
+  net_not_bus_member: 'warning', // ERCE_BUS_ENTRY_CONFLICT
+  bus_to_net_conflict: 'error',
+  bus_to_bus_conflict: 'error',
 };
 
 /** The full ERC configuration (ERC_SETTINGS). */
