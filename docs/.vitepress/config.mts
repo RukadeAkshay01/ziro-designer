@@ -14,13 +14,11 @@ export default defineConfig({
   lastUpdated: true,
   appearance: "dark", // brand is dark-first; toggle still available
 
-  // Served at designer.ziroeda.com/docs, as a subpath of the app's Vercel
-  // deployment. The build emits into the app's output dir under /docs.
-  base: "/docs/",
-  outDir: "../designer/dist/docs",
+  // Standalone docs site — its own Vercel project + subdomain (e.g.
+  // docs.designer.ziroeda.com), served from that project's root.
 
   head: [
-    ["link", { rel: "icon", type: "image/svg+xml", href: "/docs/logo.svg" }],
+    ["link", { rel: "icon", type: "image/svg+xml", href: "/logo.svg" }],
     ["meta", { name: "theme-color", content: "#08080a" }],
   ],
 
