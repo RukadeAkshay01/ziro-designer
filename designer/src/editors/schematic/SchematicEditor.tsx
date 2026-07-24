@@ -131,12 +131,18 @@ import {
 import { findProjectPro, readSchematicSetup, writeSchematicSetupText } from './project_settings.js';
 import {
   IU_PER_MILS,
+  hopOverArcRadiusIU,
   junctionDotDiameterIU,
   resolveEffectiveNetClass,
   subpartSettings,
 } from './schematic_settings.js';
 import { computeNetClassOverrides } from './net_overrides.js';
-import { RefDesTracker, listEmbeddedFiles, schematicTextVarResolver } from '@ziroeda/eeschema';
+import {
+  RefDesTracker,
+  detectNetChains,
+  listEmbeddedFiles,
+  schematicTextVarResolver,
+} from '@ziroeda/eeschema';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
@@ -1054,6 +1060,8 @@ export function SchematicEditor({
       overbarHeightRatio: setup.formatting.overbarOffsetRatio,
       // 0 mils is meaningful: KiCad's per-pin text-size fallback.
       pinSymbolSizeIU: setup.formatting.pinSymbolSizeMils * IU_PER_MILS,
+      // Wire hop-over arc radius (default line width × GetHopOverScale).
+      hopOverRadiusIU: hopOverArcRadiusIU(setup),
       // Multi-unit reference notation (SCHEMATIC_SETTINGS::SubReference).
       subpart: subpartSettings(setup.annotation),
     }),
@@ -2109,14 +2117,28 @@ export function SchematicEditor({
       else if (id === 'schematicSetup') {
         // The Embedded Files page lists the sheet's embedded_files section
         // (names + embed-fonts flag) fresh from the document on every open —
-        // read-only until the zstd blobs can be decoded.
+        // read-only until the zstd blobs can be decoded — and the Net Chains
+        // page shows the engine's detected (potential) chains
+        // (CONNECTION_GRAPH::RebuildNetChains), each keeping its persisted
+        // chain-class assignment.
         if (doc) {
           const emb = listEmbeddedFiles(doc);
+          const detected = netlist ? detectNetChains(doc, libById, netlist) : [];
           setSetup((prev) => ({
             ...prev,
             embeddedFiles: {
               files: emb.files.map((f) => ({ name: f.name, reference: f.reference })),
               embedFonts: emb.embedFonts,
+            },
+            netChains: {
+              ...prev.netChains,
+              chains: detected.map((c) => ({
+                name: c.name,
+                members: c.nets,
+                chainClass: prev.netChains.classByChain[c.name] ?? '',
+                netClass: resolveEffectiveNetClass(c.nets[0] ?? '', prev.netClasses).name,
+                color: '',
+              })),
             },
           }));
         }
@@ -2191,6 +2213,7 @@ export function SchematicEditor({
       currentPath,
       switchSheet,
       doc,
+      netlist,
       selection,
       libById,
       pageNumberOf,
