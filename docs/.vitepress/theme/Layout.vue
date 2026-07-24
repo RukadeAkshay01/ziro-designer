@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import DefaultTheme from "vitepress/theme";
-import NotFound from "./NotFound.vue";
+import DefaultTheme from 'vitepress/theme';
+import NotFound from './NotFound.vue';
 
 const { Layout } = DefaultTheme;
 </script>

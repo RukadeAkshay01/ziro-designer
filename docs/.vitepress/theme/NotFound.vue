@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { withBase } from "vitepress";
+import { withBase } from 'vitepress';
 </script>
 
 <template>

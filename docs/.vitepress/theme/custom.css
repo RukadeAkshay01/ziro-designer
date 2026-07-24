@@ -48,8 +48,8 @@
   --zx-font-head: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
 
   /* Keep VitePress' default Inter for body/UI; only code uses JetBrains Mono */
-  --vp-font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
-    Monaco, Consolas, monospace;
+  --vp-font-family-mono:
+    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
   /* Gold accent into VitePress' brand slots */
   --vp-c-brand-1: var(--zx-gold-lite);
