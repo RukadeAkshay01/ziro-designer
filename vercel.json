@@ -2,8 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm -C designer build",
+  "buildCommand": "pnpm -C designer build && pnpm -C docs build",
   "outputDirectory": "designer/dist",
+  "cleanUrls": true,
   "build": {
     "env": {
       "VITE_DEMOS_URL": "https://pub-ac941e05e1284f409be2ed74ddb151b3.r2.dev/demos",

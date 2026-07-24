@@ -1,0 +1,267 @@
+/**
+ * Ziro Designer docs theme — faithful to www.ziroeda.com.
+ *
+ * Signature of the brand: monospace (JetBrains Mono) body copy, Space Grotesk
+ * for headings and the wordmark, near-black surfaces, a warm gold accent, and
+ * uppercase letter-spaced mono for chrome (nav, sidebar section titles).
+ */
+
+/* ---- Self-hosted fonts (latin subset) ---- */
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/docs/fonts/space-grotesk-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/docs/fonts/space-grotesk-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Grotesk";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/docs/fonts/space-grotesk-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/docs/fonts/jetbrains-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/docs/fonts/jetbrains-mono-500.woff2") format("woff2");
+}
+
+:root {
+  /* Brand tokens straight from ziroeda.com */
+  --zx-gold: #b88850;
+  --zx-gold-lite: #c9975c;
+  --zx-gold-deep: #9c7038;
+  --zx-blue: #5a8ec8;
+  --zx-accent-dim: rgba(184, 136, 80, 0.08);
+  --zx-accent-line: rgba(184, 136, 80, 0.2);
+
+  /* Body is MONOSPACE (the brand's signature); headings are Space Grotesk */
+  --vp-font-family-base: "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Monaco, Consolas, monospace;
+  --vp-font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
+    Monaco, Consolas, monospace;
+  --zx-font-head: "Space Grotesk", ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, sans-serif;
+
+  --vp-c-brand-1: var(--zx-gold-lite);
+  --vp-c-brand-2: var(--zx-gold);
+  --vp-c-brand-3: var(--zx-gold-deep);
+  --vp-c-brand-soft: var(--zx-accent-dim);
+  --vp-c-brand-softer: var(--zx-accent-dim);
+
+  --vp-button-brand-bg: var(--zx-gold);
+  --vp-button-brand-hover-bg: var(--zx-gold-lite);
+  --vp-button-brand-active-bg: var(--zx-gold-deep);
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-text: #100b04;
+  --vp-button-brand-hover-text: #100b04;
+}
+
+:root:not(.dark) {
+  --vp-c-brand-1: var(--zx-gold-deep);
+}
+
+/* ---- Dark, the primary experience ---- */
+.dark {
+  --vp-c-bg: #08080a;
+  --vp-c-bg-alt: #0b0b0d;
+  --vp-c-bg-soft: #141418;
+  --vp-c-bg-elv: #141418;
+
+  --vp-c-divider: #1e1e24;
+  --vp-c-border: #1e1e24;
+  --vp-c-gutter: #131317;
+
+  --vp-c-text-1: #eaeaeb;
+  --vp-c-text-2: #9a9ca4;
+  --vp-c-text-3: #6a6c74;
+
+  --vp-c-default-soft: #141418;
+  --vp-c-brand-1: var(--zx-gold-lite);
+
+  --vp-code-block-bg: #0b0b0e;
+  --vp-code-bg: rgba(184, 136, 80, 0.1);
+}
+
+/* ---- Typography ---- */
+body {
+  font-family: var(--vp-font-family-base);
+  letter-spacing: -0.01em;
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+h1.name,
+.VPHero .text {
+  font-family: var(--zx-font-head);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.vp-doc h1 {
+  font-weight: 700;
+  letter-spacing: -0.045em;
+}
+
+/* Body paragraphs: mono, roomy line-height like the site */
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.7;
+}
+
+/* ---- Nav bar: translucent, uppercase mono links, wordmark ---- */
+.dark .VPNavBar,
+.dark .VPNavBar.has-sidebar .content-body {
+  background-color: rgba(8, 8, 10, 0.72);
+  backdrop-filter: saturate(140%) blur(12px);
+}
+.VPNavBarTitle .title {
+  font-family: var(--zx-font-head);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 15px;
+}
+.VPNavBarTitle .logo {
+  height: 24px;
+  margin-right: 10px;
+}
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .text {
+  font-family: var(--vp-font-family-mono) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 12px !important;
+  font-weight: 400 !important;
+}
+
+/* ---- Sidebar: EasyEDA-style tree, ziroeda brand ---- */
+/* A distinct panel: elevated background + a divider from the content. */
+.dark {
+  --vp-sidebar-bg-color: #0c0c0f;
+}
+.VPSidebar {
+  padding-top: 16px;
+  border-right: 1px solid var(--vp-c-divider);
+}
+
+/* Collapsible group titles: readable (normal case), Space Grotesk, with an
+   always-visible chevron — like EasyEDA's "Introduction / Schematic Capture". */
+.VPSidebarItem.level-0 > .item {
+  padding: 4px 0;
+}
+.VPSidebarItem.level-0 > .item > .text {
+  font-family: var(--zx-font-head);
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+.VPSidebarItem.level-0 .caret {
+  color: var(--vp-c-text-3);
+}
+
+/* Leaf links: comfortable, indented, mono for the brand's technical feel. */
+.VPSidebarItem.level-1 .link,
+.VPSidebarItem.level-2 .link {
+  padding: 1px 0;
+}
+.VPSidebarItem.level-1 .link .text,
+.VPSidebarItem.level-2 .link .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  color: var(--vp-c-text-2);
+  padding: 6px 10px;
+  border-radius: 6px;
+  display: block;
+  transition: background-color 0.15s, color 0.15s;
+}
+.VPSidebarItem .link:hover .text {
+  color: var(--vp-c-text-1);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+/* Active leaf: a FILLED rounded highlight block + gold text (EasyEDA pattern,
+   done in gold instead of blue). */
+.VPSidebarItem.is-active > .item .link .text,
+.dark .VPSidebarItem.is-active > .item .link .text {
+  color: var(--vp-c-brand-1);
+  background-color: var(--zx-accent-dim);
+  font-weight: 500;
+}
+
+/* ---- Content chrome ---- */
+.vp-doc :not(pre) > code {
+  color: var(--zx-gold-lite);
+}
+.vp-doc table th {
+  font-family: var(--zx-font-head);
+  letter-spacing: 0.02em;
+}
+.dark .custom-block.tip {
+  border-color: rgba(90, 142, 200, 0.4);
+}
+/* Outline (right TOC) title in mono caps */
+.VPDocOutlineItem,
+.outline-title {
+  font-family: var(--vp-font-family-mono);
+}
+.outline-title {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px !important;
+}
+
+/* ---- Announcement banner (matches ziroeda.com top bar) ---- */
+/* Declare the banner height so VitePress offsets the fixed nav & sidebar. */
+:root {
+  --vp-layout-top-height: 36px;
+}
+.zx-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--vp-z-index-layout-top);
+  height: var(--vp-layout-top-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: #100b04;
+  border-bottom: 1px solid var(--zx-accent-line);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 0 16px;
+}
+.zx-banner a {
+  color: var(--zx-gold-lite);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}

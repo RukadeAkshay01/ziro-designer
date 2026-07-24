@@ -1,0 +1,5 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ZIRO EDA">
+  <circle cx="50" cy="50" r="45" fill="#18181b" stroke="#b88850" stroke-width="4"/>
+  <path d="M 15 70 A 40 40 0 0 0 50 89" stroke="#b88850" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 35 35 H 65 L 35 65 H 65" stroke="#eaeaeb" stroke-width="8" stroke-linecap="square" stroke-linejoin="round"/>
+</svg>
