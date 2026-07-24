@@ -12,10 +12,11 @@
  * round-trips with only the edited settings changed. `page_layout_descr_file`
  * in particular belongs to projectSheet.ts and is never touched here.
  *
- * Bus aliases and embedded files are `.kicad_sch` data (sheet-scoped
- * `bus_alias` nodes / `embedded_files` section), not project settings, so they
- * stay in-memory until the schematic-file side is implemented. (Current KiCad
- * master additionally mirrors bus aliases at `schematic.bus_aliases`.)
+ * Bus aliases persist at `schematic.bus_aliases` (an alias -> members object;
+ * current KiCad stores them here — the schematic writer no longer emits
+ * `bus_alias` nodes, only the parser still accepts legacy ones). Embedded
+ * files stay `.kicad_sch` data (the `embedded_files` section, zstd-compressed
+ * blobs preserved losslessly through the AST) — listed read-only for now.
  *
  * Units follow the file format: PARAM_SCALED sizes are stored in mils
  * (scale `1 / schIUScale.IU_PER_MILS`), net-class PCB fields in mm and
@@ -415,6 +416,17 @@ export function readSchematicSetupText(proText: string): SchematicSetup {
       .map(([name, value]): TextVar => ({ name, value }));
   }
 
+  // schematic.bus_aliases (project_file.cpp): alias -> member list.
+  const aliases = getPath(j, 'schematic.bus_aliases');
+  if (isObj(aliases)) {
+    s.busAliases = Object.entries(aliases)
+      .filter((e): e is [string, unknown[]] => Array.isArray(e[1]))
+      .map(([name, members]) => ({
+        name,
+        members: members.filter((m): m is string => typeof m === 'string'),
+      }));
+  }
+
   return s;
 }
 
@@ -648,6 +660,11 @@ export function writeSchematicSetupText(proText: string, s: SchematicSetup): str
   const varsOut: Json = {};
   for (const v of s.textVars) if (v.name) varsOut[v.name] = v.value;
   setPath(j, 'text_variables', varsOut);
+
+  // schematic.bus_aliases: fully owned by the panel — rebuild.
+  const aliasesOut: Json = {};
+  for (const a of s.busAliases) if (a.name) aliasesOut[a.name] = [...a.members];
+  setPath(j, 'schematic.bus_aliases', aliasesOut);
 
   return `${JSON.stringify(j, null, 2)}\n`;
 }

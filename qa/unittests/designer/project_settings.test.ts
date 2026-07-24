@@ -105,6 +105,10 @@ function customSetup(): SchematicSetup {
     chains: [{ name: 'CHAIN1', members: ['N1', 'N2'], chainClass: 'CC1', netClass: '', color: '' }],
     classes: [{ name: 'CC1', members: 1 }],
   };
+  s.busAliases = [
+    { name: 'DATA', members: ['D0', 'D1', 'D2'] },
+    { name: 'CTRL', members: ['CLK', 'EN'] },
+  ];
   s.textVars = [
     { name: 'PROJ', value: 'Ziro' },
     { name: 'REV', value: 'B' },
@@ -131,11 +135,11 @@ describe('schematic setup .kicad_pro persistence', () => {
     expect(text).not.toBeNull();
     const back = readSchematicSetupText(text!);
 
-    // Not persisted in .kicad_pro (documented): bus aliases, embedded files,
-    // the net-chain member lists, and the internal pin_to_pin_error severity.
+    // Not persisted in .kicad_pro (documented): embedded files (.kicad_sch
+    // data), the net-chain member lists, and the internal pin_to_pin_error
+    // severity.
     const strip = (x: SchematicSetup): SchematicSetup => ({
       ...x,
-      busAliases: [],
       embeddedFiles: { files: [], embedFonts: false },
       netChains: { ...x.netChains, chains: [] },
       erc: {

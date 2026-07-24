@@ -135,7 +135,7 @@ import {
   resolveEffectiveNetClass,
 } from './schematic_settings.js';
 import { computeNetClassOverrides } from './net_overrides.js';
-import { schematicTextVarResolver } from '@ziroeda/eeschema';
+import { listEmbeddedFiles, schematicTextVarResolver } from '@ziroeda/eeschema';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
@@ -2081,8 +2081,22 @@ export function SchematicEditor({
       else if (id === 'find') openFindDialog('find');
       else if (id === 'findReplace') openFindDialog('replace');
       else if (id === 'annotate') setAnnotateOpen(true);
-      else if (id === 'schematicSetup') setSetupOpen(true);
-      else if (id === 'pageSettings') setPageSettingsOpen(true);
+      else if (id === 'schematicSetup') {
+        // The Embedded Files page lists the sheet's embedded_files section
+        // (names + embed-fonts flag) fresh from the document on every open —
+        // read-only until the zstd blobs can be decoded.
+        if (doc) {
+          const emb = listEmbeddedFiles(doc);
+          setSetup((prev) => ({
+            ...prev,
+            embeddedFiles: {
+              files: emb.files.map((f) => ({ name: f.name, reference: f.reference })),
+              embedFonts: emb.embedFonts,
+            },
+          }));
+        }
+        setSetupOpen(true);
+      } else if (id === 'pageSettings') setPageSettingsOpen(true);
       else if (id === 'print') setPrintOpen(true);
       else if (id === 'plot') setPlotOpen(true);
       else if (id === 'editPageNumber') setPageEdit({ page: pageNumberOf(currentPath) });
