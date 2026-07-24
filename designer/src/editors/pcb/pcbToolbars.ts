@@ -44,6 +44,8 @@ export const PCB_TOP_TOOLBAR: ToolEntry[] = [
   { id: 'rotateCW', icon: 'rotateCW', title: 'Rotate clockwise' },
   { id: 'mirrorV', icon: 'mirrorV', title: 'Mirror vertically' },
   { id: 'mirrorH', icon: 'mirrorH', title: 'Mirror horizontally' },
+  // Only Group / Ungroup live on the toolbar (toolbars_pcb_editor.cpp); Add to
+  // Group / Remove from Group are right-click-only (GROUP_CONTEXT_MENU).
   { id: 'group', icon: 'group', title: 'Group items' },
   { id: 'ungroup', icon: 'ungroup', title: 'Ungroup items' },
   { id: 'lock', icon: 'lock', title: 'Lock' },

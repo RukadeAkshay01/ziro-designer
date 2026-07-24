@@ -558,6 +558,19 @@ export function junctionDotDiameterIU(s: SchematicSetup): number {
   return Math.max(Math.round(wireMils * IU_PER_MILS * mult), 1);
 }
 
+/** hopover_size_mult_list (schematic_settings.cpp): wire hop-over arc radius as
+ *  a multiple of the default line width, indexed by hopOverChoice
+ *  (None, Smallest, Small, Medium, Large, Largest). */
+export const HOP_OVER_SIZE_MULT = [0, 1.7, 4, 6, 9, 12] as const;
+
+/** SCHEMATIC_SETTINGS::GetHopOverScale × m_DefaultLineWidth — the painter's
+ *  hop-over arc radius in IU (sch_painter.cpp draw(SCH_LINE): arcRadius =
+ *  defaultLineWidth × hopOverScale). 0 = hop-overs off ("None"). */
+export function hopOverArcRadiusIU(s: SchematicSetup): number {
+  const mult = HOP_OVER_SIZE_MULT[s.formatting.hopOverChoice] ?? 0;
+  return s.formatting.defaultLineWidthMils * IU_PER_MILS * mult;
+}
+
 // ---------------------------------------------------------------------------
 // The dialog's full working set.
 

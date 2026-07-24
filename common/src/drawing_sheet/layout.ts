@@ -44,8 +44,13 @@ export interface WksPage {
 
 /** Values the `${…}` variables and page-number tokens resolve against. */
 export interface WksResolveContext {
-  /** 1-based page number (the "Page 1 / Other pages" preview). */
+  /** 1-based sheet ordinal (DS_DRAW_ITEM_LIST m_sheetNumber) — drives the
+   *  page1only/notonpage1 item visibility and is the `${#}` fallback. */
   pageNumber?: number;
+  /** The page number *string* shown by `${#}` (DS_DRAW_ITEM_LIST
+   *  m_pageNumber / SCH_SHEET_PATH::GetPageNumber — may be "A", "ii", …).
+   *  Unset = the ordinal. */
+  pageName?: string;
   /** Total number of sheets. */
   sheetCount?: number;
   title?: string;
@@ -169,7 +174,7 @@ export function resolveDrawingSheetText(text: string, ctx: WksResolveContext): s
       case 'KICAD_VERSION':
         return ctx.appVersion ?? '';
       case '#':
-        return String(page);
+        return ctx.pageName ?? String(page);
       case '##':
         return String(count);
       default: {

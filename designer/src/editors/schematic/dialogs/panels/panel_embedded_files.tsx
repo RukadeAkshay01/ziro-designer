@@ -34,8 +34,8 @@ export function PanelEmbeddedFiles({ value, onChange }: Props): JSX.Element {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        <table className="ze-grid" style={{ tableLayout: 'fixed' }}>
+      <div className="ze-grid-pane" style={{ flex: 1, minHeight: 0 }}>
+        <table className="ze-grid" style={{ tableLayout: 'fixed', width: '100%' }}>
           <colgroup>
             <col style={{ width: '40%' }} />
             <col />
@@ -65,13 +65,6 @@ export function PanelEmbeddedFiles({ value, onChange }: Props): JSX.Element {
                 </td>
               </tr>
             ))}
-            {value.files.length === 0 && (
-              <tr>
-                <td colSpan={2} style={{ padding: '6px', color: 'var(--ze-muted, #888)' }}>
-                  No embedded files.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

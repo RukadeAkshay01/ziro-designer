@@ -1116,11 +1116,13 @@ body {
 }
 
 /* Modeless Find dialog (DIALOG_SCH_FIND): floats over the canvas, top-right. */
+/* PCB Find dialog (DIALOG_FIND). Layout mirrors dialog_find_base.cpp:
+   topSizer[ leftSizer | buttonSizer(vertical) ] / staticline / sizerStatus. */
 .ze-find-dialog {
   position: absolute;
   top: 12px;
   right: 12px;
-  width: 320px;
+  width: 560px;
   background: var(--chrome-bg);
   border: 1px solid var(--chrome-border);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
@@ -1130,37 +1132,125 @@ body {
   padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
-.ze-find-body .row {
+/* topSizer (wxHORIZONTAL): content grows, button column fixed on the right. */
+.ze-find-top {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 10px;
 }
-.ze-find-body .row input {
+.ze-find-left {
   flex: 1;
-}
-.ze-find-body .opts {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+/* bSizer8: "Search for:" + combo (combo grows). */
+.ze-find-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ze-find-searchrow > span {
+  flex: 0 0 auto;
+}
+.ze-find-searchrow .ze-search {
+  flex: 1;
+  min-width: 0;
+}
+/* sizerOptions (wxHORIZONTAL with stretch spacers): modifiers spread across. */
+.ze-find-modifiers {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
 }
-.ze-find-body .opts label {
+/* sizerInclude = wxFlexGridSizer( 0, 2, 6, 20 ): 2 columns, vgap 6, hgap 20. */
+.ze-find-scope {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  column-gap: 20px;
+  row-gap: 6px;
+  font-size: 12px;
+}
+.ze-find-modifiers label,
+.ze-find-scope label {
   display: flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
+/* buttonSizer (wxVERTICAL, each button wxEXPAND). */
 .ze-find-buttons {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 6px;
-  justify-content: flex-end;
+  flex: 0 0 auto;
+  min-width: 118px;
 }
-.ze-find-buttons .status {
+.ze-find-buttons button {
+  width: 100%;
+}
+/* staticline separator. */
+.ze-find-sep {
+  height: 1px;
+  background: var(--chrome-border);
+  margin: 10px 0;
+}
+/* sizerStatus: status text (left) + "Show search panel" link (right). */
+.ze-find-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ze-find-status .status {
   flex: 1;
   color: #8a8c90;
   font-size: 12px;
+}
+.ze-find-panellink {
+  font-size: 12px;
+  color: #6b7684;
+  cursor: default;
+}
+
+/* Schematic Find / Find and Replace (DIALOG_SCH_FIND) reuses the PCB find
+   shell but has its own two-column input grid and 3-column option grid-bag. */
+.ze-schfind-dialog {
+  width: 520px;
+}
+/* leftGridSizer( 3, 2 ) — label | combo, second column growable. */
+.ze-schfind-inputs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  column-gap: 8px;
+  row-gap: 6px;
+}
+.ze-schfind-inputs .ze-search {
+  min-width: 220px;
+  width: 100%;
+}
+/* gbSizer2 = wxGridBagSizer( 0, 20 ) — 3 columns, hgap 20. */
+.ze-schfind-scope {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  column-gap: 20px;
+  row-gap: 5px;
+  font-size: 12px;
+}
+.ze-schfind-scope label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* Empty spacer row (SetEmptyCellSize height 8). */
+.ze-schfind-gap {
+  height: 3px;
 }
 
 /* Annotate Schematic dialog (DIALOG_ANNOTATE). */
@@ -1321,6 +1411,36 @@ body {
   gap: 12px;
   color: #ddd;
   font-size: 13px;
+}
+/* Entered-group banner (SELECTION_TOOL::EnterGroup context indicator). */
+.ze-group-editing {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 12px;
+  background: rgba(30, 30, 36, 0.92);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  color: #ddd;
+  font-size: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.ze-group-editing button {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--chrome-bg2);
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  color: #ddd;
+  cursor: pointer;
+}
+.ze-group-editing button:hover {
+  background: #3a3a42;
 }
 .ze-modal {
   width: 860px;

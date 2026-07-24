@@ -20,6 +20,8 @@ export interface PcbFindOptions {
   includeValues: boolean;
   includeTexts: boolean;
   includeNets: boolean;
+  /** Search fields marked hidden too (m_checkAllFields, "Include hidden fields"). */
+  includeHidden: boolean;
 }
 
 export const DEFAULT_PCB_FIND: PcbFindOptions = {
@@ -30,7 +32,8 @@ export const DEFAULT_PCB_FIND: PcbFindOptions = {
   includeReferences: true,
   includeValues: true,
   includeTexts: true,
-  includeNets: false,
+  includeNets: true,
+  includeHidden: false,
 };
 
 interface Props {
@@ -76,110 +79,136 @@ export function DialogPcbFind({
         </span>
       </div>
       <div className="ze-find-body">
-        <label className="row">
-          <span>Search for:</span>
-          <input
-            ref={inputRef}
-            className="ze-search"
-            value={text}
-            onChange={(e) => commitText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                onFind(e.shiftKey ? 'prev' : 'next');
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                onClose();
-              }
-            }}
-          />
-        </label>
-        <div className="opts">
-          <label>
-            <input
-              type="checkbox"
-              checked={options.matchCase}
-              onChange={(e) => opt({ matchCase: e.target.checked })}
-            />
-            Match case
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.wholeWord}
-              onChange={(e) => opt({ wholeWord: e.target.checked })}
-            />
-            Whole words only
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.wildcard}
-              onChange={(e) => opt({ wildcard: e.target.checked })}
-            />
-            Wildcards
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.wrap}
-              onChange={(e) => opt({ wrap: e.target.checked })}
-            />
-            Wrap
-          </label>
+        {/* topSizer: left column (grows) + button column (right) */}
+        <div className="ze-find-top">
+          <div className="ze-find-left">
+            {/* bSizer8: "Search for:" label + combo */}
+            <label className="ze-find-searchrow">
+              <span>Search for:</span>
+              <input
+                ref={inputRef}
+                className="ze-search"
+                value={text}
+                placeholder="Text with optional wildcards"
+                onChange={(e) => commitText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onFind(e.shiftKey ? 'prev' : 'next');
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onClose();
+                  }
+                }}
+              />
+            </label>
+            {/* sizerOptions: modifiers spread horizontally */}
+            <div className="ze-find-modifiers">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.matchCase}
+                  onChange={(e) => opt({ matchCase: e.target.checked })}
+                />
+                Match case
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.wholeWord}
+                  onChange={(e) => opt({ wholeWord: e.target.checked })}
+                />
+                Whole words only
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.wildcard}
+                  onChange={(e) => opt({ wildcard: e.target.checked })}
+                />
+                Wildcards
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.wrap}
+                  onChange={(e) => opt({ wrap: e.target.checked })}
+                />
+                Wrap
+              </label>
+            </div>
+            {/* sizerInclude: wxFlexGridSizer( 0, 2 ) — 2-column scope grid */}
+            <div className="ze-find-scope">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.includeReferences}
+                  onChange={(e) => opt({ includeReferences: e.target.checked })}
+                />
+                Search footprint reference designators
+              </label>
+              <label title="DRC markers require the DRC engine (staged)">
+                <input type="checkbox" checked={false} disabled />
+                Search DRC markers
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.includeValues}
+                  onChange={(e) => opt({ includeValues: e.target.checked })}
+                />
+                Search footprint values
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.includeNets}
+                  onChange={(e) => opt({ includeNets: e.target.checked })}
+                />
+                Search net names
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.includeHidden}
+                  onChange={(e) => opt({ includeHidden: e.target.checked })}
+                />
+                Include hidden fields
+              </label>
+              <span />
+              <label>
+                <input
+                  type="checkbox"
+                  checked={options.includeTexts}
+                  onChange={(e) => opt({ includeTexts: e.target.checked })}
+                />
+                Search other text items
+              </label>
+            </div>
+          </div>
+          {/* buttonSizer: vertical stack, right side */}
+          <div className="ze-find-buttons">
+            <button type="button" className="primary" onClick={() => onFind('next')}>
+              Find Next
+            </button>
+            <button type="button" onClick={() => onFind('prev')}>
+              Find Previous
+            </button>
+            <button type="button" onClick={() => onFind('restart')}>
+              Restart Search
+            </button>
+            <button type="button" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
-        <div className="opts">
-          <label>
-            <input
-              type="checkbox"
-              checked={options.includeReferences}
-              onChange={(e) => opt({ includeReferences: e.target.checked })}
-            />
-            Search footprint reference designators
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.includeValues}
-              onChange={(e) => opt({ includeValues: e.target.checked })}
-            />
-            Search footprint values
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.includeTexts}
-              onChange={(e) => opt({ includeTexts: e.target.checked })}
-            />
-            Search other text items
-          </label>
-          <label>
-            <input type="checkbox" checked={false} disabled />
-            Search DRC markers
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={options.includeNets}
-              onChange={(e) => opt({ includeNets: e.target.checked })}
-            />
-            Search net names
-          </label>
-        </div>
-        <div className="ze-find-buttons">
+        <div className="ze-find-sep" />
+        {/* sizerStatus: status text + "Show search panel" link */}
+        <div className="ze-find-status">
           <span className="status">{status}</span>
-          <button type="button" className="primary" onClick={() => onFind('next')}>
-            Find Next
-          </button>
-          <button type="button" onClick={() => onFind('prev')}>
-            Find Previous
-          </button>
-          <button type="button" onClick={() => onFind('restart')}>
-            Restart Search
-          </button>
-          <button type="button" onClick={onClose}>
-            Close
-          </button>
+          <span className="ze-find-panellink" title="Search panel is staged" aria-disabled="true">
+            Show search panel
+          </span>
         </div>
       </div>
     </div>

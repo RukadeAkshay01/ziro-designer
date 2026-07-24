@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   blankNetClass,
   defaultSchematicSetup,
+  hopOverArcRadiusIU,
   junctionDotDiameterIU,
   resolveEffectiveNetClass,
   type NetClassesData,
@@ -45,6 +46,21 @@ describe('junctionDotDiameterIU', () => {
 });
 
 // NET_SETTINGS::GetEffectiveNetClass over the dialog's netclass grid.
+describe('hopOverArcRadiusIU', () => {
+  it('is 0 for the default "None" choice', () => {
+    expect(hopOverArcRadiusIU(defaultSchematicSetup())).toBe(0);
+  });
+
+  it('scales the default line width by hopover_size_mult_list', () => {
+    const s = defaultSchematicSetup();
+    s.formatting.hopOverChoice = 1; // "Smallest" ×1.7
+    expect(hopOverArcRadiusIU(s)).toBeCloseTo(6 * 254 * 1.7); // 2590.8
+    s.formatting.hopOverChoice = 5; // "Largest" ×12
+    s.formatting.defaultLineWidthMils = 10;
+    expect(hopOverArcRadiusIU(s)).toBe(10 * 254 * 12);
+  });
+});
+
 describe('resolveEffectiveNetClass', () => {
   const data = (): NetClassesData => ({
     classes: [

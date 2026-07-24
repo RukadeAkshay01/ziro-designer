@@ -66,8 +66,8 @@ export function PanelSetupNetChains({ value, onChange }: Props): JSX.Element {
         <div
           style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', paddingTop: 6 }}
         >
-          <div style={{ flex: '1 1 60%', minHeight: 0, overflow: 'auto' }}>
-            <table className="ze-grid" style={{ minWidth: 640 }}>
+          <div className="ze-grid-pane" style={{ flex: '1 1 60%', minHeight: 0 }}>
+            <table className="ze-grid" style={{ minWidth: 640, width: '100%' }}>
               <thead>
                 <tr>
                   <th>Name</th>
@@ -173,8 +173,8 @@ export function PanelSetupNetChains({ value, onChange }: Props): JSX.Element {
             Group net chains under a class label so DRC rules can target the whole group via
             inNetChainClass(&lsquo;name&rsquo;).
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-            <table className="ze-grid" style={{ tableLayout: 'fixed' }}>
+          <div className="ze-grid-pane" style={{ flex: 1, minHeight: 0 }}>
+            <table className="ze-grid" style={{ tableLayout: 'fixed', width: '100%' }}>
               <colgroup>
                 <col />
                 <col style={{ width: 80 }} />

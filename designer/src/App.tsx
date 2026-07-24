@@ -479,6 +479,8 @@ export function App(): JSX.Element {
             }}
             projectName={projectName}
             projectFiles={projectFiles ?? undefined}
+            rootPro={activeBase || undefined}
+            onPersistFiles={persistFilesNow}
           />
         </div>
       )}

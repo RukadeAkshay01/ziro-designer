@@ -45,8 +45,8 @@ export function PanelSetupBuses({ aliases, onChange }: Props): JSX.Element {
       {/* Left: alias list */}
       <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 12.5, marginBottom: 6 }}>Bus Definitions</div>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <table className="ze-grid">
+        <div className="ze-grid-pane" style={{ flex: 1, minHeight: 0 }}>
+          <table className="ze-grid" style={{ width: '100%' }}>
             <thead>
               <tr>
                 <th>Alias</th>

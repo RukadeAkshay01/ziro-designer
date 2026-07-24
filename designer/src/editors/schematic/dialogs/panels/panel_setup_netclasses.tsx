@@ -80,8 +80,8 @@ export function PanelSetupNetclasses({ value, onChange }: Props): JSX.Element {
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Netclasses grid */}
       <div style={{ fontSize: 12.5, marginBottom: 6 }}>Netclasses</div>
-      <div style={{ flex: '1 1 55%', minHeight: 80, overflow: 'auto' }}>
-        <table className="ze-grid" style={{ minWidth: 1180, whiteSpace: 'nowrap' }}>
+      <div className="ze-grid-pane" style={{ flex: '1 1 55%', minHeight: 80 }}>
+        <table className="ze-grid" style={{ minWidth: 1180, width: '100%', whiteSpace: 'nowrap' }}>
           <thead>
             <tr>
               <th style={{ position: 'sticky', left: 0 }}>Name</th>
@@ -178,14 +178,18 @@ export function PanelSetupNetclasses({ value, onChange }: Props): JSX.Element {
         </button>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: 'var(--ze-muted, #888)' }}>
-          Set color to transparent to use KiCad default color.
+          Set color to transparent to use layer default color.
         </span>
+        {/* Stubbed: copies net colors from the schematic's netclass definitions. */}
+        <button className="ze-btn sm" title="Not implemented yet" style={{ marginLeft: 12 }}>
+          Import colors from schematic
+        </button>
       </div>
 
       {/* Assignments grid */}
       <div style={{ fontSize: 12.5, margin: '8px 0 6px' }}>Netclass Assignments</div>
-      <div style={{ flex: '1 1 45%', minHeight: 60, overflow: 'auto' }}>
-        <table className="ze-grid" style={{ tableLayout: 'fixed' }}>
+      <div className="ze-grid-pane" style={{ flex: '1 1 45%', minHeight: 60 }}>
+        <table className="ze-grid" style={{ tableLayout: 'fixed', width: '100%' }}>
           <colgroup>
             <col />
             <col style={{ width: 200 }} />
@@ -234,13 +238,6 @@ export function PanelSetupNetclasses({ value, onChange }: Props): JSX.Element {
                 </td>
               </tr>
             ))}
-            {value.assignments.length === 0 && (
-              <tr>
-                <td colSpan={2} style={{ padding: '6px', color: 'var(--ze-muted, #888)' }}>
-                  No assignments.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
       </div>

@@ -102,6 +102,175 @@ export const PCB_SPECIAL = {
   padName: rgba(255, 255, 255, 0.7),
 };
 
+// ---------------------------------------------------------------------------
+// Color themes (COLOR_SETTINGS). KiCad ships two built-ins
+// (color_settings.cpp CreateBuiltinColorSettings): "KiCad Default"
+// (s_defaultTheme — the palette above) and "KiCad Classic" (s_classicTheme).
+// The print dialog picks among these like KiCad's theme chooser.
+
+/** A complete board palette (COLOR_SETTINGS, pcbnew subset). */
+export interface PcbColorTheme {
+  /** COLOR_SETTINGS::GetFilename() — the identity stored in settings. */
+  filename: string;
+  /** COLOR_SETTINGS::GetName() — shown in theme choosers. */
+  name: string;
+  background: string;
+  grid: string;
+  layerColors: Record<string, string>;
+  special: typeof PCB_SPECIAL;
+}
+
+/**
+ * s_classicTheme board colors. The classic theme is written with legacy
+ * EDA_COLOR_T names; the RGB values come from common/gal/color4d.cpp
+ * colorRefs() — NOTE that table's fields are ordered blue,green,red, so e.g.
+ * BLUE={132,0,0} means rgb(0,0,132).
+ */
+const C = {
+  black: rgba(0, 0, 0),
+  darkGray: rgba(132, 132, 132),
+  lightGray: rgba(194, 194, 194),
+  white: rgba(255, 255, 255),
+  blue: rgba(0, 0, 132),
+  green: rgba(0, 132, 0),
+  cyan: rgba(0, 132, 132),
+  red: rgba(132, 0, 0),
+  magenta: rgba(132, 0, 132),
+  brown: rgba(132, 132, 0),
+  lightCyan: rgba(0, 194, 194),
+  lightRed: rgba(194, 0, 0),
+  lightMagenta: rgba(194, 0, 194),
+  yellow: rgba(194, 194, 0),
+  darkRed: rgba(72, 0, 0),
+};
+
+// In1..In30 classic copper cycle (s_classicTheme In1_Cu..In30_Cu, in order).
+const CLASSIC_INNER = [
+  C.yellow,
+  C.lightMagenta,
+  C.lightRed,
+  C.cyan,
+  C.green,
+  C.blue,
+  C.darkGray,
+  C.magenta,
+  C.lightGray,
+  C.magenta,
+  C.red,
+  C.brown,
+  C.lightGray,
+  C.blue,
+  C.green,
+  C.red,
+  C.yellow,
+  C.lightMagenta,
+  C.lightRed,
+  C.cyan,
+  C.green,
+  C.blue,
+  C.darkGray,
+  C.magenta,
+  C.lightGray,
+  C.magenta,
+  C.red,
+  C.brown,
+  C.lightGray,
+  C.blue,
+];
+
+const CLASSIC_LAYER_COLORS: Record<string, string> = {
+  'F.Cu': C.red,
+  ...Object.fromEntries(CLASSIC_INNER.map((c, i) => [`In${i + 1}.Cu`, c])),
+  'B.Cu': C.green,
+  'B.Adhes': C.blue,
+  'F.Adhes': C.magenta,
+  'B.Paste': C.lightCyan,
+  'F.Paste': C.red,
+  'B.SilkS': C.magenta,
+  'F.SilkS': C.cyan,
+  'B.Mask': C.brown,
+  'F.Mask': C.magenta,
+  'Dwgs.User': C.lightGray,
+  'Cmts.User': C.blue,
+  'Eco1.User': C.green,
+  'Eco2.User': C.yellow,
+  'Edge.Cuts': C.yellow,
+  Margin: C.lightMagenta,
+  'B.CrtYd': C.darkGray,
+  'F.CrtYd': C.lightGray,
+  'B.Fab': C.blue,
+  'F.Fab': C.darkGray,
+  'User.1': C.blue,
+  'User.2': C.blue,
+  'User.3': C.blue,
+  'User.4': C.blue,
+  'User.5': C.blue,
+  'User.6': C.blue,
+  'User.7': C.blue,
+  'User.8': C.blue,
+  'User.9': C.blue,
+};
+
+const CLASSIC_SPECIAL: typeof PCB_SPECIAL = {
+  // The painter forces plated pad holes to the background (classic: black).
+  padPlatedHole: C.black,
+  nonPlatedHole: C.yellow, // LAYER_NON_PLATEDHOLES = YELLOW
+  viaHole: 'rgba(128,102,0,0.8)', // LAYER_VIA_HOLES = COLOR4D(0.5, 0.4, 0, 0.8)
+  viaHoleWall: C.white, // LAYER_VIA_HOLEWALLS = WHITE
+  padHoleWall: 'rgba(128,102,0,0.8)', // painter uses LAYER_VIA_HOLES
+  ratsnest: C.white, // LAYER_RATSNEST = WHITE
+  anchor: C.blue, // LAYER_ANCHOR = BLUE
+  drawingSheet: C.darkRed, // LAYER_DRAWINGSHEET = DARKRED
+  padName: rgba(255, 255, 255, 0.7), // NETNAMES_LAYER_ID_START (same as default)
+};
+
+export const PCB_THEMES: PcbColorTheme[] = [
+  {
+    filename: '_builtin_default',
+    name: 'KiCad Default',
+    background: PCB_BACKGROUND,
+    grid: PCB_GRID,
+    layerColors: PCB_LAYER_COLORS,
+    special: PCB_SPECIAL,
+  },
+  {
+    filename: '_builtin_classic',
+    name: 'KiCad Classic',
+    background: C.black, // LAYER_PCB_BACKGROUND = BLACK
+    grid: C.darkGray, // LAYER_GRID = DARKGRAY
+    layerColors: CLASSIC_LAYER_COLORS,
+    special: CLASSIC_SPECIAL,
+  },
+];
+
+/** The theme registered under a COLOR_SETTINGS filename (default fallback). */
+export const themeByFilename = (filename: string): PcbColorTheme =>
+  PCB_THEMES.find((t) => t.filename === filename) ?? PCB_THEMES[0]!;
+
+/**
+ * Black-and-white print rendering (BOARD_PRINTOUT with blackWhite: every item
+ * prints black on white paper; hole interiors read as paper through the
+ * copper, hole walls print black).
+ */
+export const PCB_BW_PRINT_THEME: PcbColorTheme = {
+  filename: '_print_bw',
+  name: 'Black and white',
+  background: C.white,
+  grid: C.black,
+  layerColors: Object.fromEntries(Object.keys(PCB_LAYER_COLORS).map((k) => [k, C.black])),
+  special: {
+    padPlatedHole: C.white,
+    nonPlatedHole: C.white,
+    viaHole: C.white,
+    viaHoleWall: C.black,
+    padHoleWall: C.black,
+    ratsnest: C.black,
+    anchor: C.black,
+    drawingSheet: C.black,
+    padName: C.white,
+  },
+};
+
 /**
  * Objects-tab swatch colors, keyed by the Objects row key, from KiCad's
  * builtin dark theme (common/settings/builtin_color_themes.h). Rows without

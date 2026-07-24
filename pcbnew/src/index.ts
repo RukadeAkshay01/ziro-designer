@@ -62,6 +62,8 @@ export {
   mirrorBoardItems,
   groupBoardItems,
   ungroupBoardItems,
+  addToGroupItems,
+  removeFromGroupItems,
   expandGroupIds,
   groupContaining,
   boardUuidIndex,

@@ -1535,8 +1535,12 @@ function uuidOfItemId(board: Board, id: string): string | undefined {
 /**
  * The TOP-LEVEL group containing this item, or null (PCB_GROUP::TopLevelGroup:
  * clicking a member selects the outermost containing group).
+ *
+ * `stopAtGroupUuid` is the currently "entered" group (SELECTION_TOOL::EnterGroup):
+ * the walk stops at its boundary, so a click inside resolves to the immediate
+ * child within that group (or the bare item), never the entered group itself.
  */
-export function groupContaining(board: Board, id: string): string | null {
+export function groupContaining(board: Board, id: string, stopAtGroupUuid?: string): string | null {
   const uuid0 = uuidOfItemId(board, id);
   if (!uuid0) return null;
   let uuid = uuid0;
@@ -1545,8 +1549,9 @@ export function groupContaining(board: Board, id: string): string | null {
   for (let hops = 0; hops < 16; hops++) {
     const gi = board.groups.findIndex((g) => g.members.includes(uuid));
     if (gi < 0) break;
-    found = boardItemId('group', gi);
     const gUuid = board.groups[gi]!.uuid;
+    if (stopAtGroupUuid && gUuid === stopAtGroupUuid) break;
+    found = boardItemId('group', gi);
     if (!gUuid) break;
     uuid = gUuid;
   }
@@ -1613,6 +1618,73 @@ export function ungroupBoardItems(board: Board, ids: ReadonlySet<string>): Board
   return { ...board, groups: board.groups.filter((_, i) => !gidx.has(i)) };
 }
 
+/** The index of the group directly owning this item's uuid, or -1 (an item's
+ *  immediate parent group — GetParentGroup, one level, unlike groupContaining
+ *  which walks to the top). */
+function parentGroupIndex(board: Board, id: string): number {
+  const uuid = uuidOfItemId(board, id);
+  if (!uuid) return -1;
+  return board.groups.findIndex((g) => g.members.includes(uuid));
+}
+
+/**
+ * Add the selected ungrouped items to the one selected group (ACTIONS::addToGroup,
+ * GROUP_TOOL::AddToGroup): enabled only when exactly one group and at least one
+ * item that isn't already in a group are selected. Items already in the target
+ * group, and pads / footprint texts (no uuid, not groupable), are skipped.
+ */
+export function addToGroupItems(board: Board, ids: ReadonlySet<string>): Board {
+  let groupIdx = -1;
+  const toAdd: string[] = [];
+  for (const id of ids) {
+    const r = parseBoardItemId(id);
+    if (r?.kind === 'group') {
+      if (groupIdx >= 0) return board; // only one group may be selected
+      groupIdx = r.index;
+    } else if (parentGroupIndex(board, id) < 0) {
+      const uuid = uuidOfItemId(board, id);
+      if (uuid) toAdd.push(uuid);
+    }
+  }
+  const g = groupIdx >= 0 ? board.groups[groupIdx] : undefined;
+  if (!g || toAdd.length === 0) return board;
+  const fresh = toAdd.filter((u) => !g.members.includes(u));
+  if (fresh.length === 0) return board;
+  const groups = board.groups.map((grp, i) =>
+    i === groupIdx ? { ...grp, members: [...grp.members, ...fresh] } : grp,
+  );
+  return { ...board, groups };
+}
+
+/**
+ * Remove the selected items from their parent groups (ACTIONS::removeFromGroup,
+ * GROUP_TOOL::RemoveFromGroup). A group left with fewer than two members is then
+ * dissolved, mirroring the ">= 2 members" invariant.
+ */
+export function removeFromGroupItems(board: Board, ids: ReadonlySet<string>): Board {
+  const remove = new Map<number, Set<string>>(); // group index -> member uuids to drop
+  for (const id of ids) {
+    const gi = parentGroupIndex(board, id);
+    if (gi < 0) continue;
+    const uuid = uuidOfItemId(board, id);
+    if (!uuid) continue;
+    (remove.get(gi) ?? remove.set(gi, new Set()).get(gi)!).add(uuid);
+  }
+  if (remove.size === 0) return board;
+  const dissolve = new Set<number>();
+  const groups = board.groups.map((g, i) => {
+    const drop = remove.get(i);
+    if (!drop) return g;
+    const members = g.members.filter((u) => !drop.has(u));
+    if (members.length < 2) dissolve.add(i);
+    return { ...g, members };
+  });
+  return {
+    ...board,
+    groups: groups.filter((_, i) => !dissolve.has(i)),
+  };
+}
+
 // ----- lock / unlock (PCB_ACTIONS::lock / unlock) -----------------------------
 
 /** Is the item (or, for pads / footprint text, its parent footprint) locked? */
@@ -1649,7 +1721,7 @@ export function isBoardItemLocked(board: Board, id: string): boolean {
 export function setBoardItemsLocked(
   board: Board,
   ids: ReadonlySet<string>,
-  locked: boolean,
+  locked: boolean | 'toggle',
 ): Board {
   const idx = indicesByKind(ids);
   // Pads / fp texts resolve to their parent footprint.
@@ -1657,13 +1729,17 @@ export function setBoardItemsLocked(
     const r = parseBoardItemId(id);
     if (r && (r.kind === 'pad' || r.kind === 'fptext')) idx.footprint.add(r.index);
   }
-  const patch = <T extends { locked?: boolean; source: SList }>(item: T): T => ({
-    ...item,
-    locked,
-    source: locked
-      ? patchChild(item.source, 'locked', list(atom('locked'), atom('yes')))
-      : removeChild(item.source, 'locked'),
-  });
+  const patch = <T extends { locked?: boolean; source: SList }>(item: T): T => {
+    // 'toggle' flips each item independently (PCB_ACTIONS::toggleLock).
+    const next = locked === 'toggle' ? !item.locked : locked;
+    return {
+      ...item,
+      locked: next,
+      source: next
+        ? patchChild(item.source, 'locked', list(atom('locked'), atom('yes')))
+        : removeChild(item.source, 'locked'),
+    };
+  };
   return {
     ...board,
     tracks: board.tracks.map((t, i) => (idx.track.has(i) ? patch(t) : t)),

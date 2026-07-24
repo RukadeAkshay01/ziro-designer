@@ -168,7 +168,7 @@ class SolutionCollector {
 const seriesCache = new Map<ESeriesId, Resistance[]>();
 
 function seriesData(id: ESeriesId): Resistance[] {
-  let cached = seriesCache.get(id);
+  const cached = seriesCache.get(id);
   if (cached) return cached;
 
   const base = eseriesValues(id); // first-decade floats, base[0] === 1.0

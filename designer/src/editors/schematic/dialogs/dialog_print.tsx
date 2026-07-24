@@ -2,14 +2,31 @@
  * Print dialog. Counterpart: `eeschema/printing/dialog_print.cpp` (DIALOG_PRINT
  * for eeschema, dialog_print_base.cpp) — the same control order: "Print
  * drawing sheet", "Output mode:" choice, "Print background color", the
- * different-print-theme option, and a Page Setup... button beside the
- * standard buttons. "Print" renders the current sheet into the browser's
- * print flow.
+ * different-print-theme option. KiCad's behaviors translated exactly:
+ *
+ *  - Options persist in the eeschema settings' `printing.*` slice.
+ *    TransferDataToWindow seeds every control from it (first run is KiCad's
+ *    defaults: B&W, no drawing sheet), and SavePrintOptions runs from the
+ *    DESTRUCTOR — i.e. on every way of leaving the dialog (Print, Preview,
+ *    Close, the X, the backdrop).
+ *  - The theme choice pre-selects `use_theme ? printing.color_theme : the
+ *    editor's display theme` and is enabled only while the checkbox is
+ *    checked (OnUseColorThemeChecked). Unlike pcbnew, B&W does not disable
+ *    the theme controls here.
+ *  - OnOutputChoice: switching to Black and white disables AND unchecks
+ *    "Print background color"; switching back to Color re-enables it and
+ *    restores the SAVED config value (not the transient checkbox state).
+ *  - SavePrintOptions stores background as false while its checkbox is
+ *    disabled, and only rewrites `color_theme` when the use-theme box is
+ *    checked.
+ *
+ * "Print" renders the current sheet into the browser's print flow.
  */
 
 import { useState, type JSX } from 'react';
 import type { PlotOpts } from '../render/plot.js';
 import { BUILTIN_THEMES } from '../theme.js';
+import { settings } from '../../../prefs/settings.js';
 
 interface Props {
   onPrint: (opts: PlotOpts, themeId?: string) => void;
@@ -24,17 +41,50 @@ interface Props {
 // is intentionally omitted. On the web the browser's native print dialog already
 // controls paper size, orientation and margins for the print job.
 export function DialogPrint({ onPrint, onPreview, themeId, onClose }: Props): JSX.Element {
-  const [color, setColor] = useState(true);
-  const [drawingSheet, setDrawingSheet] = useState(true);
-  const [background, setBackground] = useState(false);
+  // TransferDataToWindow: seed from the saved printing.* options.
+  const cfg = settings.eeschema.printing;
+  const [color, setColor] = useState(!cfg.monochrome);
+  const [drawingSheet, setDrawingSheet] = useState(cfg.title_block);
+  // If monochrome, the background checkbox starts unchecked + disabled.
+  const [background, setBackground] = useState(cfg.monochrome ? false : cfg.background);
   // "Use a different color theme for printing" (m_checkUseColorTheme + choice).
-  const [useTheme, setUseTheme] = useState(false);
-  const [themeSel, setThemeSel] = useState(
-    themeId && BUILTIN_THEMES[themeId] ? themeId : '_builtin_default',
-  );
+  const [useTheme, setUseTheme] = useState(cfg.use_theme);
+  const [themeSel, setThemeSel] = useState(() => {
+    const target = cfg.use_theme && cfg.color_theme ? cfg.color_theme : themeId;
+    return target && BUILTIN_THEMES[target] ? target : '_builtin_default';
+  });
+
+  // OnOutputChoice: B&W unchecks + disables background; Color restores the
+  // saved config value.
+  const onOutputChoice = (toColor: boolean): void => {
+    setColor(toColor);
+    setBackground(toColor ? settings.eeschema.printing.background : false);
+  };
+
+  // SavePrintOptions (run by the destructor upstream, so from every exit).
+  const savePrintOptions = (): void => {
+    settings.updateEeschema((s) => {
+      s.printing.monochrome = !color;
+      s.printing.title_block = drawingSheet;
+      // A disabled background checkbox saves as false, like upstream.
+      s.printing.background = color ? background : false;
+      s.printing.use_theme = useTheme;
+      if (useTheme) s.printing.color_theme = themeSel;
+    });
+  };
+
+  const saveAndClose = (): void => {
+    savePrintOptions();
+    onClose();
+  };
+
+  const run = (fn?: (opts: PlotOpts, themeId?: string) => void): void => {
+    savePrintOptions();
+    fn?.({ color, drawingSheet, background: color && background }, useTheme ? themeSel : undefined);
+  };
 
   return (
-    <div className="ze-modal-backdrop" onMouseDown={onClose}>
+    <div className="ze-modal-backdrop" onMouseDown={saveAndClose}>
       <div
         className="ze-modal"
         style={{ width: 430, maxWidth: '92vw', height: 'auto' }}
@@ -42,7 +92,7 @@ export function DialogPrint({ onPrint, onPreview, themeId, onClose }: Props): JS
       >
         <div className="ze-modal-header">
           Print
-          <span className="x" title="Cancel" onClick={onClose}>
+          <span className="x" title="Cancel" onClick={saveAndClose}>
             ✕
           </span>
         </div>
@@ -63,7 +113,7 @@ export function DialogPrint({ onPrint, onPreview, themeId, onClose }: Props): JS
             <select
               className="ze-select"
               value={color ? 'color' : 'bw'}
-              onChange={(e) => setColor(e.target.value === 'color')}
+              onChange={(e) => onOutputChoice(e.target.value === 'color')}
             >
               <option value="color">Color</option>
               <option value="bw">Black and White</option>
@@ -72,7 +122,7 @@ export function DialogPrint({ onPrint, onPreview, themeId, onClose }: Props): JS
           <label style={{ display: 'block', margin: '4px 0', paddingLeft: 20 }}>
             <input
               type="checkbox"
-              checked={color && background}
+              checked={background}
               disabled={!color}
               onChange={(e) => setBackground(e.target.checked)}
             />{' '}
@@ -110,31 +160,14 @@ export function DialogPrint({ onPrint, onPreview, themeId, onClose }: Props): JS
           {/* Right-aligned by the footer's justify-content:flex-end.
               KiCad std-button order (GTK): Print Preview (Apply), Close, Print (OK). */}
           {onPreview && (
-            <button
-              className="ze-btn"
-              onClick={() =>
-                onPreview(
-                  { color, drawingSheet, background: color && background },
-                  useTheme ? themeSel : undefined,
-                )
-              }
-            >
+            <button className="ze-btn" onClick={() => run(onPreview)}>
               Print Preview
             </button>
           )}
-          <button className="ze-btn" onClick={onClose}>
+          <button className="ze-btn" onClick={saveAndClose}>
             Close
           </button>
-          <button
-            className="ze-btn primary"
-            onClick={() =>
-              // Background is forced off for B&W (KiCad's OnOutputChoice).
-              onPrint(
-                { color, drawingSheet, background: color && background },
-                useTheme ? themeSel : undefined,
-              )
-            }
-          >
+          <button className="ze-btn primary" onClick={() => run(onPrint)}>
             Print
           </button>
         </div>

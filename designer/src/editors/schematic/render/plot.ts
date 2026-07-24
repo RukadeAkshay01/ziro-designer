@@ -30,6 +30,14 @@ export interface PlotOpts {
   background: boolean;
   /** Raster resolution for PNG/PDF output (the PNG Options DPI; default 300). */
   dpi?: number;
+  /** Title-block page context of this sheet instance (SCH_SHEET_PATH):
+   *  page-number string (${#}), sheet ordinal (page1only visibility), sheet
+   *  count (${##}), sheet name and human path. Unset = standalone sheet. */
+  pageNumber?: string;
+  sheetNumber?: number;
+  sheetCount?: number;
+  sheetName?: string;
+  sheetPath?: string;
   /** Pen width (IU) for zero-width strokes ("Minimum line width"). */
   defaultPenIU?: number;
   /** Effective junction-dot diameter (IU) from the schematic settings
@@ -46,6 +54,8 @@ export interface PlotOpts {
   overbarHeightRatio?: number;
   /** Pin decoration size in IU (m_PinSymbolSize; 0 = per-pin fallback). */
   pinSymbolSizeIU?: number;
+  /** Wire hop-over arc radius in IU (0/unset = hop-overs off). */
+  hopOverRadiusIU?: number;
   /** Per-item netclass fallbacks for the plotted sheet (RenderOpts shape). */
   netOverrides?: RenderOpts['netOverrides'];
   /** Text-variable resolver, so `${VAR}` plots expanded like the screen. */
@@ -114,6 +124,11 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     showPageLimits: false,
     showDrawingSheet: opts.drawingSheet,
     ...(opts.sheet ? { drawingSheet: opts.sheet } : {}),
+    pageNumber: opts.pageNumber,
+    sheetNumber: opts.sheetNumber,
+    sheetCount: opts.sheetCount,
+    sheetName: opts.sheetName,
+    sheetPath: opts.sheetPath,
     defaultPenIU: opts.defaultPenIU,
     junctionDiameterIU: opts.junctionDiameterIU,
     dashLengthRatio: opts.dashLengthRatio,
@@ -122,6 +137,7 @@ function outputRenderOpts(opts: PlotOpts): RenderOpts {
     labelSizeRatio: opts.labelSizeRatio,
     overbarHeightRatio: opts.overbarHeightRatio,
     pinSymbolSizeIU: opts.pinSymbolSizeIU,
+    hopOverRadiusIU: opts.hopOverRadiusIU,
     netOverrides: opts.netOverrides,
     resolveTextVar: opts.resolveTextVar,
     subpart: opts.subpart,
@@ -508,22 +524,33 @@ function round(v: number): number {
 
 // ----- Print (browser) -------------------------------------------------------
 
-/** Open the browser print flow for the rendered sheet (SCH_PRINTOUT). */
-export function printSheet(
-  sch: Schematic,
+/** One page of a print job: a sheet document and its render options. */
+export interface PrintPage {
+  sch: Schematic;
+  opts: PlotOpts;
+}
+
+/**
+ * Open the browser print flow for a multi-page job — SCH_PRINTOUT prints the
+ * whole hierarchy, one page per sheet instance in SCH_SHEET_LIST order.
+ * Colour output prints as-is; B&W forces the monochrome theme (outputTheme).
+ * "Print" auto-opens the browser print flow once the last page has loaded;
+ * "Print Preview" (KiCad's Apply) just shows the rendered pages. The page
+ * orientation follows the first sheet (CSS `@page` is per-document, unlike
+ * wxPrintout's per-page setup).
+ */
+export function printSheets(
+  pages: readonly PrintPage[],
   base: Theme,
-  opts: PlotOpts,
   title: string,
   preview = false,
 ): void {
-  // Colour output prints as-is; B&W forces the monochrome theme. The print
-  // window sizes the image to the page. "Print" auto-opens the browser print
-  // flow on load; "Print Preview" (KiCad's Apply) just shows the rendered page
-  // so the user can review it and print from the browser when ready.
-  const canvas = renderSheetToCanvas(sch, opts.color ? base : KICAD_CLASSIC, opts, 300);
-  const dataUrl = canvas.toDataURL('image/png');
-  const page = pageIU(sch);
-  const landscape = page.w >= page.h;
+  if (pages.length === 0) return;
+  const dataUrls = pages.map(({ sch, opts }) =>
+    renderSheetToCanvas(sch, opts.color ? base : KICAD_CLASSIC, opts, 300).toDataURL('image/png'),
+  );
+  const first = pageIU(pages[0]!.sch);
+  const landscape = first.w >= first.h;
   const win = window.open('', '_blank');
   if (!win) return;
   const onload = preview ? 'window.focus();' : 'window.focus();window.print();';
@@ -531,8 +558,22 @@ export function printSheet(
     `<!doctype html><html><head><title>${escText(title)}</title>` +
       `<style>@page { size: ${landscape ? 'landscape' : 'portrait'}; margin: 0; }` +
       `html,body { margin: 0; padding: 0; }` +
-      `img { display: block; width: 100%; height: auto; }</style></head>` +
-      `<body><img src="${dataUrl}" onload="${onload}"/></body></html>`,
+      `img { display: block; width: 100%; height: auto; page-break-after: always; }` +
+      `img:last-child { page-break-after: auto; }</style></head>` +
+      `<body>${dataUrls
+        .map((u, i) => `<img src="${u}"${i === dataUrls.length - 1 ? ` onload="${onload}"` : ''}/>`)
+        .join('')}</body></html>`,
   );
   win.document.close();
+}
+
+/** Single-sheet convenience wrapper over printSheets. */
+export function printSheet(
+  sch: Schematic,
+  base: Theme,
+  opts: PlotOpts,
+  title: string,
+  preview = false,
+): void {
+  printSheets([{ sch, opts }], base, title, preview);
 }

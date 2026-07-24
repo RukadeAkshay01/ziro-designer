@@ -50,6 +50,8 @@ export const TOP_TOOLBAR: ToolEntry[] = [
   { id: 'rotateCW', icon: 'rotateCW', title: 'Rotate Clockwise (Shift+R)' },
   { id: 'mirrorV', icon: 'mirrorV', title: 'Mirror Vertically (Y)' },
   { id: 'mirrorH', icon: 'mirrorH', title: 'Mirror Horizontally (X)' },
+  // Only Group / Ungroup live on the toolbar (toolbars_sch_editor.cpp); Add to
+  // Group / Remove from Group are right-click-only (GROUP_CONTEXT_MENU).
   { id: 'group', icon: 'group', title: 'Group Items' },
   { id: 'ungroup', icon: 'ungroup', title: 'Ungroup Items' },
   sep,

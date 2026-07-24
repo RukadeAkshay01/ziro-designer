@@ -20,216 +20,73 @@ import { PagedDialog, type PagedDialogSection } from '../../../ui/PagedDialog.js
 import { Icon } from '../../../ui/icons.js';
 
 /**
- * Original stand-in icons for the Constraints rows, one per PANEL_SETUP_CONSTRAINTS
- * row (m_bitmapClearance, m_bitmapMinTrackWidth, …). KiCad ships its own GPL
- * bitmaps; these are recognisable equivalents drawn in our SVG icon style so the
- * icon | label | value | unit layout matches upstream position-for-position.
+ * KiCad's own dark-theme constraint icons, vendored under assets/constraints
+ * (GPL like this project — same pattern as assets/toolbar). Filenames are the
+ * KiCad BITMAPS enum names assigned in panel_setup_constraints.cpp.
  */
-const CON_ICON: Record<string, JSX.Element> = {
-  // clearance between two copper items
-  clearance: (
-    <>
-      <rect x="1.5" y="4" width="4" height="8" rx="1" />
-      <rect x="10.5" y="4" width="4" height="8" rx="1" />
-      <path d="M6.6 8h2.8M7 6.9 5.8 8 7 9.1M9 6.9 10.2 8 9 9.1" />
-    </>
-  ),
-  // minimum track width
-  track: (
-    <>
-      <rect x="2" y="6.2" width="12" height="3.6" />
-      <path d="M8 2.2v3M8 10.8v3M6.9 3.4 8 2.2l1.1 1.2M6.9 12.6 8 13.8l1.1-1.2" />
-    </>
-  ),
-  // minimum connection width
-  conn: (
-    <>
-      <rect x="1.5" y="5" width="7" height="6" />
-      <rect x="7.5" y="5" width="7" height="6" />
-    </>
-  ),
-  // minimum via annular width
-  annular: (
-    <>
-      <circle cx="8" cy="8" r="5.6" />
-      <circle cx="8" cy="8" r="2.4" />
-    </>
-  ),
-  // minimum via diameter
-  viaDia: (
-    <>
-      <circle cx="8" cy="8" r="5.6" />
-      <circle cx="8" cy="8" r="1.4" fill="currentColor" />
-      <path d="M2.4 8h11.2" />
-    </>
-  ),
-  // minimum microvia diameter
-  uviaDia: (
-    <>
-      <circle cx="8" cy="8" r="3.8" />
-      <circle cx="8" cy="8" r="1" fill="currentColor" />
-      <path d="M4.2 8h7.6" />
-    </>
-  ),
-  // minimum microvia hole
-  uviaHole: (
-    <>
-      <circle cx="8" cy="8" r="3.8" />
-      <circle cx="8" cy="8" r="1.7" />
-    </>
-  ),
-  // copper to hole clearance
-  copperHole: (
-    <>
-      <circle cx="5.5" cy="8" r="3.4" />
-      <circle cx="12.5" cy="8" r="1.7" />
-    </>
-  ),
-  // copper to board edge clearance
-  copperEdge: (
-    <>
-      <circle cx="5.5" cy="8" r="3.4" />
-      <path d="M12.5 2.5v11M12.5 13.5h1.5" />
-    </>
-  ),
-  // minimum through hole (drill)
-  throughHole: (
-    <>
-      <circle cx="8" cy="8" r="5" />
-      <circle cx="8" cy="8" r="2" />
-    </>
-  ),
-  // hole to hole clearance
-  holeToHole: (
-    <>
-      <circle cx="4.6" cy="8" r="2.9" />
-      <circle cx="11.4" cy="8" r="2.9" />
-    </>
-  ),
-  // allow fillets/chamfers
-  fillet: (
-    <>
-      <path d="M13 3H6a3 3 0 0 0-3 3v7" />
-      <path d="M3 13h10V3" opacity="0.4" />
-    </>
-  ),
-  // thermal relief spokes
-  spoke: (
-    <>
-      <circle cx="8" cy="8" r="2" />
-      <path d="M8 2.2v2.2M8 11.6v2.2M2.2 8h2.2M11.6 8h2.2M4.2 4.2l1.5 1.5M10.3 10.3l1.5 1.5M11.8 4.2l-1.5 1.5M5.7 10.3l-1.5 1.5" />
-    </>
-  ),
+const CON_ICON_URLS = import.meta.glob('../../../assets/constraints/*.svg', {
+  query: '?url',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+// Constraint row -> KiCad bitmap file (SetBitmap(KiBitmapBundle(BITMAPS::…))).
+const CON_ICON_FILE: Record<string, string> = {
+  clearance: 'ps_diff_pair_gap',
+  track: 'width_track',
+  conn: 'width_conn',
+  annular: 'via_annulus',
+  viaDia: 'via_diameter',
+  uviaDia: 'via_diameter',
+  uviaHole: 'via_hole_diameter',
+  copperHole: 'hole_to_copper_clearance',
+  copperEdge: 'edge_to_copper_clearance',
+  throughHole: 'via_hole_diameter',
+  holeToHole: 'hole_to_hole_clearance',
+  fillet: 'zone_fillet',
+  spoke: 'thermal_spokes',
 };
 
-function ConIcon({ name }: { name: string }): JSX.Element {
-  return (
-    <svg
-      width={18}
-      height={18}
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.1"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      style={{ opacity: 0.85 }}
-    >
-      {CON_ICON[name] ?? null}
-    </svg>
-  );
+function ConIcon({ name }: { name: string }): JSX.Element | null {
+  const file = CON_ICON_FILE[name];
+  const url = file ? CON_ICON_URLS[`../../../assets/constraints/${file}.svg`] : undefined;
+  return url ? <img src={url} width={20} height={20} alt="" aria-hidden="true" /> : null;
 }
-import {
-  PanelTextVariables,
-  type TextVar,
-} from '../../schematic/dialogs/panels/panel_text_variables.js';
-import {
-  PanelSetupNetclasses,
-  defaultNetClasses,
-  type NetClassesData,
-} from '../../schematic/dialogs/panels/panel_setup_netclasses.js';
+import { PanelTextVariables } from '../../schematic/dialogs/panels/panel_text_variables.js';
+import { PanelSetupNetclasses } from '../../schematic/dialogs/panels/panel_setup_netclasses.js';
+import { PanelEmbeddedFiles } from '../../schematic/dialogs/panels/panel_embedded_files.js';
+import { PanelPcbSeverities } from './panels/panel_pcb_severities.js';
+import { PanelPcbTextGraphics } from './panels/panel_pcb_text_graphics.js';
+import { PanelPcbFormatting } from './panels/panel_pcb_formatting.js';
+import { PanelPcbMaskPaste } from './panels/panel_pcb_mask_paste.js';
+import { PanelPcbZones } from './panels/panel_pcb_zones.js';
+import { PanelPcbLayers } from './panels/panel_pcb_layers.js';
+import { PanelPcbTeardrops } from './panels/panel_pcb_teardrops.js';
+import { PanelPcbTuning } from './panels/panel_pcb_tuning.js';
+import { PanelPcbTuningProfiles } from './panels/panel_pcb_tuning_profiles.js';
+import { PanelPcbBoardFinish } from './panels/panel_pcb_board_finish.js';
+import { PanelPcbStackup } from './panels/panel_pcb_stackup.js';
+import { PanelPcbComponentClasses } from './panels/panel_pcb_component_classes.js';
+import { PanelPcbCustomRules } from './panels/panel_pcb_custom_rules.js';
+import type {
+  BoardConstraints,
+  BoardSetupValues,
+  DiffPairSize,
+  ViaSize,
+} from '../board_settings.js';
+import { readBoardSetupProText } from '../project_settings.js';
+import { applyBoardFileSetup } from '../board_file_settings.js';
+import { DialogImportSettings, type ImportSettingsOpts } from './dialog_import_settings.js';
 
-/** PANEL_SETUP_CONSTRAINTS fields (BOARD_DESIGN_SETTINGS minimums), mm. */
-export interface BoardConstraints {
-  // Copper
-  minClearanceMM: number;
-  minTrackMM: number;
-  minConnectionMM: number;
-  minAnnularMM: number;
-  minViaMM: number;
-  minUViaMM: number;
-  minUViaHoleMM: number;
-  copperToHoleMM: number;
-  copperToEdgeMM: number;
-  // Holes
-  minThroughHoleMM: number;
-  minHoleToHoleMM: number;
-  // Silk
-  silkClearanceMM: number;
-  minTextHeightMM: number;
-  minTextThicknessMM: number;
-  // Arc/Circle approximation
-  maxDeviationMM: number;
-  // Zone fill strategy
-  allowFilletsOutside: boolean;
-  minThermalSpokes: number;
-  // Length tuning
-  includeStackupHeight: boolean;
-}
-
-export interface ViaSize {
-  diameter: number;
-  drill: number;
-}
-export interface DiffPairSize {
-  width: number;
-  gap: number;
-  viaGap: number;
-}
-
-export interface BoardSetupValues {
-  constraints: BoardConstraints;
-  /** Pre-defined routing sizes, mm (PANEL_SETUP_TRACKS_AND_VIAS). */
-  trackWidthsMM: number[];
-  viaSizesMM: ViaSize[];
-  diffPairsMM: DiffPairSize[];
-  /** Net classes + assignments (shared PANEL_SETUP_NETCLASSES). */
-  netClasses: NetClassesData;
-  /** Project text variables (shared PANEL_TEXT_VARIABLES). */
-  textVars: TextVar[];
-}
-
-/** Seed values (board_design_settings.h defaults); project round-trip lands later. */
-export function defaultBoardSetup(): BoardSetupValues {
-  return {
-    constraints: {
-      minClearanceMM: 0.2,
-      minTrackMM: 0.2,
-      minConnectionMM: 0,
-      minAnnularMM: 0.05,
-      minViaMM: 0.4,
-      minUViaMM: 0.2,
-      minUViaHoleMM: 0.1,
-      copperToHoleMM: 0,
-      copperToEdgeMM: 0.01,
-      minThroughHoleMM: 0.3,
-      minHoleToHoleMM: 0.25,
-      silkClearanceMM: 0,
-      minTextHeightMM: 0.8,
-      minTextThicknessMM: 0.08,
-      maxDeviationMM: 0.005,
-      allowFilletsOutside: true,
-      minThermalSpokes: 2,
-      includeStackupHeight: true,
-    },
-    trackWidthsMM: [],
-    viaSizesMM: [],
-    diffPairsMM: [],
-    netClasses: defaultNetClasses(),
-    textVars: [],
-  };
-}
+// The aggregate model lives in board_settings.ts (KiCad's data/UI split);
+// re-exported so dialog users keep importing from the dialog module.
+export {
+  defaultBoardSetup,
+  type BoardConstraints,
+  type BoardSetupValues,
+  type DiffPairSize,
+  type ViaSize,
+} from '../board_settings.js';
 
 type PageId =
   | 'layers'
@@ -260,6 +117,68 @@ interface Props {
 
 export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): JSX.Element {
   const [v, setV] = useState<BoardSetupValues>(() => structuredClone(value));
+  const [importOpen, setImportOpen] = useState(false);
+
+  // DIALOG_BOARD_SETUP::onAuxiliaryAction: parse the other project's files
+  // and copy the selected groups into the working values (each panel's
+  // ImportSettingsFrom). Layers, physical stackup and board finish are
+  // linked and import together, like upstream.
+  const applyImport = (files: { name: string; text: string }[], opts: ImportSettingsOpts): void => {
+    const pcb = files.find((f) => /\.kicad_pcb$/i.test(f.name));
+    const pro = files.find((f) => /\.kicad_pro$/i.test(f.name));
+    const dru = files.find((f) => /\.kicad_dru$/i.test(f.name));
+    if (!pcb || !pro) {
+      // KiCad refuses when the associated project file cannot be loaded.
+      window.alert(
+        'Error importing settings from board:\n' +
+          `Associated ${pcb ? 'project (.kicad_pro)' : 'board (.kicad_pcb)'} file could not be loaded`,
+      );
+      return;
+    }
+    const other = readBoardSetupProText(pro.text);
+    if (!applyBoardFileSetup(pcb.text, other)) {
+      window.alert(`Error loading board file:\n${pcb.name}`);
+      return;
+    }
+    if (dru) other.customRules.text = dru.text;
+
+    // PANEL_SETUP_LAYERS::CheckCopperLayerCount: warn when the import would
+    // drop inner copper layers of the current board.
+    if (opts.layers && other.physicalStackup.copperCount < v.physicalStackup.copperCount) {
+      const ok = window.confirm(
+        'Imported settings have fewer copper layers than the current board. ' +
+          'Items on the vanishing layers will be deleted.\n\nContinue?',
+      );
+      if (!ok) return;
+    }
+
+    const next = structuredClone(v);
+    if (opts.layers) {
+      // Stackup, layers and board finish import together (they are linked).
+      next.physicalStackup = structuredClone(other.physicalStackup);
+      next.layers = structuredClone(other.layers);
+      next.boardFinish = structuredClone(other.boardFinish);
+    }
+    if (opts.textAndGraphics) next.textGraphics = structuredClone(other.textGraphics);
+    if (opts.formatting) next.formatting = structuredClone(other.formatting);
+    if (opts.constraints) next.constraints = structuredClone(other.constraints);
+    if (opts.netclasses) next.netClasses = structuredClone(other.netClasses);
+    if (opts.componentClasses) next.componentClasses = structuredClone(other.componentClasses);
+    if (opts.tracksAndVias) {
+      next.trackWidthsMM = [...other.trackWidthsMM];
+      next.viaSizesMM = structuredClone(other.viaSizesMM);
+      next.diffPairsMM = structuredClone(other.diffPairsMM);
+    }
+    if (opts.zones) next.zones = structuredClone(other.zones);
+    if (opts.teardrops) next.teardrops = structuredClone(other.teardrops);
+    if (opts.tuningPatterns) next.tuning = structuredClone(other.tuning);
+    if (opts.maskAndPaste) next.maskPaste = structuredClone(other.maskPaste);
+    if (opts.customRules) next.customRules = structuredClone(other.customRules);
+    if (opts.severities) next.drcSeverities = structuredClone(other.drcSeverities);
+    if (opts.tuningProfiles) next.tuningProfiles = structuredClone(other.tuningProfiles);
+    setV(next);
+    setImportOpen(false);
+  };
 
   const num = (s: string): number => (Number.isFinite(Number(s)) ? Number(s) : 0);
 
@@ -285,7 +204,7 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
   // KiCad leaves un-iconed (Silk); the empty cell keeps the column aligned.
   const conRow = (icon: string, label: string, key: keyof BoardConstraints): JSX.Element => (
     <>
-      <span style={{ display: 'inline-flex', width: 18, height: 18 }}>
+      <span style={{ display: 'inline-flex', width: 20, height: 20, alignItems: 'center' }}>
         {icon ? <ConIcon name={icon} /> : null}
       </span>
       <span>{label}</span>
@@ -318,8 +237,6 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
           {conRow('conn', 'Minimum connection width:', 'minConnectionMM')}
           {conRow('annular', 'Minimum annular width:', 'minAnnularMM')}
           {conRow('viaDia', 'Minimum via diameter:', 'minViaMM')}
-          {conRow('uviaDia', 'Minimum uVia diameter:', 'minUViaMM')}
-          {conRow('uviaHole', 'Minimum uVia hole:', 'minUViaHoleMM')}
           {conRow('copperHole', 'Copper to hole clearance:', 'copperToHoleMM')}
           {conRow('copperEdge', 'Copper to edge clearance:', 'copperToEdgeMM')}
         </div>
@@ -329,6 +246,13 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
         <div style={conGrid}>
           {conRow('throughHole', 'Minimum through hole:', 'minThroughHoleMM')}
           {conRow('holeToHole', 'Hole to hole clearance:', 'minHoleToHoleMM')}
+        </div>
+
+        <div style={{ ...secLabel, marginTop: 14 }}>uVias</div>
+        <hr style={secRule} />
+        <div style={conGrid}>
+          {conRow('uviaDia', 'Minimum uVia diameter:', 'minUViaMM')}
+          {conRow('uviaHole', 'Minimum uVia hole:', 'minUViaHoleMM')}
         </div>
 
         <div style={{ ...secLabel, marginTop: 14 }}>Silk</div>
@@ -353,7 +277,7 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
         <label
           style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, margin: '4px 0' }}
         >
-          <span style={{ display: 'inline-flex', width: 18, height: 18 }}>
+          <span style={{ display: 'inline-flex', width: 20, height: 20, alignItems: 'center' }}>
             <ConIcon name="fillet" />
           </span>
           <input
@@ -370,7 +294,7 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
             marginTop: 6,
           }}
         >
-          <span style={{ display: 'inline-flex', width: 18, height: 18 }}>
+          <span style={{ display: 'inline-flex', width: 20, height: 20, alignItems: 'center' }}>
             <ConIcon name="spoke" />
           </span>
           <span>Minimum thermal relief spoke count:</span>
@@ -526,17 +450,69 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
     {
       label: 'Board Stackup',
       pages: [
-        { id: 'layers', label: 'Board Editor Layers', disabled: true, render: todo },
-        { id: 'physicalStackup', label: 'Physical Stackup', disabled: true, render: todo },
-        { id: 'boardFinish', label: 'Board Finish', disabled: true, render: todo },
-        { id: 'maskPaste', label: 'Solder Mask/Paste', disabled: true, render: todo },
+        {
+          id: 'layers',
+          label: 'Board Editor Layers',
+          render: () => (
+            <PanelPcbLayers value={v.layers} onChange={(layers) => setV({ ...v, layers })} />
+          ),
+        },
+        {
+          id: 'physicalStackup',
+          label: 'Physical Stackup',
+          render: () => (
+            <PanelPcbStackup
+              value={v.physicalStackup}
+              onChange={(physicalStackup) => setV({ ...v, physicalStackup })}
+              finish={v.boardFinish}
+            />
+          ),
+        },
+        {
+          id: 'boardFinish',
+          label: 'Board Finish',
+          render: () => (
+            <PanelPcbBoardFinish
+              value={v.boardFinish}
+              onChange={(boardFinish) => setV({ ...v, boardFinish })}
+            />
+          ),
+        },
+        {
+          id: 'maskPaste',
+          label: 'Solder Mask/Paste',
+          render: () => (
+            <PanelPcbMaskPaste
+              value={v.maskPaste}
+              onChange={(maskPaste) => setV({ ...v, maskPaste })}
+            />
+          ),
+        },
       ],
     },
     {
       label: 'Text & Graphics',
       pages: [
-        { id: 'defaults', label: 'Defaults', disabled: true, render: todo },
-        { id: 'formatting', label: 'Formatting', disabled: true, render: todo },
+        {
+          id: 'defaults',
+          label: 'Defaults',
+          render: () => (
+            <PanelPcbTextGraphics
+              value={v.textGraphics}
+              onChange={(textGraphics) => setV({ ...v, textGraphics })}
+            />
+          ),
+        },
+        {
+          id: 'formatting',
+          label: 'Formatting',
+          render: () => (
+            <PanelPcbFormatting
+              value={v.formatting}
+              onChange={(formatting) => setV({ ...v, formatting })}
+            />
+          ),
+        },
         {
           id: 'textVars',
           label: 'Text Variables',
@@ -554,10 +530,40 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
       pages: [
         { id: 'constraints', label: 'Constraints', render: constraintsPanel },
         { id: 'sizes', label: 'Pre-defined Sizes', render: sizesPanel },
-        { id: 'zones', label: 'Zones', disabled: true, render: todo },
-        { id: 'teardrops', label: 'Teardrops', disabled: true, render: todo },
-        { id: 'tuningPatterns', label: 'Length-tuning Patterns', disabled: true, render: todo },
-        { id: 'tuningProfiles', label: 'Tuning Profiles', disabled: true, render: todo },
+        {
+          id: 'zones',
+          label: 'Zones',
+          render: () => (
+            <PanelPcbZones value={v.zones} onChange={(zones) => setV({ ...v, zones })} />
+          ),
+        },
+        {
+          id: 'teardrops',
+          label: 'Teardrops',
+          render: () => (
+            <PanelPcbTeardrops
+              value={v.teardrops}
+              onChange={(teardrops) => setV({ ...v, teardrops })}
+            />
+          ),
+        },
+        {
+          id: 'tuningPatterns',
+          label: 'Length-tuning Patterns',
+          render: () => (
+            <PanelPcbTuning value={v.tuning} onChange={(tuning) => setV({ ...v, tuning })} />
+          ),
+        },
+        {
+          id: 'tuningProfiles',
+          label: 'Tuning Profiles',
+          render: () => (
+            <PanelPcbTuningProfiles
+              value={v.tuningProfiles}
+              onChange={(tuningProfiles) => setV({ ...v, tuningProfiles })}
+            />
+          ),
+        },
         {
           id: 'netclasses',
           label: 'Net Classes',
@@ -568,26 +574,70 @@ export function DialogBoardSetup({ value, initialPage, onOk, onClose }: Props): 
             />
           ),
         },
-        { id: 'componentClasses', label: 'Component Classes', disabled: true, render: todo },
-        { id: 'customRules', label: 'Custom Rules', disabled: true, render: todo },
-        { id: 'severities', label: 'Violation Severity', disabled: true, render: todo },
+        {
+          id: 'componentClasses',
+          label: 'Component Classes',
+          render: () => (
+            <PanelPcbComponentClasses
+              value={v.componentClasses}
+              onChange={(componentClasses) => setV({ ...v, componentClasses })}
+            />
+          ),
+        },
+        {
+          id: 'customRules',
+          label: 'Custom Rules',
+          render: () => (
+            <PanelPcbCustomRules
+              value={v.customRules}
+              onChange={(customRules) => setV({ ...v, customRules })}
+            />
+          ),
+        },
+        {
+          id: 'severities',
+          label: 'Violation Severity',
+          render: () => (
+            <PanelPcbSeverities
+              value={v.drcSeverities}
+              onChange={(drcSeverities) => setV({ ...v, drcSeverities })}
+            />
+          ),
+        },
       ],
     },
     {
       label: 'Board Data',
-      pages: [{ id: 'embedded', label: 'Embedded Files', disabled: true, render: todo }],
+      pages: [
+        {
+          id: 'embedded',
+          label: 'Embedded Files',
+          render: () => (
+            <PanelEmbeddedFiles
+              value={v.embeddedFiles}
+              onChange={(embeddedFiles) => setV({ ...v, embeddedFiles })}
+            />
+          ),
+        },
+      ],
     },
   ];
 
   return (
-    <PagedDialog
-      title="Board Setup"
-      sections={sections}
-      initialPage={initialPage}
-      auxiliaryAction="Import Settings from Another Board..."
-      initialSize={{ width: 1150, height: 620 }}
-      onOk={() => onOk(v)}
-      onCancel={onClose}
-    />
+    <>
+      <PagedDialog
+        title="Board Setup"
+        sections={sections}
+        initialPage={initialPage}
+        auxiliaryAction="Import Settings from Another Board..."
+        onAuxiliaryAction={() => setImportOpen(true)}
+        initialSize={{ width: 1150, height: 620 }}
+        onOk={() => onOk(v)}
+        onCancel={onClose}
+      />
+      {importOpen && (
+        <DialogImportSettings onImport={applyImport} onClose={() => setImportOpen(false)} />
+      )}
+    </>
   );
 }

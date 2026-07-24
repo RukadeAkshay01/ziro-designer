@@ -12,7 +12,7 @@ import type { FieldTemplate } from '../../schematic_settings.js';
 
 // The data model lives in schematic_settings.ts (KiCad's data/UI split);
 // re-exported here so the panel stays the import site for its slice.
-export { type FieldTemplate } from '../../schematic_settings.js';
+export type { FieldTemplate } from '../../schematic_settings.js';
 
 interface Props {
   templates: FieldTemplate[];
@@ -46,8 +46,8 @@ export function PanelTemplateFieldnames({ templates, onChange }: Props): JSX.Ele
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '2px 2px' }}>
       <div style={{ fontSize: 12.5, marginBottom: 6 }}>Field Name Templates</div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        <table className="ze-grid" style={{ tableLayout: 'fixed' }}>
+      <div className="ze-grid-pane" style={{ flex: 1, minHeight: 0 }}>
+        <table className="ze-grid" style={{ tableLayout: 'fixed', width: '100%' }}>
           <colgroup>
             <col />
             <col style={{ width: 64 }} />

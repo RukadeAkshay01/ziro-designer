@@ -11,6 +11,10 @@ import { readSchematic, serializeSchematic, withCleanup, deleteByIds } from '@zi
 import {
   groupItemsCommand,
   ungroupItemsCommand,
+  addToGroupCommand,
+  removeFromGroupCommand,
+  canAddToGroup,
+  canRemoveFromGroup,
   expandSelectionToGroups,
 } from '@ziroeda/eeschema/src/tools/sch_group_tool.js';
 import { History } from '@ziroeda/eeschema/src/tools/command.js';
@@ -82,5 +86,34 @@ describe('schematic groups', () => {
     const afterUngroup = h.execute(afterDelete, ungroupItemsCommand(new Set(['u-2'])));
     expect(afterUngroup.groups).toHaveLength(0);
     expect(h.undo(afterUngroup)!.groups[0]!.members).toEqual(['u-2']);
+  });
+
+  it('adds an ungrouped item to the single selected group', () => {
+    const doc = load(`${sym('R1', 'u-1')} ${sym('R2', 'u-2')} ${sym('R3', 'u-3')}
+      (group "G" (uuid "g-1") (members "u-1" "u-2"))`);
+    // Whole-group selection (g-1 + members) plus the ungrouped u-3.
+    const sel = new Set(['g-1', 'u-1', 'u-2', 'u-3']);
+    expect(canAddToGroup(doc, sel)).toBe(true);
+    const after = addToGroupCommand(sel).apply(doc);
+    expect([...after.groups[0]!.members].sort()).toEqual(['u-1', 'u-2', 'u-3']);
+    // With no ungrouped item selected it is disabled and a no-op.
+    const selNoItem = new Set(['g-1', 'u-1', 'u-2']);
+    expect(canAddToGroup(doc, selNoItem)).toBe(false);
+    expect(addToGroupCommand(selNoItem).apply(doc)).toBe(doc);
+  });
+
+  it('removes members, dissolving a group left with fewer than two', () => {
+    const doc = load(`${sym('R1', 'u-1')} ${sym('R2', 'u-2')} ${sym('R3', 'u-3')}
+      (group "G" (uuid "g-1") (members "u-1" "u-2" "u-3"))`);
+    expect(canRemoveFromGroup(doc, new Set(['u-3']))).toBe(true);
+    const r1 = removeFromGroupCommand(new Set(['u-3'])).apply(doc);
+    expect([...r1.groups[0]!.members].sort()).toEqual(['u-1', 'u-2']);
+    // Down to one member -> the group dissolves; symbols remain.
+    const r2 = removeFromGroupCommand(new Set(['u-2'])).apply(r1);
+    expect(r2.groups).toHaveLength(0);
+    expect(r2.symbols).toHaveLength(3);
+    // Nothing selected from any group -> disabled, no-op.
+    expect(canRemoveFromGroup(doc, new Set(['x']))).toBe(false);
+    expect(removeFromGroupCommand(new Set(['x'])).apply(doc)).toBe(doc);
   });
 });

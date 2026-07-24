@@ -13,6 +13,8 @@ import {
   mirrorBoardItems,
   groupBoardItems,
   ungroupBoardItems,
+  addToGroupItems,
+  removeFromGroupItems,
   expandGroupIds,
   groupContaining,
   setBoardItemsLocked,
@@ -548,6 +550,42 @@ describe('groups (PCB_GROUP: group / ungroup / expansion)', () => {
     const gone = deleteBoardItems(reread, new Set(['group:0', 'track:0', 'track:1']));
     expect(serializeBoard(gone)).not.toContain('(group');
   });
+
+  const t2 = { ...track({ x: 0, y: 900 }, { x: 1000, y: 900 }, 100), uuid: 'uuid-t2' };
+  it('adds an ungrouped item to the selected group', () => {
+    const b = board({ tracks: [t0, t1, t2] });
+    const { board: g } = groupBoardItems(b, new Set(['track:0', 'track:1']), 'pair');
+    const added = addToGroupItems(g, new Set(['group:0', 'track:2']));
+    expect(added.groups[0]!.members.sort()).toEqual(['uuid-t0', 'uuid-t1', 'uuid-t2']);
+  });
+  it('add-to-group is a no-op unless exactly one group is selected', () => {
+    const b = board({ tracks: [t0, t1, t2] });
+    let g = groupBoardItems(b, new Set(['track:0', 'track:1']), 'a').board;
+    g = groupBoardItems(g, new Set(['track:2']), 'b').board; // group:1 (single-member, for the test)
+    // Two groups selected -> AddToGroup bails (GROUP_TOOL::AddToGroup early return).
+    expect(addToGroupItems(g, new Set(['group:0', 'group:1']))).toBe(g);
+  });
+  it('removes a member, dissolving the group once fewer than two remain', () => {
+    const b = board({ tracks: [t0, t1, t2] });
+    const { board: g } = groupBoardItems(b, new Set(['track:0', 'track:1', 'track:2']), 'trio');
+    // Remove one of three -> two remain, group survives.
+    const r1 = removeFromGroupItems(g, new Set(['track:2']));
+    expect(r1.groups).toHaveLength(1);
+    expect(r1.groups[0]!.members.sort()).toEqual(['uuid-t0', 'uuid-t1']);
+    // Remove another -> one left (< 2) -> group dissolves, items stay.
+    const r2 = removeFromGroupItems(r1, new Set(['track:1']));
+    expect(r2.groups).toHaveLength(0);
+    expect(r2.tracks).toHaveLength(3);
+  });
+  it('an entered group stops click resolution at its boundary', () => {
+    const b = board({ tracks: [t0, t1] });
+    const { board: g } = groupBoardItems(b, new Set(['track:0', 'track:1']), 'pair');
+    const gUuid = g.groups[0]!.uuid;
+    // Not entered: a member resolves to the group.
+    expect(groupContaining(g, 'track:0')).toBe('group:0');
+    // Entered: the member resolves to itself (null -> caller keeps the item id).
+    expect(groupContaining(g, 'track:0', gUuid)).toBeNull();
+  });
 });
 
 describe('lock / unlock ((locked yes) on every lockable kind)', () => {
@@ -568,6 +606,16 @@ describe('lock / unlock ((locked yes) on every lockable kind)', () => {
       (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 0) (locked yes) (uuid "u1"))
     )`;
     expect(isBoardItemLocked(readBoard(parse(src)), 'track:0')).toBe(true);
+  });
+  it("'toggle' flips each item independently (PCB_ACTIONS::toggleLock)", () => {
+    const src = `(kicad_pcb (version 20241229) (generator x)
+      (segment (start 0 0) (end 1 0) (width 0.2) (layer "F.Cu") (net 0) (locked yes) (uuid "u1"))
+      (segment (start 0 1) (end 1 1) (width 0.2) (layer "F.Cu") (net 0) (uuid "u2"))
+    )`;
+    const b = readBoard(parse(src));
+    const t = setBoardItemsLocked(b, new Set(['track:0', 'track:1']), 'toggle');
+    expect(isBoardItemLocked(t, 'track:0')).toBe(false); // was locked -> unlocked
+    expect(isBoardItemLocked(t, 'track:1')).toBe(true); // was unlocked -> locked
   });
 });
 

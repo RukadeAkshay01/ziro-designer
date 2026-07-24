@@ -27,7 +27,13 @@ import {
   type PcbShape,
   type PcbTextItem,
 } from '@ziroeda/pcbnew';
-import { PCB_PAINT_ORDER, PCB_SPECIAL, layerColor, PCB_GRID } from './pcbTheme.js';
+import {
+  PCB_PAINT_ORDER,
+  PCB_SPECIAL,
+  layerColor,
+  PCB_GRID,
+  type PcbColorTheme,
+} from './pcbTheme.js';
 import { layoutText, measureText } from '@ziroeda/common/src/font/stroke_font.js';
 
 const MM = 10000; // IU per mm, matches core units
@@ -90,6 +96,10 @@ export interface PcbDrawOptions {
   /** Print's drill-marks mode: 'none' hides holes ('small' renders as real —
    *  hole geometry is pre-baked in the scene). Default: real. */
   drillMarks?: 'none' | 'small' | 'real';
+  /** Color theme override (COLOR_SETTINGS): the print dialog's "Use a
+   *  different color theme" passes one of PCB_THEMES (or the synthetic B&W
+   *  palette). Absent = the built-in KiCad Default palette. */
+  theme?: PcbColorTheme;
 }
 
 /** KiCad defaults (project_local_settings.cpp + s_objectSettings). */
@@ -998,7 +1008,12 @@ function sheetText(
 
 const DRAWINGSHEET_COLOR = 'rgb(200,114,171)';
 
-export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo): void {
+export function drawDrawingSheet(
+  ctx: CanvasRenderingContext2D,
+  info: SheetInfo,
+  // LAYER_DRAWINGSHEET from the active theme (print passes the print theme's).
+  color: string = DRAWINGSHEET_COLOR,
+): void {
   const page = paperSizeIU(info.paper);
   if (!page) return;
   const M = 10 * MM;
@@ -1006,7 +1021,6 @@ export function drawDrawingSheet(ctx: CanvasRenderingContext2D, info: SheetInfo)
     T = M,
     R = page.w - M,
     B = page.h - M;
-  const color = DRAWINGSHEET_COLOR;
   ctx.strokeStyle = color;
   ctx.lineWidth = 0.15 * MM;
   ctx.setLineDash([]);
@@ -1205,9 +1219,12 @@ export function buildDrawSteps(
   brighten = 0,
 ): (() => void)[] {
   const steps: (() => void)[] = [];
-  // Per-layer color, brightened toward white for a selection overlay.
+  // Per-layer color from the active theme, brightened toward white for a
+  // selection overlay.
+  const themeColors = opts.theme?.layerColors;
+  const special = opts.theme?.special ?? PCB_SPECIAL;
   const col = (layer: string): string =>
-    opts.colorOverride ?? brightenColor(layerColor(layer), brighten);
+    opts.colorOverride ?? brightenColor(themeColors?.[layer] ?? layerColor(layer), brighten);
   const sp = (c: string): string => brightenColor(c, brighten);
   steps.push(() => {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -1218,8 +1235,9 @@ export function buildDrawSteps(
     ctx.setTransform(view.flipX ? -view.scale : view.scale, 0, 0, view.scale, view.tx, view.ty);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    // Drawing sheet (page frame + title block) behind the board, like pcbnew.
-    if (!overlay && sheet && opts.drawingSheet) drawDrawingSheet(ctx, sheet);
+    // Drawing sheet (page frame + title block) behind the board, like pcbnew,
+    // in the theme's LAYER_DRAWINGSHEET color (classic: dark red; B&W: black).
+    if (!overlay && sheet && opts.drawingSheet) drawDrawingSheet(ctx, sheet, special.drawingSheet);
   });
 
   const minPen = view.scale > 0 ? 1 / view.scale : 0; // 1 device px in IU
@@ -1340,24 +1358,24 @@ export function buildDrawSteps(
     // each hole capped at SMALL_DRILL (0.35 mm) instead of true size.
     if (opts.drillMarks === 'none') return;
     if (opts.drillMarks === 'small') {
-      ctx.fillStyle = sp(PCB_SPECIAL.padPlatedHole);
+      ctx.fillStyle = sp(special.padPlatedHole);
       ctx.fill(scene.holesSmall);
       return;
     }
     if (opts.pads) {
-      ctx.fillStyle = sp(PCB_SPECIAL.padHoleWall);
+      ctx.fillStyle = sp(special.padHoleWall);
       ctx.fill(scene.padHoleWalls);
-      ctx.fillStyle = sp(PCB_SPECIAL.padPlatedHole);
+      ctx.fillStyle = sp(special.padPlatedHole);
       ctx.fill(scene.padHolesPlated);
     }
     if (opts.vias) {
-      ctx.fillStyle = sp(PCB_SPECIAL.viaHoleWall);
+      ctx.fillStyle = sp(special.viaHoleWall);
       ctx.fill(scene.viaHoleWalls);
-      ctx.fillStyle = sp(PCB_SPECIAL.viaHole);
+      ctx.fillStyle = sp(special.viaHole);
       ctx.fill(scene.viaHoles);
     }
     if (opts.pads) {
-      ctx.fillStyle = sp(PCB_SPECIAL.nonPlatedHole);
+      ctx.fillStyle = sp(special.nonPlatedHole);
       ctx.fill(scene.padHolesNP);
     }
   });
@@ -1369,7 +1387,7 @@ export function buildDrawSteps(
   if (opts.pads && scene.padText.size > 0) {
     steps.push(() => {
       ctx.globalAlpha = opts.padOpacity;
-      ctx.strokeStyle = PCB_SPECIAL.padName;
+      ctx.strokeStyle = special.padName;
       strokeAll(ctx, scene.padText, minPen);
       ctx.globalAlpha = 1;
     });

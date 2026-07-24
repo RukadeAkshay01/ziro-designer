@@ -173,6 +173,87 @@ export function selectionHasGroup(doc: Schematic, ids: ReadonlySet<string>): boo
   );
 }
 
+/** The group uuids that are themselves selected (a selected id == a group uuid). */
+function selectedGroupUuids(doc: Schematic, ids: ReadonlySet<string>): string[] {
+  return doc.groups.filter((g) => g.uuid !== undefined && ids.has(g.uuid)).map((g) => g.uuid!);
+}
+
+/** Groupable selected items not already in any group and not a group themselves. */
+function ungroupedSelectedItems(doc: Schematic, ids: ReadonlySet<string>): string[] {
+  const valid = collectItemUuids(doc);
+  const memberOf = new Set(doc.groups.flatMap((g) => g.members));
+  const groupUuids = new Set(doc.groups.map((g) => g.uuid).filter((u): u is string => !!u));
+  return [...ids].filter((id) => valid.has(id) && !memberOf.has(id) && !groupUuids.has(id));
+}
+
+/**
+ * Add to Group enable (GROUP_TOOL::update: onlyOneGroup && hasUngroupedItems) —
+ * exactly one group selected plus at least one groupable, ungrouped item.
+ */
+export function canAddToGroup(doc: Schematic, ids: ReadonlySet<string>): boolean {
+  return selectedGroupUuids(doc, ids).length === 1 && ungroupedSelectedItems(doc, ids).length > 0;
+}
+
+/** Remove from Group enable (hasMember): a selected id is a member of some group. */
+export function canRemoveFromGroup(doc: Schematic, ids: ReadonlySet<string>): boolean {
+  const memberOf = new Set(doc.groups.flatMap((g) => g.members));
+  for (const id of ids) if (memberOf.has(id)) return true;
+  return false;
+}
+
+/**
+ * Add Items to Group (GROUP_TOOL::AddToGroup): the ungrouped selected items join
+ * the single selected group. A no-op unless exactly one group is selected.
+ */
+export function addToGroupCommand(ids: ReadonlySet<string>): EditCommand {
+  return {
+    label: 'Add Items to Group',
+    apply(doc: Schematic): Schematic {
+      const groups = selectedGroupUuids(doc, ids);
+      if (groups.length !== 1) return doc;
+      const gUuid = groups[0]!;
+      const toAdd = ungroupedSelectedItems(doc, ids);
+      if (toAdd.length === 0) return doc;
+      return {
+        ...doc,
+        groups: doc.groups.map((g) =>
+          g.uuid === gUuid ? { ...g, members: [...g.members, ...toAdd] } : g,
+        ),
+      };
+    },
+    invert(before: Schematic): EditCommand {
+      return restoreGroups(before.groups);
+    },
+  };
+}
+
+/**
+ * Remove Items from Group (GROUP_TOOL::RemoveFromGroup): drop the selected items
+ * from their parent groups; a group left with fewer than two members dissolves.
+ */
+export function removeFromGroupCommand(ids: ReadonlySet<string>): EditCommand {
+  return {
+    label: 'Remove Items from Group',
+    apply(doc: Schematic): Schematic {
+      let changed = false;
+      const trimmed = doc.groups.map((g) => {
+        const members = g.members.filter((m) => !ids.has(m));
+        if (members.length !== g.members.length) {
+          changed = true;
+          return { ...g, members };
+        }
+        return g;
+      });
+      if (!changed) return doc;
+      // Groups with < 2 members are removed (the ">= 2" invariant).
+      return { ...doc, groups: trimmed.filter((g) => g.members.length >= 2) };
+    },
+    invert(before: Schematic): EditCommand {
+      return restoreGroups(before.groups);
+    },
+  };
+}
+
 /** Drop member uuids whose item no longer exists (delete keeps groups tidy;
  *  a group emptied this way stops being written, per saveGroup). */
 export function pruneGroupMembers(doc: Schematic): Schematic {

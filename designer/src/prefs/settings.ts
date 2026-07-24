@@ -200,6 +200,21 @@ export interface EeschemaSettings {
     sash_pos_v: number; // px height of the details pane (power layout)
     sort_mode: 0 | 1; // SORT_MODE: 0 best match, 1 alphabetic
   };
+  /** The APP_SETTINGS_BASE::PRINTING slice eeschema's Print dialog persists
+   *  ("printing.*" in eeschema.json; key names + defaults from
+   *  common/settings/app_settings.cpp — monochrome defaults ON). */
+  printing: {
+    /** Print the background color. */
+    background: boolean;
+    /** Print in black and white. */
+    monochrome: boolean;
+    /** Use a different color theme for printing (else the display theme). */
+    use_theme: boolean;
+    /** COLOR_SETTINGS filename of the print theme. */
+    color_theme: string;
+    /** Print the drawing sheet (border and title block). */
+    title_block: boolean;
+  };
   window: {
     grid: {
       sizes: string[]; // "50 mil", "25 mil", ...
@@ -297,6 +312,13 @@ export const EESCHEMA_DEFAULTS: EeschemaSettings = {
     sash_pos_v: 150,
     sort_mode: 0,
   },
+  printing: {
+    background: false,
+    monochrome: true,
+    use_theme: false,
+    color_theme: '',
+    title_block: false,
+  },
   window: {
     grid: {
       sizes: ['100 mil', '50 mil', '25 mil', '10 mil'],
@@ -320,6 +342,69 @@ export const EESCHEMA_DEFAULTS: EeschemaSettings = {
       crosshair: 'full',
       always_show_cursor: false,
     },
+  },
+};
+
+// ----- PCBNEW_SETTINGS ---------------------------------------------------------
+
+/**
+ * APP_SETTINGS_BASE::PRINTING (include/settings/app_settings.h:179), the slice
+ * pcbnew's print dialog persists. Key names and defaults are KiCad's
+ * (common/settings/app_settings.cpp "printing.*" params): note monochrome and
+ * pagination default ON, and drill_marks defaults to 1 (small mark).
+ */
+export interface PcbnewPrinting {
+  /** Print the background color. */
+  background: boolean;
+  /** Print in black and white. */
+  monochrome: boolean;
+  /** Printout scale: 0.0 = fit to page, 1.0 = 1:1, else custom. */
+  scale: number;
+  /** Use a different color theme for printing (else the display theme). */
+  use_theme: boolean;
+  /** COLOR_SETTINGS filename of the print theme. */
+  color_theme: string;
+  /** Print the drawing sheet (border and title block). */
+  title_block: boolean;
+  /** Enabled layers, as PCB_LAYER_ID ordinals. */
+  layers: number[];
+  /** Print mirrored. */
+  mirror: boolean;
+  /** Drill marks: 0 = none, 1 = small, 2 = real. */
+  drill_marks: number;
+  /** 0 = all layers on one page, 1 = one page per layer. */
+  pagination: number;
+  /** Print board edges on all pages (page-per-layer mode). */
+  edge_cuts_on_all_pages: boolean;
+  /** Honor the appearance manager's Objects-tab checkboxes. */
+  as_item_checkboxes: boolean;
+}
+
+export interface PcbnewSettings {
+  appearance: {
+    /** The editor's active color theme (APP_SETTINGS_BASE m_ColorTheme). */
+    color_theme: string;
+  };
+  printing: PcbnewPrinting;
+}
+
+export const PCBNEW_DEFAULTS: PcbnewSettings = {
+  appearance: {
+    color_theme: '_builtin_default',
+  },
+  printing: {
+    background: false,
+    monochrome: true,
+    scale: 1.0,
+    use_theme: false,
+    color_theme: '',
+    title_block: false,
+    layers: [],
+    mirror: false,
+    drill_marks: 1,
+    pagination: 1,
+    edge_cuts_on_all_pages: true,
+    as_item_checkboxes: false,
   },
 };
 
@@ -378,6 +463,7 @@ type Listener = () => void;
 class SettingsManager {
   common: CommonSettings = load('ziroeda.common', COMMON_DEFAULTS);
   eeschema: EeschemaSettings = load('ziroeda.eeschema', EESCHEMA_DEFAULTS);
+  pcbnew: PcbnewSettings = load('ziroeda.pcbnew', PCBNEW_DEFAULTS);
   /** The editable "User" colour theme: layer-key -> CSS colour overrides. */
   userColors: Record<string, string> = load('ziroeda.colors.user', {});
   private listeners = new Set<Listener>();
@@ -407,6 +493,14 @@ class SettingsManager {
     mutate(next);
     this.eeschema = next;
     store('ziroeda.eeschema', next);
+    this.notify();
+  }
+
+  updatePcbnew(mutate: (s: PcbnewSettings) => void): void {
+    const next = structuredClone(this.pcbnew);
+    mutate(next);
+    this.pcbnew = next;
+    store('ziroeda.pcbnew', next);
     this.notify();
   }
 

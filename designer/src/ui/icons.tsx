@@ -107,6 +107,19 @@ const ICONS: Record<string, JSX.Element> = {
       <rect x="7" y="7" width="7" height="7" />
     </g>
   ),
+  // group_add / group_remove: the dashed group frame with a +/- badge.
+  addToGroup: (
+    <g>
+      <rect x="2" y="2" width="9" height="9" rx="1" strokeDasharray="2 1.5" />
+      <path d="M12 9v5 M9.5 11.5h5" />
+    </g>
+  ),
+  removeFromGroup: (
+    <g>
+      <rect x="2" y="2" width="9" height="9" rx="1" strokeDasharray="2 1.5" />
+      <path d="M9.5 11.5h5" />
+    </g>
+  ),
   // tools/run
   symbolEditor: (
     <g>
