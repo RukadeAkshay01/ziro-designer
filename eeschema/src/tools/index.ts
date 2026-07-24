@@ -13,6 +13,7 @@ export * from './sch_properties_panel.js';
 export * from './msg_panel.js';
 export * from './text_vars.js';
 export * from './embedded.js';
+export * from './refdes_tracker.js';
 export * from './build.js';
 export * from './build-graphics.js';
 export * from './mutate.js';

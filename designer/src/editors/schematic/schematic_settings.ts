@@ -124,6 +124,24 @@ export function defaultFormatting(): FormattingSettings {
 /** Symbol unit notation choices (m_choiceSeparatorRefId). */
 export const SYMBOL_UNIT_NOTATIONS = ['A', '.A', '-A', '_A', '.1', '-1', '_1'];
 
+/** Notation index -> (subpart_id_separator, subpart_first_id) char codes, in
+ *  SYMBOL_UNIT_NOTATIONS order (dialog_annotate/panel handling upstream). */
+export const UNIT_NOTATION_IDS: readonly (readonly [number, number])[] = [
+  [0, 65],
+  [46, 65],
+  [45, 65],
+  [95, 65],
+  [46, 49],
+  [45, 49],
+  [95, 49],
+];
+
+/** The SubReference inputs for the chosen unit notation. */
+export function subpartSettings(a: AnnotationSettings): { separator: number; firstId: number } {
+  const [separator, firstId] = UNIT_NOTATION_IDS[a.symbolUnitNotation] ?? UNIT_NOTATION_IDS[0]!;
+  return { separator, firstId };
+}
+
 export type AnnotateSortOrder = 'x' | 'y';
 export type AnnotateNumbering = 'firstFree' | 'sheetX100' | 'sheetX1000';
 
@@ -562,6 +580,9 @@ export interface SchematicSetup {
   /** ERC exclusion signatures (SCHEMATIC::m_ercExclusions), persisted like the
    *  project file's stored exclusions so an excluded marker stays excluded. */
   ercExclusions: string[];
+  /** REFDES_TRACKER state (schematic.used_designators): every designator ever
+   *  assigned, so reuse_designators=false never re-issues a freed number. */
+  usedDesignators: string;
 }
 
 export function defaultSchematicSetup(): SchematicSetup {
@@ -577,5 +598,6 @@ export function defaultSchematicSetup(): SchematicSetup {
     netClasses: defaultNetClasses(),
     embeddedFiles: defaultEmbeddedFiles(),
     ercExclusions: [],
+    usedDesignators: '',
   };
 }

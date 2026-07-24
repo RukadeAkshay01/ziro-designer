@@ -14,6 +14,7 @@
  */
 
 import type { SchField, SchSymbol, Schematic, LibSymbol } from '../types.js';
+import type { RefDesTracker } from './refdes_tracker.js';
 import type { EditCommand } from './command.js';
 import { refId } from './hittest.js';
 import { str } from '@ziroeda/sexpr';
@@ -36,6 +37,10 @@ export interface AnnotateOptions {
   startNumber: number;
   /** The current sheet's number for the sheet-× algos; defaults to 1. */
   sheetNumber?: number;
+  /** REFDES_TRACKER (schematic.used_designators): with reuseRefDes false,
+   *  previously-used-but-freed numbers are skipped; every accepted number is
+   *  recorded (GetNextRefDesForUnits' m_allRefDes gate + insert). */
+  tracker?: RefDesTracker;
 }
 
 export const defaultAnnotateOptions = (): AnnotateOptions => ({
@@ -188,6 +193,14 @@ export function annotateSymbols(
   // number ≥ min that is either unused, or (for a multi-unit symbol) occupied
   // only by units of the same library symbol and value with every required
   // unit slot still free — so two fresh ECC83 halves become U1A and U1B.
+  const tracker = opts.tracker;
+  const accept = (prefix: string, n: number): boolean => {
+    // GetNextRefDesForUnits: a number not currently in use is taken only when
+    // reuse is allowed or it was never used before; acceptance records it.
+    if (tracker && !tracker.reuseRefDes && tracker.contains(`${prefix}${n}`)) return false;
+    tracker?.insert(`${prefix}${n}`);
+    return true;
+  };
   const firstFree = (
     prefix: string,
     min: number,
@@ -196,12 +209,21 @@ export function annotateSymbols(
     const nums = reserved.get(prefix);
     for (let n = min; ; n++) {
       const cur = nums?.get(n);
-      if (!cur) return n;
+      if (!cur) {
+        if (accept(prefix, n)) return n;
+        continue;
+      }
       if (cur === 'full' || !forUnits) continue;
       const free = forUnits.units.every((u) =>
         cur.every((r) => r.lib === forUnits.lib && r.value === forUnits.value && r.unit !== u),
       );
-      if (free) return n;
+      // A number already in use by compatible units is shared, not newly
+      // issued — the tracker records it without gating (it is "currently in
+      // use", the branch upstream takes through areUnitsAvailable).
+      if (free) {
+        tracker?.insert(`${prefix}${n}`);
+        return n;
+      }
     }
   };
 

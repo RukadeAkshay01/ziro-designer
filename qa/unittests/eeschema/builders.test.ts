@@ -3,6 +3,7 @@ import { parse, serialize } from '@ziroeda/sexpr/src/index.js';
 import { readSchematic } from '@ziroeda/eeschema/src/sch_io/sexpr/read-schematic.js';
 import { writeSchematic } from '@ziroeda/eeschema/src/sch_io/sexpr/write-schematic.js';
 import { makeBus, makeLabel } from '@ziroeda/eeschema/src/tools/build.js';
+import { subReference } from '@ziroeda/eeschema/src/fieldbox.js';
 import { makeTextBox, makeTable } from '@ziroeda/eeschema/src/tools/build-graphics.js';
 import { addItems } from '@ziroeda/eeschema/src/tools/mutate.js';
 import { mmToIU } from '@ziroeda/common/src/eda_units.js';
@@ -125,5 +126,21 @@ describe('makeTable', () => {
     const doc = cmd.apply(EMPTY());
     expect(doc.tables).toHaveLength(1);
     expect(cmd.invert(EMPTY()).apply(doc).tables).toHaveLength(0);
+  });
+});
+
+// SCHEMATIC_SETTINGS::SubReference: the unit-notation formatter.
+describe('subReference', () => {
+  it('formats letters and numbers with the chosen separator', () => {
+    expect(subReference(2)).toBe('B'); // default: no separator, 'A' letters
+    expect(subReference(2, { separator: 46, firstId: 65 })).toBe('.B'); // .A
+    expect(subReference(2, { separator: 45, firstId: 49 })).toBe('-2'); // -1
+    expect(subReference(3, { separator: 95, firstId: 49 })).toBe('_3'); // _1
+    expect(subReference(27, { separator: 0, firstId: 65 })).toBe('AA'); // 27th unit
+  });
+
+  it('returns empty for unit < 1 and honours addSeparator=false', () => {
+    expect(subReference(0)).toBe('');
+    expect(subReference(2, { separator: 46, firstId: 65 }, false)).toBe('B');
   });
 });

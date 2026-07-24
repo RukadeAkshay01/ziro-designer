@@ -78,6 +78,8 @@ let g_fieldSch: Schematic | null = null;
 let g_fieldDraws: FieldDraw[][] = [];
 let g_fieldShowHidden = false;
 let g_fieldResolver: RenderOpts['resolveTextVar'];
+let g_subpart: RenderOpts['subpart'];
+let g_fieldSubpart: RenderOpts['subpart'];
 
 // Symbol body boxes are likewise cached per document: symbolBodyBBox walks every
 // graphic of every unit through the placement transform.
@@ -97,11 +99,17 @@ function fieldDrawsFor(
   libById: Map<string, LibSymbol>,
   showHidden: boolean,
 ): FieldDraw[][] {
-  if (sch === g_fieldSch && showHidden === g_fieldShowHidden && g_resolveText === g_fieldResolver)
+  if (
+    sch === g_fieldSch &&
+    showHidden === g_fieldShowHidden &&
+    g_resolveText === g_fieldResolver &&
+    g_subpart === g_fieldSubpart
+  )
     return g_fieldDraws;
   g_fieldSch = sch;
   g_fieldShowHidden = showHidden;
   g_fieldResolver = g_resolveText;
+  g_fieldSubpart = g_subpart;
   g_fieldDraws = sch.symbols.map((sym) => {
     const lib = libById.get(sym.libId);
     // A multi-unit Reference gains its unit letter (GetRef(..., true)).
@@ -111,7 +119,7 @@ function fieldDrawsFor(
       if (!f.at) continue;
       if (f.effects?.hidden && !showHidden) continue;
       // GetShownText: field values expand `${VAR}` (layout uses the result).
-      const shown = shownText(fieldShownText(f, sym, unitCount));
+      const shown = shownText(fieldShownText(f, sym, unitCount, g_subpart));
       if (shown === '') continue;
       const box = fieldBoundingBox(f, sym, shown, measureText);
       const fd: FieldDraw = {
@@ -214,6 +222,10 @@ export interface RenderOpts {
    *  when set, `${VAR}` in labels, text, text boxes, tables and fields renders
    *  expanded (GetShownText). Unset = text draws verbatim. */
   resolveTextVar?: (token: string) => string | undefined;
+  /** Unit-notation inputs for multi-unit references
+   *  (SCHEMATIC_SETTINGS::SubReference: m_SubpartIdSeparator char code, 0 =
+   *  none, and m_SubpartFirstId 'A'/'1'). Unset = plain letters (U1A). */
+  subpart?: { separator: number; firstId: number };
   /** selection.thickness (mils). */
   selectionThicknessMils: number;
   /** selection.highlight_thickness (mils). */
@@ -373,6 +385,7 @@ export function renderSchematic(
       : PIN_SYMBOL_SIZE;
   g_netOverrides = opts.netOverrides;
   g_resolveText = opts.resolveTextVar;
+  g_subpart = opts.subpart;
   // The stroke font draws ~{...} overbars at the settings ratio (m_OverbarHeight).
   setOverbarHeightRatio(opts.overbarHeightRatio);
   const libById = new Map<string, LibSymbol>();

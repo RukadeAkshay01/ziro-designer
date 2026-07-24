@@ -27,6 +27,8 @@ export interface PagedDialogPage {
   disabled?: boolean;
   /** Whether this page can be reset to defaults (drives the Reset button). */
   resettable?: boolean;
+  /** ResetPanel(): restore this page's slice to defaults (onResetButton). */
+  onReset?: () => void;
   /** Resolves the panel shown on the right (KiCad's AddLazySubPage). */
   render: () => JSX.Element;
 }
@@ -45,6 +47,8 @@ interface Props {
   initialPage?: string;
   /** Show the "Reset to Defaults" button (aShowReset). */
   showReset?: boolean;
+  /** onAuxiliaryAction (Import Settings from Another Project…). */
+  onAuxiliaryAction?: () => void;
   /** Auxiliary action label, e.g. "Import Settings from Another Project..."; omitted = no button. */
   auxiliaryAction?: string;
   /** Initial dialog size (aInitialSize); defaults to KiCad's 920x460. */
@@ -70,6 +74,7 @@ export function PagedDialog({
   initialPage,
   showReset,
   auxiliaryAction,
+  onAuxiliaryAction,
   initialSize,
   infoBar,
   onOk,
@@ -203,19 +208,19 @@ export function PagedDialog({
 
         <div className="ze-modal-footer ze-paged-footer">
           {showReset && (
-            // Stubbed: enabled only for resettable pages, exactly like KiCad — none
-            // of our pages declare themselves resettable yet, so it reads disabled.
+            // onResetButton: enabled only for resettable pages, exactly like
+            // KiCad; ResetPanel() restores the active page's slice to defaults.
             <button
               className="ze-btn"
-              disabled={!active?.resettable}
+              disabled={!(active?.resettable && active.onReset)}
               title="Reset this page to defaults"
+              onClick={() => active?.onReset?.()}
             >
               {resetLabel}
             </button>
           )}
           {auxiliaryAction && (
-            // Stubbed: placed exactly where KiCad puts it; wiring lands in a later step.
-            <button className="ze-btn" title="Not implemented yet">
+            <button className="ze-btn" disabled={!onAuxiliaryAction} onClick={onAuxiliaryAction}>
               {auxiliaryAction}
             </button>
           )}

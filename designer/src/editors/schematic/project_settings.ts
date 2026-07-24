@@ -28,6 +28,7 @@ import { PIN_TYPES } from '@ziroeda/eeschema';
 import type { RawFile } from '../drawingsheet/projectSheet.js';
 import {
   LINE_STYLES,
+  UNIT_NOTATION_IDS,
   defaultSchematicSetup,
   type BomFmtPreset,
   type BomPreset,
@@ -120,18 +121,6 @@ const SEVERITY_KEYS: readonly (readonly [ErcCode, string])[] = [
   ['net_not_bus_member', 'net_not_bus_member'],
   ['bus_to_net_conflict', 'bus_to_net_conflict'],
   ['bus_to_bus_conflict', 'bus_to_bus_conflict'],
-];
-
-/** Symbol-unit-notation index -> (subpart_id_separator, subpart_first_id).
- *  Order matches SYMBOL_UNIT_NOTATIONS: A, .A, -A, _A, .1, -1, _1. */
-const UNIT_NOTATIONS: readonly (readonly [number, number])[] = [
-  [0, 65],
-  [46, 65],
-  [45, 65],
-  [95, 65],
-  [46, 49],
-  [45, 49],
-  [95, 49],
 ];
 
 /** KiCad's "auto" operating-point range sentinels ('~V' / '~A'); the panel
@@ -255,7 +244,7 @@ export function readSchematicSetupText(proText: string): SchematicSetup {
   // Annotation (subpart notation + annotation.* + annotate_start_num).
   const sep = num(getPath(j, 'schematic.subpart_id_separator'), 0);
   const first = num(getPath(j, 'schematic.subpart_first_id'), 65);
-  const notation = UNIT_NOTATIONS.findIndex(([a, b]) => a === sep && b === first);
+  const notation = UNIT_NOTATION_IDS.findIndex(([a, b]) => a === sep && b === first);
   s.annotation.symbolUnitNotation = notation === -1 ? 0 : notation;
   s.annotation.sortOrder = num(getPath(j, 'schematic.annotation.sort_order'), 0) === 1 ? 'y' : 'x';
   const method = num(getPath(j, 'schematic.annotation.method'), 0);
@@ -419,6 +408,9 @@ export function readSchematicSetupText(proText: string): SchematicSetup {
       .map(([name, value]): TextVar => ({ name, value }));
   }
 
+  // schematic.used_designators (REFDES_TRACKER::Serialize output).
+  s.usedDesignators = str(getPath(j, 'schematic.used_designators'), '');
+
   // schematic.bus_aliases (project_file.cpp): alias -> member list.
   const aliases = getPath(j, 'schematic.bus_aliases');
   if (isObj(aliases)) {
@@ -505,7 +497,7 @@ export function writeSchematicSetupText(proText: string, s: SchematicSetup): str
   );
 
   // Annotation.
-  const [sep, first] = UNIT_NOTATIONS[s.annotation.symbolUnitNotation] ?? UNIT_NOTATIONS[0]!;
+  const [sep, first] = UNIT_NOTATION_IDS[s.annotation.symbolUnitNotation] ?? UNIT_NOTATION_IDS[0]!;
   setPath(j, 'schematic.subpart_id_separator', sep);
   setPath(j, 'schematic.subpart_first_id', first);
   setPath(j, 'schematic.annotation.sort_order', s.annotation.sortOrder === 'y' ? 1 : 0);
@@ -663,6 +655,9 @@ export function writeSchematicSetupText(proText: string, s: SchematicSetup): str
   const varsOut: Json = {};
   for (const v of s.textVars) if (v.name) varsOut[v.name] = v.value;
   setPath(j, 'text_variables', varsOut);
+
+  // schematic.used_designators (REFDES_TRACKER state; opaque string).
+  setPath(j, 'schematic.used_designators', s.usedDesignators);
 
   // schematic.bus_aliases: fully owned by the panel — rebuild.
   const aliasesOut: Json = {};

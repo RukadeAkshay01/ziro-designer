@@ -12,9 +12,19 @@
  */
 
 import { useState, type JSX } from 'react';
-import type { ErcSettings } from '@ziroeda/eeschema';
+import { DEFAULT_PIN_MAP, DEFAULT_SEVERITIES, type ErcSettings } from '@ziroeda/eeschema';
 import { PagedDialog, type PagedDialogSection } from '../../../ui/PagedDialog.js';
-import type { SchematicSetup } from '../schematic_settings.js';
+import {
+  defaultAnnotation,
+  defaultBomPresets,
+  defaultBusAliases,
+  defaultFormatting,
+  defaultNetChains,
+  defaultNetClasses,
+  type SchematicSetup,
+} from '../schematic_settings.js';
+import { readSchematicSetupText } from '../project_settings.js';
+import { DialogSchImportSettings, type SchImportOptions } from './dialog_sch_import_settings.js';
 import { PanelSetupSeverities } from './panels/panel_setup_severities.js';
 import { PanelSetupPinmap } from './panels/panel_setup_pinmap.js';
 import { PanelTextVariables } from './panels/panel_text_variables.js';
@@ -66,9 +76,44 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
     netClasses: structuredClone(value.netClasses),
     embeddedFiles: structuredClone(value.embeddedFiles),
     ercExclusions: [...value.ercExclusions],
+    usedDesignators: value.usedDesignators,
   }));
+  const [importOpen, setImportOpen] = useState(false);
 
   const setErc = (erc: ErcSettings): void => setS((cur) => ({ ...cur, erc }));
+
+  // onAuxiliaryAction: copy the checked slices of another project's settings
+  // into the working state (DIALOG_SCHEMATIC_SETUP::onAuxiliaryAction — each
+  // panel's ImportSettingsFrom over the other project's loaded settings).
+  const importFrom = (proText: string, o: SchImportOptions): void => {
+    const other = readSchematicSetupText(proText);
+    setS((cur) => ({
+      ...cur,
+      ...(o.formatting ? { formatting: other.formatting } : {}),
+      ...(o.annotation ? { annotation: other.annotation } : {}),
+      ...(o.fieldNameTemplates ? { fieldTemplates: other.fieldTemplates } : {}),
+      ...(o.bomPresets || o.bomFmtPresets
+        ? {
+            bomPresets: {
+              presets: o.bomPresets ? other.bomPresets.presets : cur.bomPresets.presets,
+              fmtPresets: o.bomFmtPresets ? other.bomPresets.fmtPresets : cur.bomPresets.fmtPresets,
+            },
+          }
+        : {}),
+      ...(o.severities || o.pinMap
+        ? {
+            erc: {
+              severities: o.severities ? other.erc.severities : cur.erc.severities,
+              pinMap: o.pinMap ? other.erc.pinMap : cur.erc.pinMap,
+            },
+          }
+        : {}),
+      ...(o.netClasses ? { netClasses: other.netClasses } : {}),
+      ...(o.busAliases ? { busAliases: other.busAliases } : {}),
+      ...(o.textVars ? { textVars: other.textVars } : {}),
+    }));
+    setImportOpen(false);
+  };
 
   // The upstream page tree (DIALOG_SCHEMATIC_SETUP::DIALOG_SCHEMATIC_SETUP).
   // Pages whose engine data we do not store yet are `disabled` — greyed in place.
@@ -78,6 +123,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
       pages: [
         {
           id: 'formatting',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, formatting: defaultFormatting() })),
           label: 'Formatting',
           render: () => (
             <PanelSetupFormatting
@@ -88,6 +135,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'annotation',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, annotation: defaultAnnotation() })),
           label: 'Annotation',
           render: () => (
             <PanelEeschemaAnnotationOptions
@@ -98,6 +147,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'fieldTemplates',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, fieldTemplates: [] })),
           label: 'Field Name Templates',
           render: () => (
             <PanelTemplateFieldnames
@@ -108,6 +159,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'bomPresets',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, bomPresets: defaultBomPresets() })),
           label: 'BOM Presets',
           render: () => (
             <PanelBomPresets
@@ -123,11 +176,20 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
       pages: [
         {
           id: 'severities',
+          resettable: true,
+          onReset: () =>
+            setS((cur) => ({ ...cur, erc: { ...cur.erc, severities: { ...DEFAULT_SEVERITIES } } })),
           label: 'Violation Severity',
           render: () => <PanelSetupSeverities settings={s.erc} onChange={setErc} />,
         },
         {
           id: 'pinmap',
+          resettable: true,
+          onReset: () =>
+            setS((cur) => ({
+              ...cur,
+              erc: { ...cur.erc, pinMap: DEFAULT_PIN_MAP.map((r) => [...r]) },
+            })),
           label: 'Pin Conflicts Map',
           render: () => <PanelSetupPinmap settings={s.erc} onChange={setErc} />,
         },
@@ -138,6 +200,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
       pages: [
         {
           id: 'netclasses',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, netClasses: defaultNetClasses() })),
           label: 'Net Classes',
           render: () => (
             <PanelSetupNetclasses
@@ -148,6 +212,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'buses',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, busAliases: defaultBusAliases() })),
           label: 'Bus Alias Definitions',
           render: () => (
             <PanelSetupBuses
@@ -158,6 +224,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'netChains',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, netChains: defaultNetChains() })),
           label: 'Net Chains',
           render: () => (
             <PanelSetupNetChains
@@ -168,6 +236,8 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
         },
         {
           id: 'textVars',
+          resettable: true,
+          onReset: () => setS((cur) => ({ ...cur, textVars: [] })),
           label: 'Text Variables',
           render: () => (
             <PanelTextVariables
@@ -196,15 +266,21 @@ export function DialogSchematicSetup({ value, initialPage, onOk, onCancel }: Pro
   ];
 
   return (
-    <PagedDialog
-      title="Schematic Setup"
-      sections={sections}
-      initialPage={initialPage}
-      showReset
-      auxiliaryAction="Import Settings from Another Project..."
-      initialSize={{ width: 920, height: 600 }}
-      onOk={() => onOk(s)}
-      onCancel={onCancel}
-    />
+    <>
+      {importOpen && (
+        <DialogSchImportSettings onImport={importFrom} onCancel={() => setImportOpen(false)} />
+      )}
+      <PagedDialog
+        title="Schematic Setup"
+        sections={sections}
+        initialPage={initialPage}
+        showReset
+        auxiliaryAction="Import Settings from Another Project..."
+        onAuxiliaryAction={() => setImportOpen(true)}
+        initialSize={{ width: 920, height: 600 }}
+        onOk={() => onOk(s)}
+        onCancel={onCancel}
+      />
+    </>
   );
 }

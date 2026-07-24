@@ -14,6 +14,7 @@ import {
   isMandatoryField,
   DEFAULT_TEXT_SIZE,
   letterSubReference,
+  type SubpartSettings,
   type SchSymbol,
   type SchField,
   type LibSymbol,
@@ -58,6 +59,8 @@ interface Props {
    *  offered as empty rows (dialog_symbol_properties.cpp appends them with the
    *  template's Visible flag; named-but-empty rows survive OK, like upstream). */
   fieldTemplates?: readonly FieldTemplate[];
+  /** Unit-notation inputs for the shown Reference (SubReference). */
+  subpart?: SubpartSettings;
   onOk: (edit: SymbolEdit) => void;
   onCancel: () => void;
 }
@@ -85,6 +88,7 @@ export function SymbolPropertiesDialog({
   symbol,
   lib,
   fieldTemplates,
+  subpart,
   onOk,
   onCancel,
 }: Props): JSX.Element {
@@ -168,7 +172,8 @@ export function SymbolPropertiesDialog({
     />
   );
 
-  const shownFor = (row: Row): string => fieldShownText(absField(row, symbol), symbol, unitCount);
+  const shownFor = (row: Row): string =>
+    fieldShownText(absField(row, symbol), symbol, unitCount, subpart);
 
   // OnAddField: "Field<n>", the Reference field's angle, hidden, at the symbol origin.
   const addRow = (): void => {

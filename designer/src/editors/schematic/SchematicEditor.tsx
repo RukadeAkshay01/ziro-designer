@@ -133,9 +133,10 @@ import {
   IU_PER_MILS,
   junctionDotDiameterIU,
   resolveEffectiveNetClass,
+  subpartSettings,
 } from './schematic_settings.js';
 import { computeNetClassOverrides } from './net_overrides.js';
-import { listEmbeddedFiles, schematicTextVarResolver } from '@ziroeda/eeschema';
+import { RefDesTracker, listEmbeddedFiles, schematicTextVarResolver } from '@ziroeda/eeschema';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
@@ -885,13 +886,6 @@ export function SchematicEditor({
   const [browserOpen, setBrowserOpen] = useState(false);
   // Assign Footprints (CVPCB_MAINFRAME).
   const [assignFpOpen, setAssignFpOpen] = useState(false);
-  const runAnnotate = useCallback(
-    (opts: AnnotateOptions) => {
-      runCommand(annotateCommand(libById, opts, selection));
-      setAnnotateOpen(false);
-    },
-    [runCommand, libById, selection],
-  );
   const runClearAnnotation = useCallback(
     (scope: AnnotateOptions['scope']) => {
       runCommand(clearAnnotationCommand(scope, selection));
@@ -1029,6 +1023,22 @@ export function SchematicEditor({
     [doc, resolverForDoc, currentFile, currentPath],
   );
 
+  // Annotate (SCH_EDIT_FRAME::AnnotateSymbols): the REFDES_TRACKER is
+  // deserialized from schematic.used_designators, gated by the project's
+  // reuse_designators, and its updated state persists back after the run.
+  const runAnnotate = useCallback(
+    (opts: AnnotateOptions) => {
+      const tracker = new RefDesTracker();
+      tracker.deserialize(setup.usedDesignators);
+      tracker.reuseRefDes = setup.annotation.allowReuse;
+      runCommand(annotateCommand(libById, { ...opts, tracker }, selection));
+      const usedDesignators = tracker.serialize();
+      if (usedDesignators !== setup.usedDesignators) commitSetup({ ...setup, usedDesignators });
+      setAnnotateOpen(false);
+    },
+    [runCommand, libById, selection, setup, commitSetup],
+  );
+
   // Drawing defaults shared by every output (screen, print, plot), derived
   // from Schematic Setup > Formatting the way SCH_RENDER_SETTINGS is seeded
   // from SCHEMATIC_SETTINGS upstream (eeschema_config.cpp).
@@ -1044,6 +1054,8 @@ export function SchematicEditor({
       overbarHeightRatio: setup.formatting.overbarOffsetRatio,
       // 0 mils is meaningful: KiCad's per-pin text-size fallback.
       pinSymbolSizeIU: setup.formatting.pinSymbolSizeMils * IU_PER_MILS,
+      // Multi-unit reference notation (SCHEMATIC_SETTINGS::SubReference).
+      subpart: subpartSettings(setup.annotation),
     }),
     [setup],
   );
@@ -3227,6 +3239,7 @@ export function SchematicEditor({
           symbol={propsSymbol}
           lib={libById.get(propsSymbol.libId)}
           fieldTemplates={setup.fieldTemplates}
+          subpart={subpartSettings(setup.annotation)}
           onOk={(edit: SymbolEdit) => {
             runCommand(editSymbolProperties(propsTarget, edit));
             setPropsTarget(null);

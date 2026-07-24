@@ -75,25 +75,55 @@ export const storedVJustify = (f: SchField): VJustify =>
       ? 'bottom'
       : 'center';
 
-/** LIB_SYMBOL::LetterSubReference: 1→"A", 26→"Z", 27→"AA", … */
-export function letterSubReference(unit: number): string {
+/** LIB_SYMBOL::LetterSubReference: 1→"A", 26→"Z", 27→"AA", … The initial
+ *  letter is expected to be 'A' or 'a' (26 letters available). */
+export function letterSubReference(unit: number, initialLetter = 'A'): string {
   let suffix = '';
   let n = unit;
+  const base = initialLetter.charCodeAt(0);
   do {
     const u = (n - 1) % 26;
-    suffix = String.fromCharCode(65 + u) + suffix;
+    suffix = String.fromCharCode(base + u) + suffix;
     n = Math.trunc((n - u) / 26); // C++ integer division
   } while (n > 0);
   return suffix;
 }
 
+/** The unit-notation slice of SCHEMATIC_SETTINGS the sub-reference reads:
+ *  m_SubpartIdSeparator (0 = none, else the separator char code) and
+ *  m_SubpartFirstId ('A' = letters, '1' = numbers). */
+export interface SubpartSettings {
+  separator: number;
+  firstId: number;
+}
+
+/** SCHEMATIC_SETTINGS::SubReference (schematic_settings.cpp). */
+export function subReference(
+  unit: number,
+  subpart: SubpartSettings = { separator: 0, firstId: 65 },
+  addSeparator = true,
+): string {
+  let subRef = '';
+  if (unit < 1) return subRef;
+  if (subpart.separator !== 0 && addSeparator) subRef += String.fromCharCode(subpart.separator);
+  if (subpart.firstId >= 48 && subpart.firstId <= 57) subRef += String(unit);
+  else subRef += letterSubReference(unit, String.fromCharCode(subpart.firstId));
+  return subRef;
+}
+
 /**
  * The text the painter shows for a field (SCH_FIELD::GetShownText with extras):
- * a multi-unit Reference gains its unit letter; `show_name` prefixes "Name: ".
+ * a multi-unit Reference gains its sub-reference per the project's unit
+ * notation (GetRef(..., true) → SubReference); `show_name` prefixes "Name: ".
  */
-export function fieldShownText(field: SchField, sym: SchSymbol, unitCount: number): string {
+export function fieldShownText(
+  field: SchField,
+  sym: SchSymbol,
+  unitCount: number,
+  subpart?: SubpartSettings,
+): string {
   let text = field.value;
-  if (field.key === 'Reference' && unitCount > 1) text += letterSubReference(sym.unit);
+  if (field.key === 'Reference' && unitCount > 1) text += subReference(sym.unit, subpart);
   if (field.nameShown) text = `${field.key}: ${text}`;
   return text;
 }
