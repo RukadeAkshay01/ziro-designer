@@ -128,7 +128,7 @@ h1.name,
   line-height: 1.7;
 }
 
-/* ---- Nav bar: translucent, uppercase mono links, wordmark ---- */
+/* ---- Nav bar: translucent, clean sans links, wordmark ---- */
 .dark .VPNavBar,
 .dark .VPNavBar.has-sidebar .content-body {
   background-color: rgba(8, 8, 10, 0.72);
@@ -137,9 +137,9 @@ h1.name,
 .VPNavBarTitle .title {
   font-family: var(--zx-font-head);
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  font-size: 15px;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  font-size: 16px;
 }
 .VPNavBarTitle .logo {
   height: 24px;
@@ -147,11 +147,11 @@ h1.name,
 }
 .VPNavBarMenuLink,
 .VPNavBarMenuGroup .text {
-  font-family: var(--vp-font-family-mono) !important;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 12px !important;
-  font-weight: 400 !important;
+  font-family: var(--vp-font-family-base) !important;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 14px !important;
+  font-weight: 500 !important;
 }
 
 /* ---- Sidebar: compact readable tree, ziroeda brand ---- */
@@ -173,21 +173,32 @@ h1.name,
   padding-bottom: 10px !important;
 }
 
-/* Collapsible group titles: readable (normal case), Space Grotesk, with an
-   always-visible chevron. */
+/* Collapsible group titles: clean sans, normal case, with a chevron. */
 .VPSidebarItem.level-0 > .item {
-  padding: 3px 0;
+  padding: 2px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
 }
 .VPSidebarItem.level-0 > .item > .text {
-  font-family: var(--zx-font-head);
+  font-family: var(--vp-font-family-base);
   text-transform: none;
-  letter-spacing: -0.01em;
-  font-size: 14px;
+  letter-spacing: 0;
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--vp-c-text-1);
 }
 .VPSidebarItem.level-0 .caret {
   color: var(--vp-c-text-3);
+}
+/* Active section: highlight the current group's title. */
+.VPSidebarItem.level-0.has-active > .item {
+  background-color: var(--zx-accent-dim);
+}
+.VPSidebarItem.level-0.has-active > .item > .text {
+  color: var(--vp-c-brand-1);
+}
+.VPSidebarItem.level-0.has-active > .item .caret {
+  color: var(--vp-c-brand-1);
 }
 
 /* Leaf links: readable sans, compact, indented. */
