@@ -104,7 +104,9 @@ function customSetup(): SchematicSetup {
   s.netChains = {
     chains: [{ name: 'CHAIN1', members: ['N1', 'N2'], chainClass: 'CC1', netClass: '', color: '' }],
     classes: [{ name: 'CC1', members: 1 }],
+    classByChain: { CHAIN1: 'CC1' },
   };
+  s.usedDesignators = 'R1-3,U1';
   s.busAliases = [
     { name: 'DATA', members: ['D0', 'D1', 'D2'] },
     { name: 'CTRL', members: ['CLK', 'EN'] },

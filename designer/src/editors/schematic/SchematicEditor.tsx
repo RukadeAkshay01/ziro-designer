@@ -36,6 +36,11 @@ import {
   bulkEditFieldsCommand,
   groupItemsCommand,
   ungroupItemsCommand,
+  addToGroupCommand,
+  removeFromGroupCommand,
+  canAddToGroup,
+  canRemoveFromGroup,
+  selectionHasGroup,
   setSymbolsLockedCommand,
   expandSelectionToGroups,
   applySelectionFilter,
@@ -136,14 +141,19 @@ import {
   subpartSettings,
 } from './schematic_settings.js';
 import { computeNetClassOverrides } from './net_overrides.js';
-import { RefDesTracker, listEmbeddedFiles, schematicTextVarResolver } from '@ziroeda/eeschema';
+import {
+  RefDesTracker,
+  detectNetChains,
+  listEmbeddedFiles,
+  schematicTextVarResolver,
+} from '@ziroeda/eeschema';
 import { DialogExportBom } from './dialogs/dialog_export_bom.js';
 import { DialogExportNetlist } from './dialogs/dialog_export_netlist.js';
 import { DialogSymbolFieldsTable, type FieldsEdits } from './dialogs/dialog_symbol_fields_table.js';
 import { DialogAssignFootprints } from './dialogs/dialog_assign_footprints.js';
 import { DialogPrint } from './dialogs/dialog_print.js';
 import { DialogPlot, type PlotFormat } from './dialogs/dialog_plot.js';
-import { printSheet, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
+import { printSheets, plotPng, plotSvg, plotPdf, type PlotOpts } from './render/plot.js';
 import { BUILTIN_THEMES } from './theme.js';
 import { LoadingOverlay, nextPaint } from '../../ui/LoadingOverlay.js';
 import type { ProgressSnapshot } from '../../ui/progress_reporter.js';
@@ -642,6 +652,22 @@ export function SchematicEditor({
     () => (sheetTree ? flattenHierarchy(sheetTree) : []),
     [sheetTree],
   );
+
+  // The same DFS with each instance's sheet name and human-readable path
+  // (SCH_SHEET_PATH::PathHumanReadable) — the title block's ${SHEETNAME} /
+  // ${SHEETPATH} context for the screen and for printed pages.
+  const sheetInstanceRefs = useMemo<
+    { file: string; path: string; name: string; namePath: string }[]
+  >(() => {
+    const refs: { file: string; path: string; name: string; namePath: string }[] = [];
+    const walk = (n: SheetTreeNode, parentNames: string): void => {
+      const namePath = n.path === '/' ? '/' : `${parentNames}${n.name}/`;
+      refs.push({ file: n.file, path: n.path, name: n.name, namePath });
+      for (const c of n.children) walk(c, namePath);
+    };
+    if (sheetTree) walk(sheetTree, '/');
+    return refs;
+  }, [sheetTree]);
   const navTool = useRef(new SchNavigateTool());
   useEffect(() => {
     navTool.current.cleanHistory(new Set(flatSheets.map((s) => s.path)));
@@ -1060,12 +1086,13 @@ export function SchematicEditor({
     [setup],
   );
 
-  // Print (DIALOG_PRINT): render the current sheet and open the browser print
-  // flow, optionally with a different colour theme (m_useColorTheme choice).
-  const doPrint = useCallback(
-    (opts: PlotOpts, themeId?: string) => {
-      const printTheme =
-        themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
+  // Print (DIALOG_PRINT): render every sheet of the hierarchy — one page per
+  // sheet instance in SCH_SHEET_LIST order, like SCH_PRINTOUT (sheet_count =
+  // Root().CountSheets()) — optionally with a different colour theme
+  // (m_useColorTheme choice). NOTE: title-block page-number variables render
+  // per file (the drawing-sheet resolver is not yet instance-aware).
+  const printPages = useCallback(
+    (opts: PlotOpts): { sch: Schematic; opts: PlotOpts }[] => {
       // Junction dots, dash ratios, label offsets and netclass visuals print
       // at their Schematic Setup values, like the screen.
       const o: PlotOpts = {
@@ -1075,10 +1102,46 @@ export function SchematicEditor({
         ...(resolveTextVar ? { resolveTextVar } : {}),
         ...(activeSheet ? { sheet: activeSheet } : {}),
       };
-      if (doc) printSheet(doc, printTheme, o, outputBaseName());
+      const docs = liveDocs();
+      const refs = sheetInstanceRefs;
+      const pages = refs.flatMap((s, i) => {
+        const sch = docs.get(s.file);
+        if (!sch) return [];
+        // Per-instance title-block context (SCH_PRINTOUT sets the printed
+        // sheet's page number/count on the drawing-sheet painter).
+        const pageOpts: PlotOpts = {
+          ...o,
+          pageNumber: pageNumberOf(s.path) || String(i + 1),
+          sheetNumber: i + 1,
+          sheetCount: refs.length,
+          ...(s.path !== '/' ? { sheetName: s.name } : {}),
+          sheetPath: s.namePath,
+        };
+        return [{ sch, opts: pageOpts }];
+      });
+      // No hierarchy yet (fresh document): print the on-screen sheet.
+      return pages.length === 0 && doc ? [{ sch: doc, opts: o }] : pages;
+    },
+    [
+      doc,
+      activeSheet,
+      drawingDefaults,
+      netOverrides,
+      resolveTextVar,
+      liveDocs,
+      sheetInstanceRefs,
+      pageNumberOf,
+    ],
+  );
+
+  const doPrint = useCallback(
+    (opts: PlotOpts, themeId?: string) => {
+      const printTheme =
+        themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
+      printSheets(printPages(opts), printTheme, outputBaseName());
       setPrintOpen(false);
     },
-    [doc, theme, outputBaseName, activeSheet, drawingDefaults, netOverrides, resolveTextVar],
+    [theme, outputBaseName, printPages],
   );
 
   // Print Preview (DIALOG_PRINT's Apply / OnPrintPreview): render into a new tab
@@ -1087,16 +1150,9 @@ export function SchematicEditor({
     (opts: PlotOpts, themeId?: string) => {
       const printTheme =
         themeId && BUILTIN_THEMES[themeId] ? BUILTIN_THEMES[themeId]!.theme : theme;
-      const o: PlotOpts = {
-        ...opts,
-        ...drawingDefaults,
-        ...(netOverrides ? { netOverrides } : {}),
-        ...(resolveTextVar ? { resolveTextVar } : {}),
-        ...(activeSheet ? { sheet: activeSheet } : {}),
-      };
-      if (doc) printSheet(doc, printTheme, o, outputBaseName(), true);
+      printSheets(printPages(opts), printTheme, outputBaseName(), true);
     },
-    [doc, theme, outputBaseName, activeSheet, drawingDefaults, netOverrides, resolveTextVar],
+    [theme, outputBaseName, printPages],
   );
 
   // Bulk Edit Symbol Fields: apply the changed cells per sheet — the current
@@ -1762,6 +1818,20 @@ export function SchematicEditor({
       showHiddenFields: es.appearance.show_hidden_fields,
       showPageLimits: es.appearance.show_page_limits,
       ...(activeSheet ? { drawingSheet: activeSheet } : {}),
+      // The on-screen title block shows the current instance's real page
+      // number, sheet count and path (SCH_EDIT_FRAME::SetSheetNumberAndCount).
+      ...((): Partial<RenderOpts> => {
+        const idx = sheetInstanceRefs.findIndex((s) => s.path === currentPath);
+        if (idx === -1) return {};
+        const ref = sheetInstanceRefs[idx]!;
+        return {
+          pageNumber: pageNumberOf(currentPath) || String(idx + 1),
+          sheetNumber: idx + 1,
+          sheetCount: sheetInstanceRefs.length,
+          ...(ref.path !== '/' ? { sheetName: ref.name } : {}),
+          sheetPath: ref.namePath,
+        };
+      })(),
       // Default pen for zero-width strokes = Schematic Setup > Formatting's
       // "Default line width" (SCHEMATIC_SETTINGS::m_DefaultLineWidth), mils→IU.
       defaultPenIU: mmToIU((setup.formatting.defaultLineWidthMils * 25.4) / 1000),
@@ -1797,7 +1867,17 @@ export function SchematicEditor({
         },
       },
     }),
-    [es, activeSheet, setup, drawingDefaults, netOverrides, resolveTextVar],
+    [
+      es,
+      activeSheet,
+      setup,
+      drawingDefaults,
+      netOverrides,
+      resolveTextVar,
+      sheetInstanceRefs,
+      currentPath,
+      pageNumberOf,
+    ],
   );
 
   const inputPrefs = useMemo<InputPrefs>(
@@ -2089,6 +2169,18 @@ export function SchematicEditor({
           if (sel.size > 0) runCommand(ungroupItemsCommand(sel));
           return sel;
         });
+      else if (id === 'addToGroup')
+        setSelection((sel) => {
+          const d = docRef.current;
+          if (d && canAddToGroup(d, sel)) runCommand(addToGroupCommand(sel));
+          return sel;
+        });
+      else if (id === 'removeFromGroup')
+        setSelection((sel) => {
+          const d = docRef.current;
+          if (d && canRemoveFromGroup(d, sel)) runCommand(removeFromGroupCommand(sel));
+          return sel;
+        });
       // Lock / Unlock / Toggle Lock (SCH_EDIT_TOOL): protect symbols from edits.
       else if (id === 'lock' || id === 'unlock' || id === 'toggleLock')
         setSelection((sel) => {
@@ -2109,14 +2201,28 @@ export function SchematicEditor({
       else if (id === 'schematicSetup') {
         // The Embedded Files page lists the sheet's embedded_files section
         // (names + embed-fonts flag) fresh from the document on every open —
-        // read-only until the zstd blobs can be decoded.
+        // read-only until the zstd blobs can be decoded — and the Net Chains
+        // page shows the engine's detected (potential) chains
+        // (CONNECTION_GRAPH::RebuildNetChains), each keeping its persisted
+        // chain-class assignment.
         if (doc) {
           const emb = listEmbeddedFiles(doc);
+          const detected = netlist ? detectNetChains(doc, libById, netlist) : [];
           setSetup((prev) => ({
             ...prev,
             embeddedFiles: {
               files: emb.files.map((f) => ({ name: f.name, reference: f.reference })),
               embedFonts: emb.embedFonts,
+            },
+            netChains: {
+              ...prev.netChains,
+              chains: detected.map((c) => ({
+                name: c.name,
+                members: c.nets,
+                chainClass: prev.netChains.classByChain[c.name] ?? '',
+                netClass: resolveEffectiveNetClass(c.nets[0] ?? '', prev.netClasses).name,
+                color: '',
+              })),
             },
           }));
         }
@@ -2191,6 +2297,7 @@ export function SchematicEditor({
       currentPath,
       switchSheet,
       doc,
+      netlist,
       selection,
       libById,
       pageNumberOf,
@@ -2220,7 +2327,16 @@ export function SchematicEditor({
     if (selection.size > 0) {
       items.push({
         label: 'Grouping',
-        items: [act('Group Items', 'group'), act('Ungroup Items', 'ungroup')],
+        items: [
+          act('Group Items', 'group'),
+          act('Ungroup Items', 'ungroup'),
+          ...(doc && canAddToGroup(doc, selection)
+            ? [act('Add Items to Group', 'addToGroup')]
+            : []),
+          ...(doc && canRemoveFromGroup(doc, selection)
+            ? [act('Remove Items from Group', 'removeFromGroup')]
+            : []),
+        ],
       });
       // Locking (SCH_SELECTION_TOOL makeLockMenu) — only symbols lock.
       const selSymbols =
@@ -2716,6 +2832,11 @@ export function SchematicEditor({
   if (!navTool.current.canGoBack()) navDisabled.add('navBack');
   if (!navTool.current.canGoForward()) navDisabled.add('navFwd');
   if (parentPath(currentPath) === null) navDisabled.add('navUp');
+  // The toolbar's Group / Ungroup grey out when they can't act (GROUP_TOOL::
+  // update): Group needs >= 2 selected items, Ungroup needs a group in the
+  // selection. Add / Remove are right-click-only, gated in the context menu.
+  if (selection.size < 2) navDisabled.add('group');
+  if (!selectionHasGroup(doc, selection)) navDisabled.add('ungroup');
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();

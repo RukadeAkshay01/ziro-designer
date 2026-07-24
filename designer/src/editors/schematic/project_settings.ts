@@ -394,10 +394,15 @@ export function readSchematicSetupText(proText: string): SchematicSetup {
   const chainClasses = getPath(j, 'net_settings.net_chain_classes');
   if (isObj(chainClasses)) {
     const counts = new Map<string, number>();
-    for (const v of Object.values(chainClasses)) {
-      if (typeof v === 'string' && v) counts.set(v, (counts.get(v) ?? 0) + 1);
+    const byChain: Record<string, string> = {};
+    for (const [chain, v] of Object.entries(chainClasses)) {
+      if (typeof v === 'string' && v) {
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+        byChain[chain] = v;
+      }
     }
     s.netChains.classes = [...counts].map(([name, members]) => ({ name, members }));
+    s.netChains.classByChain = byChain;
   }
 
   // text_variables (project-file top level).

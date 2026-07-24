@@ -354,10 +354,13 @@ export interface NetChainClass {
 export interface NetChainsData {
   chains: NetChain[];
   classes: NetChainClass[];
+  /** The persisted chain -> class map (net_settings.net_chain_classes); the
+   *  chains themselves are engine-detected and not stored in the project. */
+  classByChain: Record<string, string>;
 }
 
 export function defaultNetChains(): NetChainsData {
-  return { chains: [], classes: [] };
+  return { chains: [], classes: [], classByChain: {} };
 }
 
 // ---------------------------------------------------------------------------
