@@ -1,7 +1,7 @@
 # Schematic Setup — implementation status
 
 Exact state of the Schematic Setup dialog (KiCad `DIALOG_SCHEMATIC_SETUP`
-counterpart) as of PRs #113–#117. "End to end" means: edited in the dialog →
+counterpart) as of PR #134. "End to end" means: edited in the dialog →
 persisted to `.kicad_pro` exactly like KiCad → actually changes app behavior.
 This file is the hand-off point for continuing the work; update it per phase.
 
@@ -90,8 +90,29 @@ Ground truth for every mapping below is the KiCad source
   text boxes, tables, fields) on screen, print and plot.
 - **Bus Alias Definitions** (PR #123) — persist at `schematic.bus_aliases`
   in `.kicad_pro`, where current KiCad stores them (the schematic writer no
-  longer emits `bus_alias` nodes; the parser only accepts legacy ones). Bus
-  *connectivity* (unfolding, member nets) remains future engine work.
+  longer emits `bus_alias` nodes; the parser only accepts legacy ones).
+- **Bus connectivity** (PRs #124–#126) — `NET_SETTINGS` bus-label parsing +
+  member expansion (`eeschema/src/connectivity/bus.ts`), bus subgraphs with
+  member-net joins in the netlist (separate union-find; entries split
+  bus-side/wire-side; aliases unfold), and the three bus ERC rules
+  (`net_not_bus_member`, `bus_to_net_conflict`, `bus_to_bus_conflict`).
+- **Annotation leftovers** (PR #127) — `SubReference` unit-notation display
+  (`U1A`/`U1.1`/…) through fields/panels, `reuse_designators` honored via the
+  `REFDES_TRACKER` port (serialize/deserialize in
+  `schematic.used_designators`), and the dialog's Reset-to-Defaults +
+  Import-Settings buttons (exact `DIALOG_SCH_IMPORT_SETTINGS` checkbox set).
+- **Net Chains** (PR #134) — detection is live:
+  `CONNECTION_GRAPH::RebuildNetChains` port
+  (`eeschema/src/connectivity/net_chains.ts`) — nets bridged through 2-pin
+  passives with collinear wires, power-edge drops, leaf/stub pruning,
+  label-driven naming. The Setup page lists detected chains with their
+  persisted chain-class assignments (`net_settings.net_chain_classes`).
+- **Wire hop-overs** (PR #134) — Formatting's Hop-over size choice draws hop
+  arcs where wires cross: `SCH_LINE::ShouldHopOver` +
+  `BuildWireWithHopShape` ports (`eeschema/src/tools/hop_over.ts`, with
+  `SEG::Intersect`'s integer parametric test and `CalcArcCenter` in
+  `libs/kimath/src/trigo.ts`); arc radius = default line width ×
+  `hopover_size_mult_list[choice]`; screen, print and plot.
 - **Embedded Files, read side** (PR #123) — the page lists the document's
   real `embedded_files` section (names, types, `kicad-embed://` references)
   and the `embedded_fonts` flag via `listEmbeddedFiles`
@@ -100,22 +121,15 @@ Ground truth for every mapping below is the KiCad source
 
 ### 🟡 Persisted correctly, not consumed yet
 
-- **Net Chains** — only the chain→class map persists
-  (`net_settings.net_chain_classes`, merge-style); chain *detection* (nets
-  joined through 2-pin passives) is engine work that does not exist yet.
-- **Annotation leftovers** — unit notation (`U1A` vs `U1.1` display,
-  `SubReference` port) and `reuse_designators` in the annotate engine.
 - **Formatting leftovers blocked on missing features**: inter-sheet refs
-  (needs multi-sheet reference tracking), hop-over choice (needs wire
-  hop-over rendering), operating-point overlay fields (needs simulator).
+  (needs multi-sheet reference tracking), operating-point overlay fields
+  (needs simulator).
 
 ### 🔴 Not implemented (deliberate)
 
 - **Embedded Files, write side** — add/remove/export need a browser zstd
   codec (KiCad compresses blobs with zstd + base64); the page is read-only
   until then, and in-session panel edits reset on reopen.
-- **Dialog chrome**: "Reset to Defaults" and "Import Settings from Another
-  Project…" buttons are stubs.
 
 ## Gotchas encoded in the serializer (don't rediscover these)
 
@@ -130,11 +144,13 @@ Ground truth for every mapping below is the KiCad source
 - KiCad defaults that differ from naive guesses: intersheet prefix/suffix are
   `[` / `]`, `reuse_designators` defaults **true**.
 
-## Remaining work (phases A–H1 delivered in PRs #113–#123)
+## Remaining work (phases A–H1 in PRs #113–#123; buses #124–#126; quick-wins
+## #127; net chains + hop-overs #134)
 
-1. Bus **connectivity** — alias unfolding + member nets in the engine (big).
-2. Embedded-file **write side** — browser zstd codec, add/remove/export.
-3. Net-chain **detection** — chains via 2-pin passives in the engine.
-4. Annotation leftovers — `SubReference` unit-notation display, refdes reuse.
-5. Dialog Reset-to-Defaults / Import-Settings buttons.
-6. Blocked on host features: inter-sheet refs, hop-overs, OPO fields.
+1. Embedded-file **write side** — browser zstd codec, add/remove/export
+   (awaiting a decision on adding a zstd WASM dependency).
+2. Inter-sheet references — needs multi-sheet reference tracking in the
+   renderer (multi-sheet printing infrastructure now exists).
+3. Committed net chains — `.kicad_sch` `signal` nodes + `PASSTHROUGH_MODE`
+   attribute (detection already live).
+4. OPO fields — blocked on a simulator.
