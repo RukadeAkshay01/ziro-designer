@@ -62,50 +62,58 @@ Ground truth for every mapping below is the KiCad source
   points, first off-grid pin per symbol (NC-type pins exempt). Default
   severity: warning.
 
+- **Annotation** (PR #118) — the Annotate dialog seeds sort/method/start
+  number from the project settings on open and writes changes back on every
+  close (`DIALOG_ANNOTATE`), via the shared `commitSetup` flow.
+- **Field Name Templates** (PR #119) — Symbol Properties appends template
+  fieldnames not yet on the symbol (empty rows with the template's Visible
+  flag; named-but-empty rows survive OK); Bulk Edit Symbol Fields offers
+  template columns.
+- **BOM Presets** (PR #120) — full `BOM_PRESET`/`BOM_FMT_PRESET` bodies; the
+  Generate BOM dialog has view + format preset pickers (KiCad's exact
+  built-ins plus saved ones), editable delimiters, and Save Preset. Exporter
+  ports: `bomToDelimited` (delimiter wrapping/doubling, tab/newline
+  stripping) and `refsShorthand` (`R1-R4` range collapsing). Built-ins never
+  persist, like upstream.
+- **Net Classes** (PR #121) — `resolveEffectiveNetClass`
+  (`GetEffectiveNetClass` port: prefix + `*`/`?` pattern matching, grid-order
+  priority merge, Default completion, composite `Effective for net: <net>`
+  naming); wires/buses without their own stroke draw with the resolved
+  color/width/style; junction dots clamp to ≥170% of the net's wire width;
+  the message panel shows the real Resolved Netclass. Known deviation: the
+  grid can't express an unset line style, so only non-Solid styles
+  contribute to merges.
+- **Text Variables** (PR #122) — `expandTextVars` +
+  `schematicTextVarResolver` (`eeschema/src/tools/text_vars.ts`): recursive
+  `${VAR}` expansion with the TITLE_BLOCK / SCHEMATIC / PROJECT token set,
+  applied at the renderer's GetShownText choke points (labels, free text,
+  text boxes, tables, fields) on screen, print and plot.
+- **Bus Alias Definitions** (PR #123) — persist at `schematic.bus_aliases`
+  in `.kicad_pro`, where current KiCad stores them (the schematic writer no
+  longer emits `bus_alias` nodes; the parser only accepts legacy ones). Bus
+  *connectivity* (unfolding, member nets) remains future engine work.
+- **Embedded Files, read side** (PR #123) — the page lists the document's
+  real `embedded_files` section (names, types, `kicad-embed://` references)
+  and the `embedded_fonts` flag via `listEmbeddedFiles`
+  (`eeschema/src/tools/embedded.ts`), refreshed on every dialog open; the
+  zstd blobs round-trip byte-exact through the lossless AST.
+
 ### 🟡 Persisted correctly, not consumed yet
 
-Edits survive reload and round-trip with real KiCad `.kicad_pro` files, but
-change nothing in the editor yet:
-
-- **Annotation** — persists (`subpart_id_separator`/`subpart_first_id`,
-  `annotation.sort_order`/`.method`, `annotate_start_num`,
-  `reuse_designators`). NEXT PHASE: `DialogAnnotate` should seed from
-  `setup.annotation` and write back, the way `SCH_EDIT_FRAME` uses
-  `SCHEMATIC_SETTINGS`; the annotate engine is
-  `eeschema/src/tools/annotate.ts` (own `AnnotateOptions`, not yet linked).
-- **Field Name Templates** — persists (`schematic.drawing.field_names`).
-  Consumer to build: new symbols / symbol-properties dialogs auto-add
-  template fields (KiCad `TEMPLATES`).
-- **BOM Presets** — names list/delete persists (`schematic.bom_presets` /
-  `bom_fmt_presets`; write filters existing preset bodies by surviving name,
-  never regenerates them). Consumer to build: BOM export dialog
-  (`dialog_export_bom.tsx` + `eeschema/src/exporters/bom.ts` has its own
-  `BomOptions`).
-- **Net Classes** — classes + pattern assignments persist
-  (`net_settings.classes` / `netclass_patterns`; wire/bus widths in mils, PCB
-  fields in mm, Default priority INT_MAX, colors as KiCad `rgb()/rgba()`
-  strings, unknown per-class keys like `diff_pair_via_gap` preserved).
-  Consumer to build: engine netclass resolution (pattern match → per-net
-  class), message panel "Resolved Netclass" (hardcoded 'Default' in
-  `eeschema/src/tools/msg_panel.ts`), wire color/width/style from class, and
-  the junction 170%-of-connected-wire clamp from `sch_junction.cpp`.
 - **Net Chains** — only the chain→class map persists
-  (`net_settings.net_chain_classes`, merge-style); chains themselves are
-  engine data that does not exist yet.
-- **Text Variables** — persists (top-level `text_variables`). Consumer to
-  build: `ExpandTextVars` resolver in the engine (none exists), applied to
-  text/fields/drawing-sheet rendering.
+  (`net_settings.net_chain_classes`, merge-style); chain *detection* (nets
+  joined through 2-pin passives) is engine work that does not exist yet.
+- **Annotation leftovers** — unit notation (`U1A` vs `U1.1` display,
+  `SubReference` port) and `reuse_designators` in the annotate engine.
 - **Formatting leftovers blocked on missing features**: inter-sheet refs
   (needs multi-sheet reference tracking), hop-over choice (needs wire
   hop-over rendering), operating-point overlay fields (needs simulator).
 
-### 🔴 UI only, in-memory (deliberate)
+### 🔴 Not implemented (deliberate)
 
-- **Bus Alias Definitions**, **Embedded Files** — KiCad stores these in
-  `.kicad_sch` (per-sheet `bus_alias` nodes / `embedded_files` section;
-  current KiCad master also mirrors bus aliases at `schematic.bus_aliases`).
-  Blocked on the `.kicad_sch` reader/writer side
-  (`eeschema/src/sch_io/sexpr/`). Edits work in-session, reset on reload.
+- **Embedded Files, write side** — add/remove/export need a browser zstd
+  codec (KiCad compresses blobs with zstd + base64); the page is read-only
+  until then, and in-session panel edits reset on reopen.
 - **Dialog chrome**: "Reset to Defaults" and "Import Settings from Another
   Project…" buttons are stubs.
 
@@ -122,13 +130,11 @@ change nothing in the editor yet:
 - KiCad defaults that differ from naive guesses: intersheet prefix/suffix are
   `[` / `]`, `reuse_designators` defaults **true**.
 
-## Remaining phases (agreed order)
+## Remaining work (phases A–H1 delivered in PRs #113–#123)
 
-1. **C — Annotation**: Annotate dialog ⇄ `setup.annotation`.
-2. **D — Field name templates** → symbol fields.
-3. **E — BOM presets** → export dialog.
-4. **F — Net classes**: engine resolution, msg panel, wire visuals, junction clamp.
-5. **G — Text variables**: `ExpandTextVars` in the engine.
-6. **H — Bus aliases / net chains / embedded files**: `.kicad_sch` storage +
-   engine features (bus expansion, chains).
-7. Dialog Reset / Import buttons.
+1. Bus **connectivity** — alias unfolding + member nets in the engine (big).
+2. Embedded-file **write side** — browser zstd codec, add/remove/export.
+3. Net-chain **detection** — chains via 2-pin passives in the engine.
+4. Annotation leftovers — `SubReference` unit-notation display, refdes reuse.
+5. Dialog Reset-to-Defaults / Import-Settings buttons.
+6. Blocked on host features: inter-sheet refs, hop-overs, OPO fields.
