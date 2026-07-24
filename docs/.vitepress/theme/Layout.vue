@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DefaultTheme from "vitepress/theme";
+import NotFound from "./NotFound.vue";
 
 const { Layout } = DefaultTheme;
 </script>
@@ -14,6 +15,11 @@ const { Layout } = DefaultTheme;
           >Launch the app →</a
         >
       </div>
+    </template>
+
+    <!-- Branded 404 for unknown URLs -->
+    <template #not-found>
+      <NotFound />
     </template>
   </Layout>
 </template>

@@ -212,6 +212,41 @@ h1.name,
   font-weight: 500;
 }
 
+/* ---- Full-width content: fill the window between sidebar and TOC ---- */
+:root {
+  --vp-layout-max-width: 100%;
+}
+.VPDoc .container {
+  max-width: none;
+}
+/* Keep the nav's inner content aligned with the wider layout */
+.VPNavBar .container {
+  max-width: none;
+}
+.VPDoc:not(.has-aside) .content-container {
+  max-width: none;
+}
+/* has-aside: lay content + TOC out as flex so the content column stretches
+   to fill all remaining width instead of being capped and centered. */
+@media (min-width: 960px) {
+  .VPDoc.has-aside .container {
+    display: flex;
+    align-items: flex-start;
+  }
+  .VPDoc.has-aside .content-container {
+    max-width: none !important;
+    margin: 0 !important;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-right: 56px;
+  }
+  .VPDoc.has-aside .aside {
+    flex: 0 0 256px;
+    max-width: 256px;
+    padding-left: 0;
+  }
+}
+
 /* ---- Content chrome ---- */
 .vp-doc :not(pre) > code {
   color: var(--zx-gold-lite);
