@@ -1,19 +1,14 @@
 /**
- * Ziro Designer docs theme — faithful to www.ziroeda.com.
+ * Ziro Designer docs theme.
  *
- * Signature of the brand: monospace (JetBrains Mono) body copy, Space Grotesk
- * for headings and the wordmark, near-black surfaces, a warm gold accent, and
- * uppercase letter-spaced mono for chrome (nav, sidebar section titles).
+ * Built on the stock VitePress default theme (the same theme the reference docs
+ * use), so typography and sidebar sizing stay at VitePress defaults and match.
+ * Layered on top: the gold brand accent, a dark palette, the Space Grotesk
+ * wordmark, JetBrains Mono code, the announcement banner, and full-width
+ * content.
  */
 
-/* ---- Self-hosted fonts (latin subset) ---- */
-@font-face {
-  font-family: "Space Grotesk";
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url("/fonts/space-grotesk-500.woff2") format("woff2");
-}
+/* ---- Self-hosted brand fonts (latin subset) ---- */
 @font-face {
   font-family: "Space Grotesk";
   font-style: normal;
@@ -44,22 +39,19 @@
 }
 
 :root {
-  /* Brand tokens straight from ziroeda.com */
+  /* Brand tokens */
   --zx-gold: #b88850;
   --zx-gold-lite: #c9975c;
   --zx-gold-deep: #9c7038;
-  --zx-blue: #5a8ec8;
   --zx-accent-dim: rgba(184, 136, 80, 0.08);
   --zx-accent-line: rgba(184, 136, 80, 0.2);
+  --zx-font-head: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
 
-  /* Body is a readable sans; headings Space Grotesk; code JetBrains Mono */
-  --vp-font-family-base: "Inter", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* Keep VitePress' default Inter for body/UI; only code uses JetBrains Mono */
   --vp-font-family-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo,
     Monaco, Consolas, monospace;
-  --zx-font-head: "Space Grotesk", ui-sans-serif, system-ui, -apple-system,
-    "Segoe UI", Roboto, sans-serif;
 
+  /* Gold accent into VitePress' brand slots */
   --vp-c-brand-1: var(--zx-gold-lite);
   --vp-c-brand-2: var(--zx-gold);
   --vp-c-brand-3: var(--zx-gold-deep);
@@ -79,10 +71,10 @@
   --vp-c-brand-1: var(--zx-gold-deep);
 }
 
-/* ---- Dark, the primary experience ---- */
+/* ---- Dark palette (near-black, ziroeda brand) ---- */
 .dark {
   --vp-c-bg: #08080a;
-  --vp-c-bg-alt: #0b0b0d;
+  --vp-c-bg-alt: #0d0d10;
   --vp-c-bg-soft: #141418;
   --vp-c-bg-elv: #141418;
 
@@ -96,158 +88,48 @@
 
   --vp-c-default-soft: #141418;
   --vp-c-brand-1: var(--zx-gold-lite);
-
-  --vp-code-block-bg: #0b0b0e;
   --vp-code-bg: rgba(184, 136, 80, 0.1);
 }
 
-/* ---- Typography ---- */
-body {
-  font-family: var(--vp-font-family-base);
-  letter-spacing: -0.01em;
-}
-
-.vp-doc h1,
-.vp-doc h2,
-.vp-doc h3,
-.vp-doc h4,
-h1.name,
-.VPHero .text {
-  font-family: var(--zx-font-head);
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-.vp-doc h1 {
-  font-weight: 700;
-  letter-spacing: -0.045em;
-}
-
-/* Body paragraphs: mono, roomy line-height like the site */
-.vp-doc p,
-.vp-doc li {
-  line-height: 1.7;
-}
-
-/* ---- Nav bar: translucent, clean sans links, wordmark ---- */
-.dark .VPNavBar,
-.dark .VPNavBar.has-sidebar .content-body {
-  background-color: rgba(8, 8, 10, 0.72);
-  backdrop-filter: saturate(140%) blur(12px);
-}
+/* ---- Brand touches (kept minimal, sizing stays default) ---- */
+/* Wordmark in Space Grotesk */
 .VPNavBarTitle .title {
   font-family: var(--zx-font-head);
   font-weight: 600;
   letter-spacing: -0.01em;
-  text-transform: none;
   font-size: 16px;
 }
 .VPNavBarTitle .logo {
   height: 24px;
   margin-right: 10px;
 }
-.VPNavBarMenuLink,
-.VPNavBarMenuGroup .text {
-  font-family: var(--vp-font-family-base) !important;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 14px !important;
-  font-weight: 500 !important;
+/* Inline code, gold-tinted */
+.vp-doc :not(pre) > code {
+  color: var(--zx-gold-lite);
 }
 
-/* ---- Sidebar: compact readable tree, ziroeda brand ---- */
-/* A distinct panel: elevated background + a divider from the content. */
-.dark {
-  --vp-sidebar-bg-color: #0c0c0f;
-}
-.VPSidebar {
-  padding-top: 12px;
-  border-right: 1px solid var(--vp-c-divider);
-}
-
-/* No dividers between sections, and tighter vertical rhythm. */
+/* ---- Sidebar: default VitePress sizing, minus the section dividers and with
+   slightly tighter section spacing (as requested). ---- */
 .VPSidebar .group {
   border-top: none !important;
-  padding-top: 2px !important;
 }
 .VPSidebarItem.level-0 {
-  padding-bottom: 10px !important;
+  padding-bottom: 12px;
 }
 
-/* Collapsible group titles: clean sans, normal case, with a chevron. */
-.VPSidebarItem.level-0 > .item {
-  padding: 2px 8px;
-  margin: 0 -8px;
-  border-radius: 6px;
-}
-.VPSidebarItem.level-0 > .item > .text {
-  font-family: var(--vp-font-family-base);
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--vp-c-text-1);
-}
-.VPSidebarItem.level-0 .caret {
-  color: var(--vp-c-text-3);
-}
-/* Active section: highlight the current group's title. */
-.VPSidebarItem.level-0.has-active > .item {
-  background-color: var(--zx-accent-dim);
-}
-.VPSidebarItem.level-0.has-active > .item > .text {
-  color: var(--vp-c-brand-1);
-}
-.VPSidebarItem.level-0.has-active > .item .caret {
-  color: var(--vp-c-brand-1);
-}
-
-/* Leaf links: readable sans, compact, indented. */
-.VPSidebarItem.level-1 .link,
-.VPSidebarItem.level-2 .link {
-  padding: 0;
-}
-.VPSidebarItem.level-1 .link .text,
-.VPSidebarItem.level-2 .link .text {
-  font-family: var(--vp-font-family-base);
-  font-size: 13px;
-  line-height: 1.4;
-  letter-spacing: 0;
-  color: var(--vp-c-text-2);
-  padding: 4px 10px;
-  border-radius: 6px;
-  display: block;
-  transition: background-color 0.15s, color 0.15s;
-}
-.VPSidebarItem .link:hover .text {
-  color: var(--vp-c-text-1);
-  background-color: rgba(255, 255, 255, 0.04);
-}
-
-/* Active leaf: a FILLED rounded highlight block + gold text (EasyEDA pattern,
-   done in gold instead of blue). */
-.VPSidebarItem.is-active > .item .link .text,
-.dark .VPSidebarItem.is-active > .item .link .text {
-  color: var(--vp-c-brand-1);
-  background-color: var(--zx-accent-dim);
-  font-weight: 500;
-}
-
-/* ---- Full-width content: fill the window between sidebar and TOC ---- */
+/* ---- Full-width content: fill the window between sidebar and TOC.
+   (The reference uses a narrower centered column; this is a deliberate
+   ziroeda choice.) ---- */
 :root {
   --vp-layout-max-width: 100%;
 }
-.VPDoc .container {
-  max-width: none;
-}
-/* Keep the nav's inner content aligned with the wider layout */
+.VPDoc .container,
 .VPNavBar .container {
   max-width: none;
 }
 .VPDoc:not(.has-aside) .content-container {
   max-width: none;
 }
-/* has-aside: lay content + TOC out as flex so the content column stretches
-   to fill all remaining width instead of being capped and centered. */
 @media (min-width: 960px) {
   .VPDoc.has-aside .container {
     display: flex;
@@ -267,27 +149,7 @@ h1.name,
   }
 }
 
-/* ---- Content chrome ---- */
-.vp-doc :not(pre) > code {
-  color: var(--zx-gold-lite);
-}
-.vp-doc table th {
-  font-family: var(--zx-font-head);
-  letter-spacing: 0.02em;
-}
-.dark .custom-block.tip {
-  border-color: rgba(90, 142, 200, 0.4);
-}
-/* Outline (right TOC): readable sans links, mono-caps title */
-.outline-title {
-  font-family: var(--vp-font-family-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-size: 11px !important;
-}
-
-/* ---- Announcement banner (matches ziroeda.com top bar) ---- */
-/* Declare the banner height so VitePress offsets the fixed nav & sidebar. */
+/* ---- Announcement banner (ziroeda.com top strip) ---- */
 :root {
   --vp-layout-top-height: 36px;
 }
